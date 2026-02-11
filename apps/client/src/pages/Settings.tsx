@@ -13,7 +13,7 @@ export default function Settings() {
     const [prompts, setPrompts] = useState<PromptConfig[]>([]);
     const [loading, setLoading] = useState(true);
 
-    const [scrapeLimit, setScrapeLimit] = useState(3);
+    const [_scrapeLimit, setScrapeLimit] = useState(3);
 
     useEffect(() => {
         axios.get('http://localhost:3000/api/config/prompts')

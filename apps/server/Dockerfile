@@ -29,7 +29,8 @@ COPY . .
 # Debug: Check package.json content
 RUN cat package.json
 
-# Generate Prisma Client
+# Generate Prisma Client (Set dummy URL to pass validation)
+ENV DATABASE_URL="postgresql://dummy:5432/mydb"
 RUN npx prisma generate
 
 # Build TypeScript

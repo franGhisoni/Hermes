@@ -35,8 +35,10 @@ RUN cat package.json
 # Debug: Check package.json content
 RUN cat package.json
 
-# Generate Prisma Client (Create dummy .env to satisfy validation)
-RUN echo "DATABASE_URL=postgresql://dummy:5432/mydb" > .env && npx prisma generate
+# Generate Prisma Client (Hack: replace env() with string for build, then revert to env())
+RUN sed -i 's/env("DATABASE_URL")/"postgresql:\/\/dummy:5432\/mydb"/' prisma/schema.prisma && \
+  npx prisma generate && \
+  sed -i 's/"postgresql:\/\/dummy:5432\/mydb"/env("DATABASE_URL")/' prisma/schema.prisma
 
 # Build TypeScript
 RUN npm run build

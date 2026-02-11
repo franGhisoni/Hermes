@@ -21,17 +21,13 @@ app.use(cors({
 }));
 app.use(express.json());
 
-let queueService;
-let articleService;
+console.log('Initializing QueueService...');
+const queueService = new QueueService();
+console.log('QueueService initialized.');
 
-try {
-    console.log('Initializing Services...');
-    queueService = new QueueService();
-    articleService = new ArticleService();
-    console.log('Services initialized.');
-} catch (error) {
-    console.error('Failed to initialize services:', error);
-}
+console.log('Initializing ArticleService...');
+const articleService = new ArticleService();
+console.log('ArticleService initialized.');
 
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {

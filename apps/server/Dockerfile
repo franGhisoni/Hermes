@@ -35,10 +35,11 @@ RUN cat package.json
 # Debug: Check package.json content
 RUN cat package.json
 
-# Generate Prisma Client (Hack: replace env() with string for build, then revert to env())
-RUN sed -i 's/env("DATABASE_URL")/"postgresql:\/\/dummy:5432\/mydb"/' prisma/schema.prisma && \
-  npx prisma generate && \
-  sed -i 's/"postgresql:\/\/dummy:5432\/mydb"/env("DATABASE_URL")/' prisma/schema.prisma
+# Generate Prisma Client (Set dummy URL via ENV to ensure validation passes)
+# We use ARG + ENV which is the standard Docker way to persist vars for the build process
+ARG DATABASE_URL
+ENV DATABASE_URL="postgresql://dummy:5432/mydb"
+RUN npx prisma generate
 
 # Build TypeScript
 RUN npm run build

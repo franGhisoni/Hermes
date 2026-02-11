@@ -56,7 +56,9 @@ export abstract class BaseScraper {
                 // Ignore blocked resource errors
                 if (text.includes('ERR_FAILED') || text.includes('ERR_BLOCKED_BY_CLIENT')) return;
 
-                if (type === 'error' || type === 'warning') {
+                // Fix: string comparison for console message type
+                const typeStr = String(type).toLowerCase();
+                if (typeStr === 'error' || typeStr === 'warning') {
                     console.log(`[Browser ${this.name}] ${type.toUpperCase()}:`, text);
                 }
             });

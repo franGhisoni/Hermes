@@ -13,6 +13,7 @@
         "bullmq": "^5.0.0",
         "cors": "^2.8.5",
         "dotenv": "^16.0.0",
+        "duck-duck-scrape": "^2.2.7",
         "express": "^4.18.0",
         "ioredis": "^5.0.0",
         "openai": "^4.0.0",

@@ -1,19 +1,13 @@
 {
   "name": "hermes-monorepo",
   "version": "1.0.0",
-  "private": true,
-  "workspaces": [
-    "apps/*",
-    "shared"
-  ],
   "scripts": {
-    "dev:server": "npm run dev -w apps/server",
-    "dev:client": "npm run dev -w apps/client",
-    "build": "npm run build --workspaces",
-    "start": "npm run start --workspaces"
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "cd apps/server && npm run dev",
+    "dev:client": "cd apps/client && npm run dev",
+    "install:all": "npm install && cd apps/server && npm install && cd ../client && npm install"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "Automated News System"
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
 }

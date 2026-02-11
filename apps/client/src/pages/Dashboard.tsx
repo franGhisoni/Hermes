@@ -21,8 +21,9 @@ export default function Dashboard() {
     const triggerScrape = async () => {
         try {
             await axios.post('http://localhost:3000/api/scrape', {
-                source: 'Clarin',
+                source: 'Clarin', // Default for now, ideally selectable
                 url: 'https://www.clarin.com'
+                // limit is now handled by backend default if omitted
             });
             alert('Scrape job started');
         } catch (error) {
@@ -42,14 +43,15 @@ export default function Dashboard() {
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <img src="/logo.png" alt="Hermes Logo" className="h-12 w-auto mix-blend-multiply opacity-90" />
-                    <h1 className="text-4xl font-black tracking-tight italic">Hermes.</h1>
+                    <h1 className="text-4xl font-black tracking-tight italic">Publisher.</h1>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
-                    <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">News Automation Platform</span>
+                    <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                 </div>
-                <div className="flex gap-4">
-                    <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuration</Link>
+                <div className="flex gap-4 items-center">
+                    <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
+
                     <button onClick={triggerScrape} className="font-sans text-sm font-semibold uppercase tracking-wider bg-editorial-text text-editorial-bg px-4 py-2 hover:bg-editorial-text/80 transition-colors">
-                        Run Scraper
+                        Ejecutar Scrapper
                     </button>
                 </div>
             </nav>
@@ -57,8 +59,8 @@ export default function Dashboard() {
             {/* Main Content */}
             <main className="p-8 max-w-[1600px] mx-auto">
                 <div className="flex items-baseline justify-between mb-8">
-                    <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Latest Dispatches</h2>
-                    <span className="font-sans text-sm text-editorial-text/50">{articles.length} Articles Processed</span>
+                    <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h2>
+                    <span className="font-sans text-sm text-editorial-text/50">{articles.length} Articulos Procesados</span>
                 </div>
 
                 {loading ? (
@@ -81,7 +83,14 @@ export default function Dashboard() {
                                 )}
 
                                 <div className="flex items-center justify-between mb-3 font-sans text-xs uppercase tracking-widest text-editorial-text/60">
-                                    <span>{article.source?.name}</span>
+                                    <div className="flex items-center gap-2">
+                                        <span>{article.source?.name}</span>
+                                        {article.section && (
+                                            <span className="font-bold text-editorial-text/80 opacity-70 border-l border-editorial-text/20 pl-2">
+                                                {article.section}
+                                            </span>
+                                        )}
+                                    </div>
                                     <span className={`px-2 py-0.5 border ${article.status === 'PUBLISHED' ? 'bg-editorial-text text-editorial-bg border-editorial-text' : 'border-editorial-text/20'
                                         }`}>
                                         {article.status}

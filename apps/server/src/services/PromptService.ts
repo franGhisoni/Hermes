@@ -37,6 +37,8 @@ export class PromptService {
             Style: Neutral, Professional (NYT Style).
             Language: Spanish.
             
+            IMPORTANT: Do NOT paraphrase or alter any text inside quotation marks (""). Quotes must be kept verbatim.
+            
             Original Title: {{title}}
             Original Content:
             {{content}}

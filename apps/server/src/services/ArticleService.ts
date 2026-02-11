@@ -10,7 +10,7 @@ export class ArticleService {
         const vectorString = `[${embedding.join(',')}]`;
 
         const result = await prisma.$queryRaw`
-      SELECT id, "originalTitle" FROM "Article"
+      SELECT id, "originalTitle", "imageCandidates" FROM "Article"
       WHERE 1 - (embedding <=> ${vectorString}::vector) > ${1 - threshold}
       ORDER BY embedding <=> ${vectorString}::vector
       LIMIT 1;
@@ -44,7 +44,10 @@ export class ArticleService {
         originalContent: string;
         originalUrl: string;
         originalImageUrl?: string;
+        featureImageUrl?: string;
+        imageCandidates?: string[];
         sourceId: string;
+        section?: string;
         embedding: number[];
         rewrittenTitle?: string;
         rewrittenContent?: string;
@@ -62,10 +65,13 @@ export class ArticleService {
             data: {
                 id,
                 sourceId: data.sourceId,
+                section: data.section,
                 originalTitle: data.originalTitle,
                 originalContent: data.originalContent,
                 originalUrl: data.originalUrl,
                 originalImageUrl: data.originalImageUrl,
+                featureImageUrl: data.featureImageUrl,
+                imageCandidates: data.imageCandidates || [],
                 rewrittenTitle: data.rewrittenTitle,
                 rewrittenContent: data.rewrittenContent,
                 interestScore: data.interestScore,
@@ -97,5 +103,24 @@ export class ArticleService {
             where: { id },
             include: { source: true }
         });
+    }
+
+    async findByUrl(url: string) {
+        return prisma.article.findUnique({ where: { originalUrl: url } });
+    }
+
+    async addImageCandidate(articleId: string, imageUrl: string) {
+        const article = await prisma.article.findUnique({ where: { id: articleId }, select: { imageCandidates: true } });
+        if (!article) return;
+
+        const current = article.imageCandidates || [];
+        if (!current.includes(imageUrl)) {
+            await prisma.article.update({
+                where: { id: articleId },
+                data: {
+                    imageCandidates: [imageUrl, ...current]
+                }
+            });
+        }
     }
 }

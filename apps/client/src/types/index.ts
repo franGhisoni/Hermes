@@ -4,6 +4,8 @@ export interface Article {
     originalContent: string;
     originalUrl: string;
     originalImageUrl?: string;
+    featureImageUrl?: string;
+    imageCandidates?: string[];
     rewrittenTitle?: string;
     rewrittenContent?: string;
     interestScore?: number;
@@ -12,4 +14,5 @@ export interface Article {
     source?: {
         name: string;
     };
+    section?: string;
 }

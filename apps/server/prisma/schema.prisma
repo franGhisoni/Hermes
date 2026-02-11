@@ -22,11 +22,17 @@ model Source {
   routeRules      RouteRule[]
 }
 
+model SystemSetting {
+  key   String @id
+  value String
+}
+
 model Article {
   id              String   @id @default(uuid())
   sourceId        String
   source          Source   @relation(fields: [sourceId], references: [id])
   
+  section         String?  // e.g. "Politica", "Economia"
   originalTitle   String
   originalContent String
   originalUrl     String   @unique
@@ -41,6 +47,9 @@ model Article {
   // Rewrite
   rewrittenTitle   String?
   rewrittenContent String?
+  
+  featureImageUrl  String?  // The final image used for publication (Original, Found, or Generated)
+  imageCandidates  String[] // Array of candidate image URLs (from search or generation)
   
   status          ArticleStatus @default(PENDING)
   

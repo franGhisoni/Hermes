@@ -10,7 +10,12 @@ const prisma = new PrismaClient();
 const app = express();
 const port = process.env.PORT || 3000;
 
-app.use(cors());
+app.use(cors({
+    origin: '*', // Allow all origins (or replace with process.env.CLIENT_URL)
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 app.use(express.json());
 
 const queueService = new QueueService();

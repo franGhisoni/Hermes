@@ -1,3 +1,5 @@
+console.log('Starting Server...'); // Immediate log
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
@@ -5,11 +7,12 @@ import { QueueService } from './services/QueueService';
 import { ArticleService } from './services/ArticleService';
 import { PrismaClient } from '@prisma/client';
 
+console.log('Imports loaded.');
+
 const prisma = new PrismaClient();
 
 const app = express();
 const port = parseInt(process.env.PORT || '3000');
-app.options('*', cors());
 app.use(cors({
     origin: true, // Reflect request origin to support credentials
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -18,8 +21,17 @@ app.use(cors({
 }));
 app.use(express.json());
 
-const queueService = new QueueService();
-const articleService = new ArticleService();
+let queueService;
+let articleService;
+
+try {
+    console.log('Initializing Services...');
+    queueService = new QueueService();
+    articleService = new ArticleService();
+    console.log('Services initialized.');
+} catch (error) {
+    console.error('Failed to initialize services:', error);
+}
 
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {

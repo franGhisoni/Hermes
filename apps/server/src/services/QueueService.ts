@@ -7,6 +7,7 @@ import { NAScraper } from '../scrapers/NAScraper';
 import { ProcessorService } from './ProcessorService';
 
 // Connection config
+// Connection config
 const connection = process.env.REDIS_URL
     ? { url: process.env.REDIS_URL }
     : {

@@ -9,7 +9,7 @@ const prisma = new PrismaClient();
 
 const app = express();
 const port = parseInt(process.env.PORT || '3000');
-
+app.options('*', cors());
 app.use(cors({
     origin: true, // Reflect request origin to support credentials
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

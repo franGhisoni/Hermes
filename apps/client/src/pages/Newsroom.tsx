@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { api } from '../lib/api';
 import type { Article } from '../types';
 
 export default function Newsroom() {
@@ -11,7 +11,7 @@ export default function Newsroom() {
 
     useEffect(() => {
         if (!id) return;
-        axios.get(`http://localhost:3000/api/articles/${id}`)
+        api.get(`/api/articles/${id}`)
             .then(res => {
                 setArticle(res.data);
                 setLoading(false);
@@ -24,7 +24,7 @@ export default function Newsroom() {
         if (!id) return;
         setGenerating(true);
         try {
-            const res = await axios.post(`http://localhost:3000/api/articles/${id}/regenerate-image`);
+            const res = await api.post(`/api/articles/${id}/regenerate-image`);
             // Update local state with new image and candidates
             setArticle(prev => prev ? {
                 ...prev,
@@ -41,7 +41,7 @@ export default function Newsroom() {
     const handleSelectImage = async (url: string) => {
         if (!id) return;
         try {
-            await axios.put(`http://localhost:3000/api/articles/${id}/select-image`, { imageUrl: url });
+            await api.put(`/api/articles/${id}/select-image`, { imageUrl: url });
             setArticle(prev => prev ? { ...prev, featureImageUrl: url } : null);
         } catch (e) {
             alert('Failed to update image selection');
@@ -54,7 +54,7 @@ export default function Newsroom() {
         if (!id) return;
         setSearching(true);
         try {
-            const res = await axios.post(`http://localhost:3000/api/articles/${id}/search-images`);
+            const res = await api.post(`/api/articles/${id}/search-images`);
             setArticle(prev => prev ? {
                 ...prev,
                 imageCandidates: res.data.candidates
@@ -70,7 +70,7 @@ export default function Newsroom() {
         if (!id) return;
         if (confirm('Are you sure you want to delete this article?')) {
             try {
-                await axios.delete(`http://localhost:3000/api/articles/${id}`);
+                await api.delete(`/api/articles/${id}`);
                 navigate('/');
             } catch (error) {
                 alert('Failed to delete');

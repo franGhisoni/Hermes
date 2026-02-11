@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../lib/api';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 
@@ -9,7 +9,7 @@ export default function Dashboard() {
 
     const fetchArticles = async () => {
         try {
-            const res = await axios.get('http://localhost:3000/api/articles');
+            const res = await api.get('/api/articles');
             setArticles(res.data);
         } catch (error) {
             console.error(error);
@@ -20,7 +20,7 @@ export default function Dashboard() {
 
     const triggerScrape = async () => {
         try {
-            await axios.post('http://localhost:3000/api/scrape', {
+            await api.post('/api/scrape', {
                 source: 'Clarin', // Default for now, ideally selectable
                 url: 'https://www.clarin.com'
                 // limit is now handled by backend default if omitted

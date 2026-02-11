@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 
 interface PromptConfig {
@@ -16,19 +16,19 @@ export default function Settings() {
     const [_scrapeLimit, setScrapeLimit] = useState(3);
 
     useEffect(() => {
-        axios.get('http://localhost:3000/api/config/prompts')
+        api.get('/api/config/prompts')
             .then(res => {
                 setPrompts(res.data);
                 setLoading(false);
             });
 
-        axios.get('http://localhost:3000/api/config/settings')
+        api.get('/api/config/settings')
             .then(res => setScrapeLimit(res.data.scrapeLimit));
     }, []);
 
     const savePrompt = async (id: string, template: string) => {
         try {
-            await axios.put(`http://localhost:3000/api/config/prompts/${id}`, { template });
+            await api.put(`/api/config/prompts/${id}`, { template });
             alert('Prompt updated!');
         } catch (e) {
             alert('Failed to save');
@@ -94,7 +94,7 @@ export default function Settings() {
                                     defaultValue={3} // Initial render, effects will update
                                     className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
                                     onBlur={async (e) => {
-                                        await axios.post('http://localhost:3000/api/config/settings', { scrapeLimit: e.target.value });
+                                        await api.post('/api/config/settings', { scrapeLimit: e.target.value });
                                     }}
                                 // We'd ideally fetch and set value state, doing simple uncontrolled for speed here if consistent
                                 />

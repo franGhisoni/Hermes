@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import axios from 'axios';
+import { api } from '../lib/api';
 import { Play, Loader2 } from 'lucide-react';
 
 export function ScraperControl() {
@@ -18,7 +18,7 @@ export function ScraperControl() {
         setLoading(true);
         setMessage(`Starting ${source}...`);
         try {
-            await axios.post('http://localhost:3000/api/scrape', { source, url });
+            await api.post('/api/scrape', { source, url });
             setMessage(`Job added for ${source}`);
         } catch (error) {
             setMessage('Error starting job');

@@ -29,7 +29,11 @@ COPY . .
 # Debug: Check package.json content
 RUN cat package.json
 
-# Generate Prisma Client (Set dummy URL to pass validation)
+# Debug: Check package.json content
+RUN cat package.json
+
+# Generate Prisma Client (Set dummy URL via ENV to ensure validation passes)
+ARG DATABASE_URL
 ENV DATABASE_URL="postgresql://dummy:5432/mydb"
 RUN npx prisma generate
 

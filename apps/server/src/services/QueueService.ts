@@ -7,10 +7,13 @@ import { NAScraper } from '../scrapers/NAScraper';
 import { ProcessorService } from './ProcessorService';
 
 // Connection config
-const connection = {
-    host: process.env.REDIS_HOST || 'localhost',
-    port: parseInt(process.env.REDIS_PORT || '6379'),
-};
+const connection = process.env.REDIS_URL
+    ? { url: process.env.REDIS_URL }
+    : {
+        host: process.env.REDIS_HOST || 'localhost',
+        port: parseInt(process.env.REDIS_PORT || '6379'),
+        password: process.env.REDIS_PASSWORD
+    };
 
 // Queue Names
 export const QUEUES = {

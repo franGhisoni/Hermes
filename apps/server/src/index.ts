@@ -198,7 +198,11 @@ app.post('/api/articles/:id/search-images', async (req, res) => {
     }
 });
 
-app.listen(port, '0.0.0.0', () => {
+const server = app.listen(port, '0.0.0.0', () => {
     console.log(`Server running at http://0.0.0.0:${port}`);
     console.log(`Environment: ${process.env.NODE_ENV}`);
+});
+
+server.on('error', (err) => {
+    console.error('Server failed to start:', err);
 });

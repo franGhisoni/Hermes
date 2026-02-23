@@ -1,5 +1,13 @@
 import OpenAI from 'openai';
 
+// Patterns in URLs that indicate non-content images (icons, UI elements, ads)
+const BLOCKED_URL_PATTERNS = [
+    'logo', 'favicon', 'banner', 'icon', 'avatar', 'sprite',
+    'widget', 'badge', 'button', 'arrow', 'nav-', 'menu-',
+    'ad-', 'ads/', 'pixel', 'tracker', 'beacon',
+    'google.com/images', 'gstatic.com/images/branding'
+];
+
 export class ImageService {
     private openai: OpenAI;
 
@@ -50,61 +58,49 @@ export class ImageService {
             // Set viewport to ensure images render
             await page.setViewport({ width: 1280, height: 800 });
 
-            // Google Images URL
-            // tbm=isch means Google Images
-            // gl=ar for Argentina context
-            const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch&gl=ar`;
+            // Bing Images URL
+            const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}`;
 
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
 
-            console.log('[ImageService] Page loaded, scrolling...');
-
-            // Scroll to trigger lazy loading
-            await page.evaluate(async () => {
-                await new Promise<void>((resolve) => {
-                    let totalHeight = 0;
-                    const distance = 100;
-                    const timer = setInterval(() => {
-                        const scrollHeight = document.body.scrollHeight;
-                        window.scrollBy(0, distance);
-                        totalHeight += distance;
-                        if (totalHeight >= scrollHeight || totalHeight > 2000) { // Limit scroll
-                            clearInterval(timer);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            });
-
-            // Wait a bit for images to populate
-            await new Promise(r => setTimeout(r, 2000));
+            console.log('[ImageService] Page loaded, extracting Bing images...');
 
             const images = await page.evaluate(() => {
                 const results: string[] = [];
-                const imgs = document.querySelectorAll('img');
-                console.log(`Found ${imgs.length} total img tags`);
+                const anchors = document.querySelectorAll('a.iusc');
 
-                imgs.forEach((img: any) => {
-                    const src = img.src || img.getAttribute('data-src');
-                    // Relaxed filter: Allow base64 for thumbnails if needed, but prefer http
-                    // Google thumbnails are often base64 or weird encrypted blobs
-                    if (src && (src.startsWith('http') || src.startsWith('data:image'))) {
-                        // Re-enabled size filter
-                        if (img.width > 50 && img.height > 50) {
-                            if (!src.includes('favicon') && !src.includes('google.com/images')) {
-                                results.push(src);
+                anchors.forEach((a: any) => {
+                    try {
+                        const m = a.getAttribute('m');
+                        if (m) {
+                            const parsed = JSON.parse(m);
+                            if (parsed.murl && parsed.murl.startsWith('http')) {
+                                results.push(parsed.murl);
                             }
                         }
+                    } catch (e) {
+                        // ignore parse errors
                     }
                 });
 
-                // Return unique top 10
-                return [...new Set(results)].slice(0, 10);
+                // Return unique results
+                return [...new Set(results)];
             });
 
-            console.log(`[ImageService] Found ${images.length} images.`);
-            return images;
+            // Apply URL pattern filtering (logos, favicons, UI elements, etc.)
+            const filtered = images.filter((imgUrl: string) => {
+                const lower = imgUrl.toLowerCase();
+                return !BLOCKED_URL_PATTERNS.some(pattern => lower.includes(pattern));
+            });
+
+            // Validate URLs are actually reachable images (limit to top 6)
+            const toValidate = filtered.slice(0, 8); // validate a few extra in case some fail
+            const validated = await this.validateImageUrls(toValidate);
+
+            const finalResults = validated.slice(0, 6);
+            console.log(`[ImageService] Found ${images.length} raw → ${filtered.length} filtered → ${finalResults.length} validated.`);
+            return finalResults;
 
         } catch (error) {
             console.error('[ImageService] Search failed:', error);
@@ -112,6 +108,43 @@ export class ImageService {
         } finally {
             if (browser) await browser.close();
         }
+    }
+
+    /**
+     * Validate that image URLs are reachable and actually return image content.
+     * Uses HEAD requests with a short timeout to avoid blocking the pipeline.
+     */
+    private async validateImageUrls(urls: string[]): Promise<string[]> {
+        const results = await Promise.allSettled(
+            urls.map(async (url) => {
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 3000);
+
+                    const response = await fetch(url, {
+                        method: 'HEAD',
+                        signal: controller.signal,
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        }
+                    });
+                    clearTimeout(timeout);
+
+                    if (!response.ok) return null;
+
+                    const contentType = response.headers.get('content-type') || '';
+                    if (!contentType.startsWith('image/')) return null;
+
+                    return url;
+                } catch {
+                    return null;
+                }
+            })
+        );
+
+        return results
+            .map(r => r.status === 'fulfilled' ? r.value : null)
+            .filter((url): url is string => url !== null);
     }
 
     public async generateImage(prompt: string): Promise<string | null> {

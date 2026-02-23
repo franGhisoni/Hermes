@@ -95,16 +95,36 @@ export class AIService {
             const messages: any[] = [
                 {
                     role: "system",
-                    content: `You are a photo editor for a news agency. You will be provided with a news article title and a list of candidate images. Your job is to select the ONE image that best represents the article, is high quality, and is most relevant. Return ONLY the index of the selected image (0-based) as a JSON object: { "selectedIndex": number }.`
+                    content: `You are a photo editor for a digital news agency. You will receive a news article title, a content snippet, and candidate images.
+
+Your job is to select the ONE best image for this article, or REJECT ALL if none are suitable.
+
+REJECT an image if it has ANY of these problems:
+- Text overlaid on the image (titles, headlines, captions, banners, zócalos)
+- TV screen captures or studio shots with chyrons/lower thirds
+- Visible logos or branding from media companies (e.g. "La Nación", "TN", "Clarín", "C5N")
+- Watermarks
+- Extremely low quality, blurry, or heavily compressed
+- Collages or composite images with multiple photos stitched together
+- Generic stock photo illustrations that don't relate to the specific news story
+
+PREFER images that are:
+- Clean photojournalistic shots without overlays
+- High quality, well-framed photos of people, events, or places relevant to the article
+- Photos that could stand on their own without explanation
+
+Return a JSON object: { "selectedIndex": number }
+- Use 0-based index for the best image
+- Use -1 if ALL images should be rejected (none are suitable)`
                 },
                 {
                     role: "user",
                     content: [
-                        { type: "text", text: `Article Title: ${title}\nContent Snippet: ${content.substring(0, 300)}\n\nSelect the best image from the following:` },
-                        ...imageUrls.slice(0, 5).map(url => ({
-                            type: "image_url",
-                            image_url: { url: url }
-                        }))
+                        { type: "text", text: `Article Title: ${title}\nContent Snippet: ${content.substring(0, 300)}\n\nSelect the best image from the following ${Math.min(imageUrls.length, 5)} candidates:` },
+                        ...imageUrls.slice(0, 5).flatMap((url, i) => ([
+                            { type: "text", text: `--- Candidate Index: ${i} ---` },
+                            { type: "image_url", image_url: { url: url, detail: "low" } }
+                        ]))
                     ]
                 }
             ];
@@ -118,6 +138,12 @@ export class AIService {
 
             const result = JSON.parse(completion.choices[0].message.content || '{}');
             const index = result.selectedIndex;
+
+            // -1 means all images rejected
+            if (index === -1) {
+                console.log('[AIService] ❌ AI rejected ALL image candidates.');
+                return null;
+            }
 
             if (typeof index === 'number' && index >= 0 && index < imageUrls.length) {
                 return imageUrls[index];

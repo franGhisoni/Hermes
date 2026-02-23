@@ -78,15 +78,24 @@ export class ProcessorService {
 
         // Always gather candidates to give AI a choice, even if original exists
         const imageService = new ImageService();
-        // searchImages returns promise of string[]
         const searchResults = await imageService.searchImages(article.title);
+
+        // Extract source domain to filter out images from the same publication
+        // (they likely have the same branding/overlays as the original)
+        const sourceDomain = this.extractDomain(article.url);
 
         // Build candidate list: Start with original (if valid), then search results
         const uniqueCandidates = new Set<string>();
         if (article.imageUrl && article.imageUrl.startsWith('http')) {
             uniqueCandidates.add(article.imageUrl);
         }
-        searchResults.forEach(url => uniqueCandidates.add(url));
+        // Filter search results: exclude images from the same domain as the article
+        searchResults
+            .filter(url => {
+                const imgDomain = this.extractDomain(url);
+                return imgDomain !== sourceDomain;
+            })
+            .forEach(url => uniqueCandidates.add(url));
 
         imageCandidates = Array.from(uniqueCandidates);
 
@@ -99,10 +108,17 @@ export class ProcessorService {
                 featureImageUrl = bestImage;
                 console.log(`[Processor] AI selected: ${featureImageUrl}`);
             } else {
-                featureImageUrl = imageCandidates[0]; // Fallback
+                // AI rejected all candidates (text overlays, logos, etc.)
+                // Fall through to DALL-E generation
+                console.log(`[Processor] AI rejected all candidates. Falling back to DALL-E...`);
+                const generated = await imageService.generateImage(article.title);
+                if (generated) {
+                    featureImageUrl = generated;
+                    imageCandidates.push(generated);
+                }
             }
         } else {
-            // Fallback generation if absolutely no images found
+            // No candidates at all — generate
             console.log(`[Processor] No images found. Generating...`);
             const generated = await imageService.generateImage(article.title);
             if (generated) {
@@ -120,6 +136,7 @@ export class ProcessorService {
             originalUrl: article.url,
             originalImageUrl: article.imageUrl,
             featureImageUrl: featureImageUrl,
+            imageCandidates: imageCandidates,
             embedding,
             rewrittenTitle: rewritten.title,
             rewrittenContent: rewritten.content,
@@ -150,5 +167,18 @@ export class ProcessorService {
         }
 
         return false;
+    }
+
+    /**
+     * Extract the domain from a URL (e.g. "https://www.clarin.com/foo" → "clarin.com")
+     */
+    private extractDomain(url: string): string {
+        try {
+            const hostname = new URL(url).hostname;
+            // Remove 'www.' prefix for consistent comparison
+            return hostname.replace(/^www\./, '');
+        } catch {
+            return '';
+        }
     }
 }

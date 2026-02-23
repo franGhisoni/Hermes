@@ -6,6 +6,7 @@ export interface Article {
     originalImageUrl?: string;
     featureImageUrl?: string;
     imageCandidates?: string[];
+    imageScores?: Record<string, number>;
     rewrittenTitle?: string;
     rewrittenContent?: string;
     interestScore?: number;

@@ -16,12 +16,12 @@ export function ScraperControl() {
 
     const handleScrape = async (source: string, url: string) => {
         setLoading(true);
-        setMessage(`Starting ${source}...`);
+        setMessage(`Iniciando ${source}...`);
         try {
             await api.post('/api/scrape', { source, url });
-            setMessage(`Job added for ${source}`);
+            setMessage(`Trabajo de scraping iniciado para ${source}`);
         } catch (error) {
-            setMessage('Error starting job');
+            setMessage('Error al iniciar el trabajo');
             console.error(error);
         } finally {
             setLoading(false);
@@ -37,7 +37,7 @@ export function ScraperControl() {
                 </div>
             )}
             <div className="bg-white/90 backdrop-blur border border-editorial-text/10 p-4 rounded-lg shadow-xl">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 mb-3">Manual Scraper</h3>
+                <h3 className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 mb-3">Scraper Manual</h3>
                 <div className="flex flex-col gap-2">
                     {scrapers.map(s => (
                         <button

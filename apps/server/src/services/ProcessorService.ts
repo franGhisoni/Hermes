@@ -99,13 +99,15 @@ export class ProcessorService {
 
         imageCandidates = Array.from(uniqueCandidates);
 
+        let imageScoresDict: Record<string, number> | undefined = undefined;
+
         // If we have candidates, let AI pick the best one
         if (imageCandidates.length > 0) {
             console.log(`[Processor] AI Selecting best image from ${imageCandidates.length} candidates...`);
-            const bestImage = await this.aiService.selectBestImage(article.title, article.content, imageCandidates);
+            const bestImageResult = await this.aiService.selectBestImage(article.title, article.content, imageCandidates);
 
-            if (bestImage) {
-                featureImageUrl = bestImage;
+            if (bestImageResult.url) {
+                featureImageUrl = bestImageResult.url;
                 console.log(`[Processor] AI selected: ${featureImageUrl}`);
             } else {
                 // AI rejected all candidates (text overlays, logos, etc.)
@@ -115,15 +117,24 @@ export class ProcessorService {
                 if (generated) {
                     featureImageUrl = generated;
                     imageCandidates.push(generated);
+                    bestImageResult.scores.push(10); // Assume DALL-E is 10
                 }
             }
+
+            // Create dictionary of scores
+            imageScoresDict = {};
+            imageCandidates.forEach((url, i) => {
+                imageScoresDict![url] = bestImageResult.scores[i] || 0;
+            });
+
         } else {
-            // No candidates at all — generate
+            // No candidates at all ? generate
             console.log(`[Processor] No images found. Generating...`);
             const generated = await imageService.generateImage(article.title);
             if (generated) {
                 featureImageUrl = generated;
                 imageCandidates.push(generated);
+                imageScoresDict = { [generated]: 10 };
             }
         }
 
@@ -137,6 +148,7 @@ export class ProcessorService {
             originalImageUrl: article.imageUrl,
             featureImageUrl: featureImageUrl,
             imageCandidates: imageCandidates,
+            imageScores: imageScoresDict,
             embedding,
             rewrittenTitle: rewritten.title,
             rewrittenContent: rewritten.content,

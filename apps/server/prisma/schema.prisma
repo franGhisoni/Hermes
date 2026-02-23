@@ -50,6 +50,7 @@ model Article {
   
   featureImageUrl  String?  // The final image used for publication (Original, Found, or Generated)
   imageCandidates  String[] // Array of candidate image URLs (from search or generation)
+  imageScores      Json?    // Map of { "url": score }
   
   status          ArticleStatus @default(PENDING)
   

@@ -46,6 +46,7 @@ export class ArticleService {
         originalImageUrl?: string;
         featureImageUrl?: string;
         imageCandidates?: string[];
+        imageScores?: Record<string, number>;
         sourceId: string;
         section?: string;
         embedding: number[];
@@ -72,6 +73,7 @@ export class ArticleService {
                 originalImageUrl: data.originalImageUrl,
                 featureImageUrl: data.featureImageUrl,
                 imageCandidates: data.imageCandidates || [],
+                imageScores: data.imageScores || {},
                 rewrittenTitle: data.rewrittenTitle,
                 rewrittenContent: data.rewrittenContent,
                 interestScore: data.interestScore,

@@ -87,9 +87,9 @@ export class AIService {
         return isNaN(score) ? 5 : score;
     }
 
-    async selectBestImage(title: string, content: string, imageUrls: string[]): Promise<string | null> {
-        if (!imageUrls || imageUrls.length === 0) return null;
-        if (imageUrls.length === 1) return imageUrls[0];
+    async selectBestImage(title: string, content: string, imageUrls: string[]): Promise<{ url: string | null, scores: number[] }> {
+        if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [] };
+        if (imageUrls.length === 1) return { url: imageUrls[0], scores: [10] };
 
         try {
             const messages: any[] = [
@@ -98,8 +98,9 @@ export class AIService {
                     content: `You are a photo editor for a digital news agency. You will receive a news article title, a content snippet, and candidate images.
 
 Your job is to select the ONE best image for this article, or REJECT ALL if none are suitable.
+Additionally, you must evaluate EVERY candidate image and assign it a score from 1 to 10 based on its quality, relevance, and lack of overlays.
 
-REJECT an image if it has ANY of these problems:
+REJECT an image (score it low, e.g. 1-3) if it has ANY of these problems:
 - Text overlaid on the image (titles, headlines, captions, banners, zócalos)
 - TV screen captures or studio shots with chyrons/lower thirds
 - Visible logos or branding from media companies (e.g. "La Nación", "TN", "Clarín", "C5N")
@@ -108,14 +109,18 @@ REJECT an image if it has ANY of these problems:
 - Collages or composite images with multiple photos stitched together
 - Generic stock photo illustrations that don't relate to the specific news story
 
-PREFER images that are:
+PREFER images (score them high, e.g. 7-10) that are:
 - Clean photojournalistic shots without overlays
 - High quality, well-framed photos of people, events, or places relevant to the article
 - Photos that could stand on their own without explanation
 
-Return a JSON object: { "selectedIndex": number }
+Return a JSON object: 
+{ 
+  "selectedIndex": number, 
+  "scores": [number] // Array of scores (1-10) corresponding to each image candidate in the exact order they were provided
+}
 - Use 0-based index for the best image
-- Use -1 if ALL images should be rejected (none are suitable)`
+- Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`
                 },
                 {
                     role: "user",
@@ -133,26 +138,27 @@ Return a JSON object: { "selectedIndex": number }
                 model: "gpt-4o-mini",
                 messages: messages,
                 response_format: { type: "json_object" },
-                max_tokens: 50
+                max_tokens: 100
             });
 
             const result = JSON.parse(completion.choices[0].message.content || '{}');
             const index = result.selectedIndex;
+            const scores = result.scores || imageUrls.map(() => 0);
 
             // -1 means all images rejected
             if (index === -1) {
                 console.log('[AIService] ❌ AI rejected ALL image candidates.');
-                return null;
+                return { url: null, scores };
             }
 
             if (typeof index === 'number' && index >= 0 && index < imageUrls.length) {
-                return imageUrls[index];
+                return { url: imageUrls[index], scores };
             }
-            return imageUrls[0]; // Fallback to first
+            return { url: imageUrls[0], scores }; // Fallback to first
 
         } catch (error) {
             console.error('[AIService] Image selection failed:', error);
-            return imageUrls[0]; // Fallback
+            return { url: imageUrls[0], scores: imageUrls.map(() => 0) }; // Fallback
         }
     }
 }

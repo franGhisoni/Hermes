@@ -86,14 +86,14 @@ export default function Newsroom() {
             {/* Header */}
             <header className="h-16 border-b border-editorial-text/10 flex items-center px-6 justify-between bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
-                    <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Back to Dashboard</Link>
+                    <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
                 </div>
                 <div className="flex gap-3">
                     <button onClick={handleReject} className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
-                        Reject
+                        Rechazar
                     </button>
                     <button className="px-4 py-2 bg-editorial-text text-editorial-bg hover:bg-editorial-text/90 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors">
-                        Publish Article
+                        Publicar Artículo
                     </button>
                 </div>
             </header>
@@ -106,7 +106,7 @@ export default function Newsroom() {
                         <div className="mb-8 pb-4 border-b border-editorial-text/10">
                             <div className="flex items-center gap-2 mb-2">
                                 <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text/50">
-                                    Original Source
+                                    Fuente Original
                                 </span>
                                 {article.section && (
                                     <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-editorial-bg bg-editorial-text/40 px-1.5 py-0.5 rounded-full">
@@ -139,9 +139,9 @@ export default function Newsroom() {
                 <div className="flex-1 p-12 overflow-y-auto bg-editorial-bg">
                     <div className="max-w-2xl mx-auto">
                         <div className="mb-8 flex justify-between items-center border-b border-editorial-text/10 pb-4">
-                            <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text">AI Rewrite Draft</span>
+                            <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text">Borrador IA</span>
                             <div className="flex items-center gap-2">
-                                <span className="font-sans text-xs uppercase tracking-widest text-editorial-text/50">Interest Score</span>
+                                <span className="font-sans text-xs uppercase tracking-widest text-editorial-text/50">Score de Interés</span>
                                 <span className="bg-editorial-text text-editorial-bg text-xs font-bold px-2 py-0.5 rounded-full font-mono">
                                     {article.interestScore}/10
                                 </span>
@@ -149,72 +149,87 @@ export default function Newsroom() {
                         </div>
 
 
-                        {article.featureImageUrl && (
-                            <div className="mb-8">
-                                <div className="relative group rounded-lg overflow-hidden border border-editorial-text/10 shadow-md mb-4 bg-gray-100">
-                                    <img src={article.featureImageUrl} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
-                                    <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-                                        <button
-                                            onClick={handleRegenerate}
-                                            disabled={generating}
-                                            className="bg-editorial-text text-editorial-bg px-3 py-1 rounded text-xs font-bold uppercase tracking-widest shadow flex items-center gap-2 hover:bg-black"
-                                        >
-                                            {generating ? 'Generating...' : 'Regenerate'}
-                                        </button>
-                                        <button
-                                            onClick={handleSearch}
-                                            disabled={searching}
-                                            className="bg-white text-editorial-text px-3 py-1 rounded text-xs font-bold uppercase tracking-widest shadow flex items-center gap-2 hover:bg-gray-100"
-                                        >
-                                            {searching ? 'Searching...' : 'Search Web'}
-                                        </button>
-                                    </div>
-
-                                    {/* Restore Original Button (if different) */}
-                                    {article.originalImageUrl && article.featureImageUrl !== article.originalImageUrl && (
-                                        <div className="absolute bottom-2 right-2">
+                        {article.featureImageUrl && (() => {
+                            const featureScore = article.imageScores?.[article.featureImageUrl];
+                            return (
+                                <div className="mb-8">
+                                    <div className="relative group rounded-lg overflow-hidden border border-editorial-text/10 shadow-md mb-4 bg-gray-100">
+                                        {featureScore !== undefined && (
+                                            <div className="absolute top-2 left-2 bg-editorial-text text-editorial-bg text-xs font-bold px-2 py-1 rounded shadow z-10">
+                                                ★ Score: {featureScore}/10
+                                            </div>
+                                        )}
+                                        <img src={article.featureImageUrl} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
+                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                                             <button
-                                                onClick={() => handleSelectImage(article.originalImageUrl!)}
-                                                className="bg-black/50 backdrop-blur text-white px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest hover:bg-black/70"
+                                                onClick={handleRegenerate}
+                                                disabled={generating}
+                                                className="bg-editorial-text text-editorial-bg px-3 py-1 rounded text-xs font-bold uppercase tracking-widest shadow flex items-center gap-2 hover:bg-black"
                                             >
-                                                Restore Original
+                                                {generating ? 'Generating...' : 'Regenerate'}
+                                            </button>
+                                            <button
+                                                onClick={handleSearch}
+                                                disabled={searching}
+                                                className="bg-white text-editorial-text px-3 py-1 rounded text-xs font-bold uppercase tracking-widest shadow flex items-center gap-2 hover:bg-gray-100"
+                                            >
+                                                {searching ? 'Searching...' : 'Search Web'}
                                             </button>
                                         </div>
-                                    )}
-                                </div>
 
-                                {/* Candidates Carousel */}
-                                <div className="mt-2">
-                                    <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/40 mb-1 block">Image Candidates</span>
+                                        {/* Restore Original Button (if different) */}
+                                        {article.originalImageUrl && article.featureImageUrl !== article.originalImageUrl && (
+                                            <div className="absolute bottom-2 right-2">
+                                                <button
+                                                    onClick={() => handleSelectImage(article.originalImageUrl!)}
+                                                    className="bg-black/50 backdrop-blur text-white px-2 py-1 rounded text-[10px] font-bold uppercase tracking-widest hover:bg-black/70"
+                                                >
+                                                    Restaurar Original
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
 
-                                    {article.imageCandidates && article.imageCandidates.length > 0 ? (
-                                        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                                            {article.imageCandidates.map((url, idx) => {
-                                                const isOriginal = url === article.originalImageUrl;
-                                                return (
-                                                    <div
-                                                        key={idx}
-                                                        onClick={() => handleSelectImage(url)}
-                                                        className={`relative flex-shrink-0 w-24 h-24 rounded border-2 cursor-pointer overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                                                    >
-                                                        <img src={url} className="w-full h-full object-cover" />
-                                                        {isOriginal && (
-                                                            <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] font-bold uppercase text-center py-0.5">
-                                                                Original
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    ) : (
-                                        <div className="text-xs text-editorial-text/50 italic border border-dashed border-editorial-text/20 rounded p-4 text-center">
-                                            No other candidates. Click "Search Web" or "Regenerate" to find more images.
-                                        </div>
-                                    )}
+                                    {/* Candidates Carousel */}
+                                    <div className="mt-2">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/40 mb-1 block">Imágenes Candidatas</span>
+
+                                        {article.imageCandidates && article.imageCandidates.length > 0 ? (
+                                            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                                                {article.imageCandidates.map((url, idx) => {
+                                                    const isOriginal = url === article.originalImageUrl;
+                                                    const score = article.imageScores?.[url];
+
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            onClick={() => handleSelectImage(url)}
+                                                            className={`relative flex-shrink-0 w-24 h-24 rounded border-2 cursor-pointer overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                        >
+                                                            {score !== undefined && (
+                                                                <div className="absolute top-0 right-0 bg-editorial-text text-editorial-bg text-[10px] font-bold px-1.5 py-0.5 opacity-90 z-10">
+                                                                    {score}/10
+                                                                </div>
+                                                            )}
+                                                            <img src={url} className="w-full h-full object-cover" />
+                                                            {isOriginal && (
+                                                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] font-bold uppercase text-center py-0.5">
+                                                                    Original
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div className="text-xs text-editorial-text/50 italic border border-dashed border-editorial-text/20 rounded p-4 text-center">
+                                                No hay más candidatas. Haz clic en "Buscar Web" o "Regenerar" para encontrar más imágenes.
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         <input
                             className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight"

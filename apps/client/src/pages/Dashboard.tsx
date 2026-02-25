@@ -90,8 +90,9 @@ export default function Dashboard() {
             {/* Navigation Bar */}
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
-                    <img src="/logo.png" alt="Hermes Logo" className="h-12 w-auto mix-blend-multiply opacity-90" />
-                    <h1 className="text-4xl font-black tracking-tight italic">Hermes.</h1>
+                    <Link to="/">
+                        <img src="/logo.png" alt="Hermes Logo" className="h-12 w-auto mix-blend-multiply opacity-90 transition-opacity hover:opacity-100" />
+                    </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                 </div>

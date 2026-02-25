@@ -26,20 +26,8 @@ RUN npm ci
 # Copy source code
 COPY . .
 
-# Debug: Check package.json content
-RUN cat package.json
-
-# Debug: Check package.json content
-RUN cat package.json
-
-# Debug: Check package.json content
-RUN cat package.json
-
 # Generate Prisma Client (Create .env file to guarantee validation passes, ignoring any ARGs)
 RUN echo "DATABASE_URL=postgresql://dummy:5432/mydb" > .env && npx prisma generate
-
-# Build TypeScript
-RUN npm run build
 
 # Build TypeScript
 RUN npm run build

@@ -1,5 +1,5 @@
-import cron from 'node-cron';
-import { PrismaClient, Workflow } from '@prisma/client';
+import cron, { ScheduledTask } from 'node-cron';
+import { PrismaClient } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
 import { ArticleService } from './ArticleService';
@@ -10,7 +10,7 @@ export class SchedulerService {
     private queueService: QueueService;
     private mailService: MailService;
     private articleService: ArticleService;
-    private activeJobs: Map<string, cron.ScheduledTask> = new Map();
+    private activeJobs: Map<string, ScheduledTask> = new Map();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
         this.queueService = queueService;

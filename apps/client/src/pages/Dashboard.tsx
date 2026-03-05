@@ -18,7 +18,6 @@ export default function Dashboard() {
     const [groupBy, setGroupBy] = useState<'none' | 'source' | 'section'>('none');
 
     const sources = Array.from(new Set(articles.map(a => a.source?.name).filter(Boolean))) as string[];
-    const sections = Array.from(new Set(articles.map(a => a.section).filter(Boolean))) as string[];
     const statuses = Array.from(new Set(articles.map(a => a.status).filter(Boolean))) as string[];
 
     const processedArticles = useMemo(() => {

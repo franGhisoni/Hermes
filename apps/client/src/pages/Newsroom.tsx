@@ -3,11 +3,26 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Article } from '../types';
 
+interface Target {
+    id: string;
+    name: string;
+    email: string;
+}
+
 export default function Newsroom() {
     const { id } = useParams();
     const navigate = useNavigate();
     const [article, setArticle] = useState<Article | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // Publish modal state
+    const [showPublishModal, setShowPublishModal] = useState(false);
+    const [targets, setTargets] = useState<Target[]>([]);
+    const [sections, setSections] = useState<{ id: string, name: string, path: string }[]>([]);
+    const [selectedTargetId, setSelectedTargetId] = useState('');
+    const [selectedCategory, setSelectedCategory] = useState('');
+    const [publishing, setPublishing] = useState(false);
+    const [loadingTargets, setLoadingTargets] = useState(false);
 
     useEffect(() => {
         if (!id) return;
@@ -25,7 +40,6 @@ export default function Newsroom() {
         setGenerating(true);
         try {
             const res = await api.post(`/api/articles/${id}/regenerate-image`);
-            // Update local state with new image and candidates
             setArticle(prev => prev ? {
                 ...prev,
                 featureImageUrl: res.data.url,
@@ -78,6 +92,43 @@ export default function Newsroom() {
         }
     };
 
+    const openPublishModal = async () => {
+        setShowPublishModal(true);
+        setLoadingTargets(true);
+        // Auto-set category from article's section
+        setSelectedCategory(article?.section || '');
+        try {
+            const [targetsRes, sectionsRes] = await Promise.all([
+                api.get('/api/targets'),
+                api.get('/api/config/sections')
+            ]);
+            setTargets(targetsRes.data);
+            setSections(sectionsRes.data);
+            if (targetsRes.data.length > 0) {
+                setSelectedTargetId(targetsRes.data[0].id);
+            }
+        } catch (error) {
+            console.error('Error fetching publish data:', error);
+        } finally {
+            setLoadingTargets(false);
+        }
+    };
+
+    const handlePublish = async () => {
+        if (!id || !selectedTargetId) return;
+        setPublishing(true);
+        try {
+            const res = await api.post(`/api/articles/${id}/publish`, { targetId: selectedTargetId, category: selectedCategory || undefined });
+            setArticle(prev => prev ? { ...prev, status: 'PUBLISHED' } : null);
+            setShowPublishModal(false);
+            alert(`✅ ${res.data.message}`);
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'Failed to publish'));
+        } finally {
+            setPublishing(false);
+        }
+    };
+
     if (loading) return <div className="text-editorial-text p-10 font-serif">Loading Editor...</div>;
     if (!article) return <div className="text-editorial-text p-10 font-serif">Article not found</div>;
 
@@ -92,11 +143,108 @@ export default function Newsroom() {
                     <button onClick={handleReject} className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                         Rechazar
                     </button>
-                    <button className="px-4 py-2 bg-editorial-text text-editorial-bg hover:bg-editorial-text/90 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors">
-                        Publicar Artículo
+                    <button
+                        onClick={openPublishModal}
+                        className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors ${article.status === 'PUBLISHED'
+                            ? 'bg-green-700 text-white hover:bg-green-800'
+                            : 'bg-editorial-text text-editorial-bg hover:bg-editorial-text/90'
+                            }`}
+                    >
+                        {article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
                     </button>
                 </div>
             </header>
+
+            {/* Publish Modal */}
+            {showPublishModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowPublishModal(false)}>
+                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold mb-2">Publicar Artículo</h3>
+                        <p className="font-sans text-sm text-editorial-text/60 mb-4">
+                            Seleccioná el medio y la categoría para publicar este artículo.
+                        </p>
+
+                        {loadingTargets ? (
+                            <div className="py-8 text-center font-sans text-sm opacity-50 animate-pulse">Cargando medios...</div>
+                        ) : targets.length === 0 ? (
+                            <div className="py-8 text-center font-sans text-sm">
+                                <p className="text-editorial-text/60 mb-2">No hay medios configurados.</p>
+                                <Link to="/flows" className="text-editorial-text font-bold underline underline-offset-4 hover:opacity-80">
+                                    Configurar Medios →
+                                </Link>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="flex flex-col gap-2 mb-6 max-h-60 overflow-y-auto">
+                                    {targets.map(t => (
+                                        <label
+                                            key={t.id}
+                                            className={`flex items-center gap-3 p-3 border cursor-pointer transition-all font-sans text-sm ${selectedTargetId === t.id
+                                                ? 'border-editorial-text bg-editorial-text/5 shadow-sm'
+                                                : 'border-editorial-text/10 hover:border-editorial-text/30'
+                                                }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="target"
+                                                value={t.id}
+                                                checked={selectedTargetId === t.id}
+                                                onChange={() => setSelectedTargetId(t.id)}
+                                                className="accent-editorial-text"
+                                            />
+                                            <div className="flex flex-col">
+                                                <span className="font-bold">{t.name}</span>
+                                                <span className="text-xs text-editorial-text/50">{t.email}</span>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
+
+                                {/* Category selector */}
+                                <div className="mb-6">
+                                    <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Categoría</label>
+                                    <select
+                                        value={selectedCategory}
+                                        onChange={e => setSelectedCategory(e.target.value)}
+                                        className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
+                                    >
+                                        <option value="">Sin categoría</option>
+                                        {sections.map(s => (
+                                            <option key={s.id} value={s.name}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                    {selectedCategory && (
+                                        <span className="text-[10px] text-editorial-text/40 mt-1 block font-sans italic">
+                                            Se publicará con la categoría: {selectedCategory}
+                                        </span>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-3 justify-end">
+                                    <button
+                                        onClick={() => setShowPublishModal(false)}
+                                        className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-xs font-sans font-bold uppercase tracking-widest transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={handlePublish}
+                                        disabled={publishing || !selectedTargetId}
+                                        className="px-6 py-2 bg-editorial-text text-editorial-bg hover:bg-black text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {publishing ? (
+                                            <>
+                                                <span className="inline-block w-3 h-3 border-2 border-editorial-bg/30 border-t-editorial-bg rounded-full animate-spin"></span>
+                                                Enviando...
+                                            </>
+                                        ) : 'Enviar'}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Split View */}
             <div className="flex-1 flex overflow-hidden">
@@ -255,3 +403,4 @@ export default function Newsroom() {
 
     );
 }
+

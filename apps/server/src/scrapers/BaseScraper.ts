@@ -1,4 +1,7 @@
 import puppeteer, { Browser, Page } from 'puppeteer';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export interface ScrapedArticle {
     title: string;
@@ -12,8 +15,6 @@ export interface ScrapedArticle {
 export abstract class BaseScraper {
     abstract name: string;
     abstract baseUrl: string;
-    // Specific sections to scrape in addition to the base URL
-    abstract sections: string[];
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
@@ -65,21 +66,16 @@ export abstract class BaseScraper {
 
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
 
-            // Construct list of URLs to visit: Base URL + Sections
-            // Map to an object { url: string, sectionName: string }
+            // Construct list of URLs to visit: just use the active baseUrl
+            // Derive section name from the URL path (e.g. /politica -> Politica)
+            const urlPath = new URL(this.baseUrl).pathname;
+            let sectionName = 'Portada';
+            if (urlPath && urlPath !== '/') {
+                const segment = urlPath.split('/').filter(p => p).pop() || 'Portada';
+                sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
+            }
             const targets = [
-                { url: this.baseUrl, section: 'Portada' },
-                ...this.sections.map(s => {
-                    // Fix: Ensure we don't duplicate slashes if baseUrl ends with one and section starts with one
-                    let base = this.baseUrl;
-                    if (base.endsWith('/')) base = base.slice(0, -1);
-                    const sectionPath = s.startsWith('/') ? s : `/${s}`;
-
-                    const url = s.startsWith('http') ? s : `${base}${sectionPath}`;
-                    // Derive section name from path (e.g. /politica -> Politica) or use a config map later
-                    const name = s.split('/').filter(p => p).pop() || 'General';
-                    return { url, section: name.charAt(0).toUpperCase() + name.slice(1) };
-                })
+                { url: this.baseUrl, section: sectionName }
             ];
 
             // Filter out duplicates in case baseUrl is also in sections (unlikely but safe)
@@ -92,6 +88,16 @@ export abstract class BaseScraper {
                     uniqueTargets.push(t);
                 }
             });
+
+            // Fetch configured section paths to validate against
+            const configuredSections = await prisma.section.findMany();
+            // Create a map: path segment (lowercase) -> section name
+            // e.g. 'politica' -> 'Política', 'economia' -> 'Economía'
+            const validSectionMap = new Map<string, string>();
+            for (const sec of configuredSections) {
+                const segment = sec.path.replace(/^\//, '').toLowerCase();
+                if (segment) validSectionMap.set(segment, sec.name);
+            }
 
             for (const target of uniqueTargets) {
                 // Per-section limit: Reset count for each section
@@ -106,9 +112,21 @@ export abstract class BaseScraper {
 
                         if (!seenUrls.has(article.url)) {
                             seenUrls.add(article.url);
-                            // Assign section if not present
+                            // Derive section from the article's own URL, but only if it matches a configured section
                             if (!article.section) {
-                                article.section = target.section;
+                                try {
+                                    const articlePath = new URL(article.url).pathname;
+                                    const firstSegment = articlePath.split('/').filter(p => p)[0]?.toLowerCase();
+                                    if (firstSegment && validSectionMap.has(firstSegment)) {
+                                        // Use the configured section name (with proper accents)
+                                        article.section = validSectionMap.get(firstSegment)!;
+                                    } else {
+                                        // Not a configured section -> keep the target section
+                                        article.section = target.section;
+                                    }
+                                } catch {
+                                    article.section = target.section;
+                                }
                             }
                             allArticles.push(article);
                             sectionCount++;

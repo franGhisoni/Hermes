@@ -5,13 +5,6 @@ export class NAScraper extends BaseScraper {
     name = 'NA';
     baseUrl = 'https://noticiasargentinas.com';
 
-    sections = [
-        'https://noticiasargentinas.com/politica',
-        'https://noticiasargentinas.com/economia',
-        'https://noticiasargentinas.com/sociedad',
-        'https://noticiasargentinas.com/deportes'
-    ];
-
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
         console.log(`[NA] Navigating to ${url}`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });

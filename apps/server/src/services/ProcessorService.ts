@@ -22,13 +22,20 @@ export class ProcessorService {
 
         console.log(`[Processor] Processing ${articles.length} articles from ${sourceName}...`);
 
+        const processedArticles = [];
+
         for (const article of articles) {
             try {
-                await this.processSingleArticle(source.id, article);
+                const savedArticle = await this.processSingleArticle(source.id, article);
+                if (savedArticle) {
+                    processedArticles.push(savedArticle);
+                }
             } catch (error) {
                 console.error(`[Processor] Error processing article ${article.title}:`, error);
             }
         }
+
+        return processedArticles;
     }
 
     private async processSingleArticle(sourceId: string, article: ScrapedArticle) {
@@ -139,7 +146,7 @@ export class ProcessorService {
         }
 
         // 6. Save
-        await this.articleService.saveArticle({
+        const newArticle = await this.articleService.saveArticle({
             sourceId,
             section: article.section,
             originalTitle: article.title,
@@ -157,6 +164,7 @@ export class ProcessorService {
         });
 
         console.log(`[Processor] ✅ Saved new article: ${rewritten.title}`);
+        return newArticle;
     }
 
     private areTitlesFactuallyDifferent(titleA: string, titleB: string): boolean {

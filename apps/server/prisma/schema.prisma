@@ -27,6 +27,61 @@ model SystemSetting {
   value String
 }
 
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  role         UserRole @default(EDITOR)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Target {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  email     String
+  workflows Workflow[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Workflow {
+  id              String   @id @default(uuid())
+  name            String
+  section         String?  // Optional: only publish articles from this section
+  targetCategory  String?  // Custom category name for the destination (e.g. WordPress)
+  cron            String
+  isActive        Boolean  @default(true)
+  targetId        String
+  target          Target   @relation(fields: [targetId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model ScrapeSchedule {
+  id        String   @id @default(uuid())
+  source    String   // "Clarin", "LaNacion", etc.
+  cron      String   // Cron expression
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Section {
+  id        String   @id @default(uuid())
+  name      String   
+  path      String   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@unique([name, path])
+}
+
+enum UserRole {
+  ADMIN
+  EDITOR
+}
+
 model Article {
   id              String   @id @default(uuid())
   sourceId        String

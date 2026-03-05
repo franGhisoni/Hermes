@@ -4,12 +4,6 @@ import { Page } from 'puppeteer';
 export class LaNacionScraper extends BaseScraper {
     name = 'LaNacion';
     baseUrl = 'https://www.lanacion.com.ar';
-    sections = [
-        'https://www.lanacion.com.ar/politica',
-        'https://www.lanacion.com.ar/economia',
-        'https://www.lanacion.com.ar/sociedad',
-        'https://www.lanacion.com.ar/deportes'
-    ];
 
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
         // Use the instance baseUrl (which might be overwritten with a section URL)

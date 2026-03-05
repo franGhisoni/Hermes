@@ -30,7 +30,7 @@ export class QueueService {
         this.setupWorkers();
     }
 
-    async addScrapeJob(source: string, url: string, limit: number = 30) {
+    async addScrapeJob(source: string, url?: string, limit: number = 30) {
         console.log(`[Queue] Adding scrape job for ${source} with limit ${limit}`);
         await this.scraperQueue.add('scrape', { source, url, limit });
     }
@@ -58,9 +58,10 @@ export class QueueService {
 
             try {
                 const scraper = new ScraperClass();
-                // Pass URL if provided (generic support)
+                // If the job url is a path (e.g. /politica), append it to the base URL
                 if (job.data.url) {
-                    scraper.baseUrl = job.data.url;
+                    const isFullPath = job.data.url.startsWith('http');
+                    scraper.baseUrl = isFullPath ? job.data.url : `${scraper.baseUrl}${job.data.url}`;
                 }
 
                 const limit = job.data.limit || 30;

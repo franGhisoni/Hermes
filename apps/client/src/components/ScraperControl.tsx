@@ -1,31 +1,35 @@
 import { useState } from 'react';
 import { api } from '../lib/api';
 import { Play, Loader2 } from 'lucide-react';
+import { useAuth } from '../contexts/AuthContext';
 
 export function ScraperControl() {
+    const { token } = useAuth();
     const [loading, setLoading] = useState(false);
+
+    if (!token) return null;
     const [message, setMessage] = useState('');
 
     const scrapers = [
-        { name: 'Clarín', source: 'Clarin', url: 'https://www.clarin.com/politica' },
-        { name: 'La Nación', source: 'LaNacion', url: 'https://www.lanacion.com.ar/politica' },
-        { name: 'Infobae', source: 'Infobae', url: 'https://www.infobae.com/politica/' },
-        { name: 'TN', source: 'TN', url: 'https://tn.com.ar/politica/' },
-        { name: 'Noticias Argentinas', source: 'NA', url: 'https://noticiasargentinas.com/politica' },
+        { name: 'Clarín', source: 'Clarin' },
+        { name: 'La Nación', source: 'LaNacion' },
+        { name: 'Infobae', source: 'Infobae' },
+        { name: 'TN', source: 'TN' },
+        { name: 'Noticias Argentinas', source: 'NA' },
     ];
 
-    const handleScrape = async (source: string, url: string) => {
+    const handleScrape = async (source: string) => {
         setLoading(true);
         setMessage(`Iniciando ${source}...`);
         try {
-            await api.post('/api/scrape', { source, url });
-            setMessage(`Trabajo de scraping iniciado para ${source}`);
+            const res = await api.post('/api/scrape', { source });
+            setMessage(res.data.message || `Scraping iniciado para ${source}`);
         } catch (error) {
             setMessage('Error al iniciar el trabajo');
             console.error(error);
         } finally {
             setLoading(false);
-            setTimeout(() => setMessage(''), 3000);
+            setTimeout(() => setMessage(''), 4000);
         }
     };
 
@@ -42,7 +46,7 @@ export function ScraperControl() {
                     {scrapers.map(s => (
                         <button
                             key={s.source}
-                            onClick={() => handleScrape(s.source, s.url)}
+                            onClick={() => handleScrape(s.source)}
                             disabled={loading}
                             className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-editorial-text/5 rounded transition-colors text-sm font-serif text-editorial-text disabled:opacity-50"
                         >

@@ -5,13 +5,6 @@ export class TNScraper extends BaseScraper {
     name = 'TN';
     baseUrl = 'https://tn.com.ar';
 
-    sections = [
-        'https://tn.com.ar/politica',
-        'https://tn.com.ar/economia',
-        'https://tn.com.ar/sociedad',
-        'https://tn.com.ar/deportes'
-    ];
-
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
         console.log(`[TN] Navigating to ${url}`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });

@@ -4,12 +4,6 @@ import { Page } from 'puppeteer';
 export class ClarinScraper extends BaseScraper {
     name = 'Clarin';
     baseUrl = 'https://www.clarin.com';
-    sections = [
-        'https://www.clarin.com/politica',
-        'https://www.clarin.com/economia',
-        'https://www.clarin.com/sociedad',
-        'https://www.clarin.com/deportes'
-    ];
 
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });

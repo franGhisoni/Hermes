@@ -2,9 +2,12 @@ import { useEffect, useState, useMemo } from 'react';
 import { api } from '../lib/api';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function Dashboard() {
+    const { user, logout } = useAuth();
     const [articles, setArticles] = useState<Article[]>([]);
+    const [configSections, setConfigSections] = useState<{ name: string, path: string }[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [filterSource, setFilterSource] = useState<string>('all');
@@ -22,7 +25,13 @@ export default function Dashboard() {
         let result = [...articles];
 
         if (filterSource !== 'all') result = result.filter(a => a.source?.name === filterSource);
-        if (filterSection !== 'all') result = result.filter(a => a.section === filterSection);
+        if (filterSection !== 'all') {
+            result = result.filter(a => {
+                if (!a.section) return false;
+                // Match exact section or if the section URL/string contains the name
+                return a.section === filterSection || a.section.toLowerCase().includes(filterSection.toLowerCase());
+            });
+        }
         if (filterStatus !== 'all') result = result.filter(a => a.status === filterStatus);
 
         result.sort((a, b) => {
@@ -60,27 +69,24 @@ export default function Dashboard() {
             const res = await api.get('/api/articles');
             setArticles(res.data);
         } catch (error) {
-            console.error(error);
+            console.error('Error fetching articles:', error);
         } finally {
             setLoading(false);
         }
     };
 
-    const triggerScrape = async () => {
+    const fetchSections = async () => {
         try {
-            await api.post('/api/scrape', {
-                source: 'Clarin', // Default for now, ideally selectable
-                url: 'https://www.clarin.com'
-                // limit is now handled by backend default if omitted
-            });
-            alert('Trabajo de Scraper iniciado');
+            const res = await api.get('/api/config/sections');
+            setConfigSections(res.data);
         } catch (error) {
-            alert('Falló al iniciar el scraper');
+            console.error('Error fetching sections config:', error);
         }
     };
 
     useEffect(() => {
         fetchArticles();
+        fetchSections();
         const interval = setInterval(fetchArticles, 5000);
         return () => clearInterval(interval);
     }, []);
@@ -91,16 +97,22 @@ export default function Dashboard() {
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/">
-                        <img src="/logo.png" alt="Hermes Logo" className="h-12 w-auto mix-blend-multiply opacity-90 transition-opacity hover:opacity-100" />
+                        <img src="/logo.png" alt="Logo" className="h-12 w-auto mix-blend-multiply opacity-90 transition-opacity hover:opacity-100" />
                     </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                 </div>
                 <div className="flex gap-4 items-center">
-                    <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
+                    {user?.role === 'ADMIN' && (
+                        <>
+                            <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
+                            <Link to="/users" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Usuarios</Link>
+                            <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
+                        </>
+                    )}
 
-                    <button onClick={triggerScrape} className="font-sans text-sm font-semibold uppercase tracking-wider bg-editorial-text text-editorial-bg px-4 py-2 hover:bg-editorial-text/80 transition-colors">
-                        Ejecutar Scrapper
+                    <button onClick={logout} className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors">
+                        Salir
                     </button>
                 </div>
             </nav>
@@ -125,7 +137,7 @@ export default function Dashboard() {
                         <label className="font-bold uppercase tracking-widest text-editorial-text/50">Sección</label>
                         <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSection} onChange={e => setFilterSection(e.target.value)}>
                             <option value="all">Todas</option>
-                            {sections.map(s => <option key={s} value={s}>{s}</option>)}
+                            {configSections.map(s => <option key={s.path} value={s.name}>{s.name}</option>)}
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
@@ -193,7 +205,7 @@ function ArticleCard({ article }: { article: Article }) {
         <article className="group flex flex-col h-full">
             {article.originalImageUrl && (
                 <div className="aspect-[4/3] overflow-hidden mb-4 border border-editorial-text/10 relative">
-                    <div className="absolute top-2 right-2 bg-editorial-bg px-2 py-1 font-sans text-xs font-bold border border-editorial-text/20 z-10">
+                    <div className="absolute top-2 right-2 bg-editorial-bg px-2 py-1 font-sans text-xs font-bold border border-editorial-text/20 z-[1]">
                         Score: {article.interestScore || '-'}
                     </div>
                     <img

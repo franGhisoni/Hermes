@@ -4,12 +4,6 @@ import { Page } from 'puppeteer';
 export class InfobaeScraper extends BaseScraper {
     name = 'Infobae';
     baseUrl = 'https://www.infobae.com';
-    sections = [
-        'https://www.infobae.com/politica',
-        'https://www.infobae.com/economia',
-        'https://www.infobae.com/sociedad',
-        'https://www.infobae.com/deportes'
-    ];
 
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
         console.log(`[Infobae] Navigating to ${url}`);

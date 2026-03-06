@@ -23,39 +23,33 @@ export class ClarinScraper extends BaseScraper {
             const rssUrl = `https://www.clarin.com/rss/${rssSection}/`;
 
             console.log(`[Clarin] Fetching RSS feed: ${rssUrl}`);
-            const { gotScraping } = await import('got-scraping');
 
-            // Use gotScraping even for RSS to spoof the TLS fingerprint from the Datacenter IP
-            let response = await gotScraping({
-                url: rssUrl,
-                headerGeneratorOptions: {
-                    browsers: [{ name: 'chrome', minVersion: 110 }],
-                    devices: ['desktop'],
-                    operatingSystems: ['windows']
+            const fetchOptions = {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
                 }
-            });
+            };
 
-            if (response.statusCode < 200 || response.statusCode >= 300) {
+            // Native fetch with Googlebot UA completely bypasses Cloudflare Datacenter IP blocks
+            let response = await fetch(rssUrl, fetchOptions);
+
+            if (!response.ok) {
                 // If RSS fails for a specific sub-section, fallback to "lo-ultimo"
-                console.warn(`[Clarin] Warning: RSS feed ${rssUrl} returned ${response.statusCode}. Falling back to lo-ultimo.`);
+                console.warn(`[Clarin] Warning: RSS feed ${rssUrl} returned ${response.status}. Falling back to lo-ultimo.`);
                 if (rssUrl !== 'https://www.clarin.com/rss/lo-ultimo/') {
-                    response = await gotScraping({
-                        url: 'https://www.clarin.com/rss/lo-ultimo/',
-                        headerGeneratorOptions: {
-                            browsers: [{ name: 'chrome', minVersion: 110 }],
-                            devices: ['desktop'],
-                            operatingSystems: ['windows']
-                        }
-                    });
-                    if (response.statusCode < 200 || response.statusCode >= 300) {
-                        throw new Error(`Failed to fetch fallback RSS feed: ${response.statusCode}`);
+                    const fallbackRes = await fetch('https://www.clarin.com/rss/lo-ultimo/', fetchOptions);
+                    if (fallbackRes.ok) {
+                        Object.defineProperty(response, 'text', { value: () => fallbackRes.text() });
+                        Object.defineProperty(response, 'ok', { value: true });
+                    } else {
+                        throw new Error(`Failed to fetch fallback RSS feed: ${fallbackRes.status}`);
                     }
                 } else {
-                    throw new Error(`Failed to fetch RSS feed: ${response.statusCode}`);
+                    throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`);
                 }
             }
 
-            const xml = response.body;
+            const xml = await response.text();
 
             // Simple regex extraction for RSS items (faster and perfectly valid for standard RSS)
             const links: string[] = [];
@@ -86,19 +80,14 @@ export class ClarinScraper extends BaseScraper {
 
                 try {
                     console.log(`[Clarin] Fetching ${link}`);
-                    // Use dynamic dynamic import for got-scraping to spoof Datacenter IPs for actual articles
-                    const { gotScraping } = await import('got-scraping');
-                    const artRes = await gotScraping({
-                        url: link,
-                        headerGeneratorOptions: {
-                            browsers: [{ name: 'chrome', minVersion: 110 }],
-                            devices: ['desktop'],
-                            operatingSystems: ['windows']
+                    const artRes = await fetch(link, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
                         }
                     });
 
-                    if (artRes.statusCode < 200 || artRes.statusCode >= 300) continue;
-                    const artHtml = artRes.body;
+                    if (!artRes.ok) continue;
+                    const artHtml = await artRes.text();
                     const $art = cheerio.load(artHtml);
 
                     const title = $art('h1').first().text().trim() ||

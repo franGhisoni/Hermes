@@ -1,4 +1,8 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteerExtra from 'puppeteer-extra';
+import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { Browser, Page } from 'puppeteer';
+
+puppeteerExtra.use(StealthPlugin());
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -18,9 +22,9 @@ export abstract class BaseScraper {
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
-        const browser = await puppeteer.launch({
+        const browser = await puppeteerExtra.launch({
             headless: true, // Set to false for debugging
-            args: ['--no-sandbox', '--disable-setuid-sandbox']
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1920,1080']
         });
 
         const allArticles: ScrapedArticle[] = [];

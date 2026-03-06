@@ -113,6 +113,19 @@ app.use('/api/config/sections', sectionRouter);
 import workflowRouter from './routes/WorkflowRouter';
 app.use('/api/workflows', workflowRouter);
 
+// GET /api/config/sources - List available sources for Workflows
+app.get('/api/config/sources', async (req, res) => {
+    try {
+        const sources = await prisma.source.findMany({
+            where: { active: true },
+            orderBy: { name: 'asc' }
+        });
+        res.json(sources);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch sources' });
+    }
+});
+
 // Scrape Schedule router
 import scrapeScheduleRouter from './routes/ScrapeScheduleRouter';
 app.use('/api/scrape-schedules', scrapeScheduleRouter);

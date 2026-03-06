@@ -40,7 +40,7 @@ model Target {
   id        String     @id @default(uuid())
   name      String     @unique
   email     String
-  workflows Workflow[]
+  workflows Workflow[] // Implicit M2M
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 }
@@ -49,11 +49,12 @@ model Workflow {
   id              String   @id @default(uuid())
   name            String
   section         String?  // Optional: only publish articles from this section
+  sources         String[] // Optional: array of source names to constrain extraction
+  minScore        Int?     // Optional: minimum interest score required
   targetCategory  String?  // Custom category name for the destination (e.g. WordPress)
   cron            String
   isActive        Boolean  @default(true)
-  targetId        String
-  target          Target   @relation(fields: [targetId], references: [id])
+  targets         Target[] // Implicit many-to-many
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 }

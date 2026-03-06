@@ -35,7 +35,7 @@ export class SchedulerService {
             // 2. Load and schedule publish workflows
             const workflows = await prisma.workflow.findMany({
                 where: { isActive: true },
-                include: { target: true }
+                include: { targets: true }
             });
             for (const workflow of workflows) {
                 this.scheduleWorkflow(workflow);
@@ -124,6 +124,12 @@ export class SchedulerService {
                 if (workflow.section) {
                     where.section = workflow.section;
                 }
+                if (workflow.sources && workflow.sources.length > 0) {
+                    where.source = { name: { in: workflow.sources } };
+                }
+                if (workflow.minScore !== null && workflow.minScore !== undefined) {
+                    where.interestScore = { gte: workflow.minScore };
+                }
 
                 const articles = await prisma.article.findMany({
                     where,
@@ -136,29 +142,31 @@ export class SchedulerService {
                     return;
                 }
 
-                // Send each article to the target
-                const target = workflow.target;
-                if (!target) return;
+                // Send each article to all targets
+                const targets = workflow.targets;
+                if (!targets || targets.length === 0) return;
 
                 for (const article of articles) {
-                    const category = workflow.targetCategory || article.section || undefined;
-                    await this.mailService.sendArticleToTarget(target.email, article as any, category);
+                    for (const target of targets) {
+                        const category = workflow.targetCategory || article.section || undefined;
+                        await this.mailService.sendArticleToTarget(target.email, article as any, category);
+                    }
 
-                    // Mark as published
+                    // Mark as published once processed for all targets
                     await prisma.article.update({
                         where: { id: article.id },
                         data: { status: 'PUBLISHED' }
                     });
                 }
 
-                console.log(`[CRON-PUBLISH] Published ${articles.length} articles to ${target.name}`);
+                console.log(`[CRON-PUBLISH] Published ${articles.length} articles to ${targets.length} targets`);
             } catch (error) {
                 console.error(`[CRON-PUBLISH] Failed workflow ${workflow.name}:`, error);
             }
         });
 
         this.activeJobs.set(jobId, task);
-        console.log(`Scheduled workflow: ${workflow.name} -> ${workflow.target?.name || 'unknown'} [${workflow.cron}]`);
+        console.log(`Scheduled workflow: ${workflow.name} -> ${workflow.targets?.length || 0} targets [${workflow.cron}]`);
     }
 
     public unscheduleWorkflow(workflowId: string) {

@@ -14,11 +14,12 @@ interface Workflow {
     id: string;
     name: string;
     section?: string;
+    sources?: string[];
+    minScore?: number;
     targetCategory?: string;
     cron: string;
     isActive: boolean;
-    targetId: string;
-    target?: Target;
+    targets?: Target[];
 }
 
 export default function Flows() {
@@ -26,6 +27,7 @@ export default function Flows() {
     const [targets, setTargets] = useState<Target[]>([]);
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
     const [sections, setSections] = useState<any[]>([]);
+    const [availableSources, setAvailableSources] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Form states
@@ -34,9 +36,11 @@ export default function Flows() {
 
     const [wfName, setWfName] = useState('');
     const [wfSection, setWfSection] = useState('');
+    const [wfSources, setWfSources] = useState<string[]>([]);
+    const [wfMinScore, setWfMinScore] = useState<string>('');
     const [wfTargetCategory, setWfTargetCategory] = useState('');
     const [wfCron, setWfCron] = useState('0 8 * * *'); // Default 8 AM
-    const [wfTargetId, setWfTargetId] = useState('');
+    const [wfTargetIds, setWfTargetIds] = useState<string[]>([]);
 
     useEffect(() => {
         fetchData();
@@ -44,16 +48,18 @@ export default function Flows() {
 
     const fetchData = async () => {
         try {
-            const [targetsRes, workflowsRes, sectionsRes] = await Promise.all([
+            const [targetsRes, workflowsRes, sectionsRes, sourcesRes] = await Promise.all([
                 api.get('/api/targets'),
                 api.get('/api/workflows'),
-                api.get('/api/config/sections')
+                api.get('/api/config/sections'),
+                api.get('/api/config/sources')
             ]);
             setTargets(targetsRes.data);
             setWorkflows(workflowsRes.data);
             setSections(sectionsRes.data);
-            if (targetsRes.data.length > 0 && !wfTargetId) {
-                setWfTargetId(targetsRes.data[0].id);
+            setAvailableSources(sourcesRes.data);
+            if (targetsRes.data.length > 0 && wfTargetIds.length === 0) {
+                setWfTargetIds([targetsRes.data[0].id]);
             }
         } catch (error) {
             console.error('Error fetching flows data', error);
@@ -90,12 +96,15 @@ export default function Flows() {
             await api.post('/api/workflows', {
                 name: wfName,
                 section: wfSection || undefined,
+                sources: wfSources,
+                minScore: wfMinScore ? parseInt(wfMinScore) : undefined,
                 targetCategory: wfTargetCategory || undefined,
                 cron: wfCron,
-                targetId: wfTargetId
+                targetIds: wfTargetIds
             });
             setWfName('');
             setWfTargetCategory('');
+            setWfMinScore('');
             fetchData();
         } catch (error: any) {
             alert('Error: ' + (error.response?.data?.error || 'Failed to create workflow'));
@@ -126,7 +135,7 @@ export default function Flows() {
     }
 
     return (
-        <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
+        <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif pb-24">
             <header className="border-b border-editorial-text/10 px-8 py-6 flex items-center justify-between bg-editorial-bg/95 backdrop-blur z-10 sticky top-0">
                 <div className="flex items-center gap-4">
                     <img src="/logo.png" alt="Logo" className="h-8 w-auto mix-blend-multiply opacity-90" />
@@ -184,14 +193,36 @@ export default function Flows() {
                                 <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text" placeholder="ej. Clarín Matutino" />
                             </div>
                             <div className="col-span-2 md:col-span-1">
-                                <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Destino (Medio)</label>
-                                <select value={wfTargetId} onChange={e => setWfTargetId(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text cursor-pointer">
-                                    <option value="" disabled>Seleccione un medio...</option>
+                                <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Destino(s) (Medio)</label>
+                                <select
+                                    multiple
+                                    value={wfTargetIds}
+                                    onChange={e => setWfTargetIds(Array.from(e.target.selectedOptions, option => option.value))}
+                                    required
+                                    className="w-full border border-editorial-text/30 bg-transparent py-2 px-3 focus:outline-none focus:border-editorial-text cursor-pointer min-h-[100px]"
+                                >
                                     {targets.map(t => (
                                         <option key={t.id} value={t.id}>{t.name} ({t.email})</option>
                                     ))}
                                 </select>
+                                <span className="text-[10px] opacity-40 italic mt-1 block">Ctrl+Click (o Cmd+Click) para seleccionar varios.</span>
                             </div>
+
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Filtrar por Fuente(s) <span className="opacity-40">(opcional)</span></label>
+                                <select
+                                    multiple
+                                    value={wfSources}
+                                    onChange={e => setWfSources(Array.from(e.target.selectedOptions, option => option.value))}
+                                    className="w-full border border-editorial-text/30 bg-transparent py-2 px-3 focus:outline-none focus:border-editorial-text cursor-pointer min-h-[100px]"
+                                >
+                                    {availableSources.map(src => (
+                                        <option key={src.id} value={src.name}>{src.name}</option>
+                                    ))}
+                                </select>
+                                <span className="text-[10px] opacity-40 italic mt-1 block">Ctrl+Click para varios. Vacío = todas las fuentes.</span>
+                            </div>
+
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Filtrar por Sección <span className="opacity-40">(opcional)</span></label>
                                 <select value={wfSection} onChange={e => setWfSection(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text cursor-pointer">
@@ -200,13 +231,28 @@ export default function Flows() {
                                         <option key={sec.id} value={sec.name}>{sec.name}</option>
                                     ))}
                                 </select>
-                                <span className="text-[10px] opacity-40 italic mt-1 block">Solo publicará artículos de esta sección. Vacío = todas.</span>
+                                <span className="text-[10px] opacity-40 italic mt-1 block">Solo publicará artículos de esta sección.</span>
                             </div>
+
+                            <div className="col-span-2 md:col-span-1">
+                                <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Interés Mínimo (Score) <span className="opacity-40">(opcional)</span></label>
+                                <input
+                                    type="number"
+                                    min="1" max="10"
+                                    value={wfMinScore}
+                                    onChange={e => setWfMinScore(e.target.value)}
+                                    className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm"
+                                    placeholder="Ej. 7"
+                                />
+                                <span className="text-[10px] opacity-40 italic mt-1 block">Rango 1-10. Si está vacío, no filtra por interés.</span>
+                            </div>
+
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Categoría Destino <span className="opacity-40">(opcional)</span></label>
                                 <input type="text" value={wfTargetCategory} onChange={e => setWfTargetCategory(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Política Nacional" />
-                                <span className="text-[10px] opacity-40 italic mt-1 block">Nombre de la categoría en WordPress. Si se deja vacío, usa el nombre de la sección.</span>
+                                <span className="text-[10px] opacity-40 italic mt-1 block">Nombre de la categoría en WordPress.</span>
                             </div>
+
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Horario (Cron)</label>
                                 <input type="text" value={wfCron} onChange={e => setWfCron(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text font-mono text-sm" placeholder="* * * * *" />
@@ -233,12 +279,16 @@ export default function Flows() {
                                                 <h3 className="font-bold text-lg font-sans">{wf.name}</h3>
                                                 <span className="text-[10px] font-mono px-2 py-0.5 bg-editorial-text/10 rounded">{wf.cron}</span>
                                             </div>
-                                            <div className="text-xs font-sans opacity-70 flex gap-2">
-                                                {wf.section && <span className="font-mono bg-editorial-text/5 px-1.5 py-0.5 rounded">{wf.section}</span>}
-                                                {!wf.section && <span className="italic opacity-50">Todas las secciones</span>}
+                                            <div className="text-xs font-sans opacity-70 flex flex-wrap gap-2">
+                                                {wf.section && <span className="font-mono bg-editorial-text/5 px-1.5 py-0.5 rounded border border-editorial-text/10" title="Sección">{wf.section}</span>}
+                                                {!wf.section && <span className="italic opacity-50 px-1.5 py-0.5">Cualquier Sección</span>}
+
+                                                {wf.sources && wf.sources.length > 0 && <span className="font-mono bg-blue-50/50 px-1.5 py-0.5 rounded border border-blue-900/10 text-blue-900" title="Fuentes">{wf.sources.join(', ')}</span>}
+                                                {wf.minScore && <span className="font-mono bg-amber-50/50 px-1.5 py-0.5 rounded border border-amber-900/10 text-amber-900" title="Score Mínimo">★ {wf.minScore}+</span>}
                                             </div>
-                                            <div className="text-xs font-sans text-editorial-text/50 mt-2">
-                                                Destino: <strong>{wf.target?.name}</strong> ({wf.target?.email})
+                                            <div className="text-xs font-sans text-editorial-text/60 mt-2 flex flex-col gap-0.5">
+                                                <span>Destino(s): {wf.targets?.map(t => <strong key={t.id} className="mr-1">{t.name}</strong>)}</span>
+                                                <span className="opacity-50 break-all">{wf.targets?.map(t => t.email).join(', ')}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-center gap-4">

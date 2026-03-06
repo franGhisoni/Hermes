@@ -23,32 +23,39 @@ export class ClarinScraper extends BaseScraper {
             const rssUrl = `https://www.clarin.com/rss/${rssSection}/`;
 
             console.log(`[Clarin] Fetching RSS feed: ${rssUrl}`);
+            const { gotScraping } = await import('got-scraping');
 
-            // For RSS feeds, native fetch works perfectly, no Cloudflare block
-            const response = await fetch(rssUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'application/rss+xml, text/xml, application/xml;q=0.9, */*;q=0.8'
+            // Use gotScraping even for RSS to spoof the TLS fingerprint from the Datacenter IP
+            let response = await gotScraping({
+                url: rssUrl,
+                headerGeneratorOptions: {
+                    browsers: [{ name: 'chrome', minVersion: 110 }],
+                    devices: ['desktop'],
+                    operatingSystems: ['windows']
                 }
             });
 
-            if (!response.ok) {
+            if (response.statusCode < 200 || response.statusCode >= 300) {
                 // If RSS fails for a specific sub-section, fallback to "lo-ultimo"
-                console.warn(`[Clarin] Warning: RSS feed ${rssUrl} returned ${response.status}. Falling back to lo-ultimo.`);
+                console.warn(`[Clarin] Warning: RSS feed ${rssUrl} returned ${response.statusCode}. Falling back to lo-ultimo.`);
                 if (rssUrl !== 'https://www.clarin.com/rss/lo-ultimo/') {
-                    const fallbackRes = await fetch('https://www.clarin.com/rss/lo-ultimo/');
-                    if (fallbackRes.ok) {
-                        Object.defineProperty(response, 'text', { value: () => fallbackRes.text() });
-                        Object.defineProperty(response, 'ok', { value: true });
-                    } else {
-                        throw new Error(`Failed to fetch fallback RSS feed: ${fallbackRes.status}`);
+                    response = await gotScraping({
+                        url: 'https://www.clarin.com/rss/lo-ultimo/',
+                        headerGeneratorOptions: {
+                            browsers: [{ name: 'chrome', minVersion: 110 }],
+                            devices: ['desktop'],
+                            operatingSystems: ['windows']
+                        }
+                    });
+                    if (response.statusCode < 200 || response.statusCode >= 300) {
+                        throw new Error(`Failed to fetch fallback RSS feed: ${response.statusCode}`);
                     }
                 } else {
-                    throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`);
+                    throw new Error(`Failed to fetch RSS feed: ${response.statusCode}`);
                 }
             }
 
-            const xml = await response.text();
+            const xml = response.body;
 
             // Simple regex extraction for RSS items (faster and perfectly valid for standard RSS)
             const links: string[] = [];

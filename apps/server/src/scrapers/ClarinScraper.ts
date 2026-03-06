@@ -1,98 +1,124 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
+import * as cheerio from 'cheerio';
 
 export class ClarinScraper extends BaseScraper {
     name = 'Clarin';
     baseUrl = 'https://www.clarin.com';
 
-    protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
+    async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        console.log(`[Clarin] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 
-        // Wait for body to ensure page loaded
+        const allArticles: ScrapedArticle[] = [];
+        const seenUrls = new Set<string>();
+
         try {
-            await page.waitForSelector('body', { timeout: 10000 });
-        } catch (e) {
-            console.log('[Clarin] Timeout waiting for body');
-        }
+            const response = await fetch(this.baseUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7'
+                }
+            });
 
-        // Extract links to articles from the main page
-        // Extract unique article links based on URL pattern
-        const articleLinks = await page.evaluate(() => {
-            const seen = new Set<string>();
+            if (!response.ok) {
+                throw new Error(`Failed to fetch ${this.baseUrl}: ${response.status} ${response.statusText}`);
+            }
+
+            const html = await response.text();
+            const $ = cheerio.load(html);
+
             const links: string[] = [];
-
-            const anchors = document.querySelectorAll('a');
-            console.log(`[Browser Clarin] Found ${anchors.length} anchors.`);
-
-            anchors.forEach(a => {
-                const href = a.getAttribute('href');
+            $('a').each((_, el) => {
+                const href = $(el).attr('href');
                 if (!href) return;
-
-                // Clarin articles usually end in .html and have an ID structure
-                // e.g. /politica/titulo_0_id.html
+                // Exclude videos, fotogalerias, etc.
                 if (href.includes('.html') && !href.includes('/videos/') && !href.includes('/fotogalerias/')) {
                     const fullUrl = href.startsWith('http') ? href : `https://www.clarin.com${href}`;
-                    if (!seen.has(fullUrl)) {
-                        seen.add(fullUrl);
+                    if (!seenUrls.has(fullUrl)) {
+                        seenUrls.add(fullUrl);
                         links.push(fullUrl);
                     }
                 }
             });
-            return links; // Return all found links, BaseScraper handles the global limit
-        });
 
-        const scrapedArticles: ScrapedArticle[] = [];
+            console.log(`[Clarin] Found ${links.length} potential articles. Scraping up to ${limit}...`);
 
-        // Visit each article 
-        for (const link of articleLinks) {
-            if (!link) continue;
-            console.log(`[Clarin] Visiting ${link}`);
-            try {
-                await page.goto(link, { waitUntil: 'domcontentloaded' });
+            // Determine section based on current baseUrl
+            const urlPath = new URL(this.baseUrl).pathname;
+            let sectionName = 'Portada';
+            if (urlPath && urlPath !== '/') {
+                const segment = urlPath.split('/').filter(p => p).pop() || 'Portada';
+                sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
+            }
 
-                const data = await page.evaluate(() => {
-                    const title = (document.querySelector('h1') as HTMLElement)?.innerText ||
-                        (document.querySelector('.title') as HTMLElement)?.innerText ||
-                        (document.querySelector('article h1') as HTMLElement)?.innerText || '';
+            for (const link of links) {
+                if (allArticles.length >= limit) break;
 
-                    // Try multiple body selectors common in news sites / Clarin
-                    const bodySelectors = ['.body-nota', '.body-article', 'article', '.content-nota', '.entry-content', 'div[class*="body"]'];
+                try {
+                    console.log(`[Clarin] Fetching ${link}`);
+                    const artRes = await fetch(link, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                        }
+                    });
+
+                    if (!artRes.ok) continue;
+                    const artHtml = await artRes.text();
+                    const $art = cheerio.load(artHtml);
+
+                    const title = $art('h1').first().text().trim() ||
+                        $art('.title').first().text().trim() ||
+                        $art('article h1').first().text().trim();
+
                     let content = '';
+                    const bodySelectors = ['.body-nota', '.body-article', 'article', '.content-nota', '.entry-content', 'div[class*="body"]'];
 
                     for (const sel of bodySelectors) {
-                        const els = document.querySelectorAll(`${sel} p`);
-                        if (els.length > 2) {
-                            content = Array.from(els).map(p => (p as HTMLElement).innerText).join('\n\n');
+                        const pars = $art(`${sel} p`);
+                        if (pars.length > 2) {
+                            const pTexts: string[] = [];
+                            pars.each((_, p) => { pTexts.push($art(p).text().trim()); });
+                            content = pTexts.join('\n\n');
                             break;
                         }
                     }
 
-                    // Image Fallbacks
-                    const image = document.querySelector('picture img')?.getAttribute('src') ||
-                        document.querySelector('article img')?.getAttribute('src') ||
-                        document.querySelector('meta[property="og:image"]')?.getAttribute('content');
+                    const image = $art('picture img').attr('src') ||
+                        $art('article img').attr('src') ||
+                        $art('meta[property="og:image"]').attr('content');
 
-                    return { title, content, image };
-                });
+                    if (title && content) {
+                        allArticles.push({
+                            title,
+                            content,
+                            url: link,
+                            imageUrl: image || undefined,
+                            publishedAt: new Date(),
+                            section: sectionName
+                        });
+                        console.log(`[Clarin] Success: ${title.substring(0, 30)}...`);
+                    } else {
+                        console.log(`[Clarin-Debug] Skip: ${link}. Title?: ${!!title}, Content length: ${content.length}`);
+                    }
 
-                if (data.title && data.content) {
-                    scrapedArticles.push({
-                        title: data.title,
-                        content: data.content,
-                        url: link,
-                        imageUrl: data.image || undefined,
-                        publishedAt: new Date()
-                    });
-                    console.log(`[Clarin] Success: ${data.title.substring(0, 30)}...`);
-                } else {
-                    console.log(`[Clarin-Debug] Skip: ${link}. Title?: ${!!data.title} (${data.title.length}), Content?: ${data.content.length}`);
+                } catch (e) {
+                    console.error(`[Clarin] Error processing article ${link}:`, e);
                 }
-
-            } catch (e) {
-                console.error(`Error scraping article ${link}`, e);
             }
-        }
 
-        return scrapedArticles;
+            console.log(`[Clarin] Scraped total ${allArticles.length} unique articles natively.`);
+            return allArticles;
+
+        } catch (error) {
+            console.error(`[Clarin] Native fetch scrape failed:`, error);
+            throw error;
+        }
+    }
+
+    // Required by BaseScraper interface, but unused here
+    protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
+        return [];
     }
 }

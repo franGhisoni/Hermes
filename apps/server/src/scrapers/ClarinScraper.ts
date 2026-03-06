@@ -1,7 +1,6 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
 import * as cheerio from 'cheerio';
-import { gotScraping } from 'got-scraping';
 
 export class ClarinScraper extends BaseScraper {
     name = 'Clarin';
@@ -15,6 +14,8 @@ export class ClarinScraper extends BaseScraper {
         const seenUrls = new Set<string>();
 
         try {
+            const { gotScraping } = await import('got-scraping');
+
             const response = await gotScraping({
                 url: this.baseUrl,
                 headerGeneratorOptions: {
@@ -60,6 +61,7 @@ export class ClarinScraper extends BaseScraper {
 
                 try {
                     console.log(`[Clarin] Fetching ${link}`);
+                    const { gotScraping } = await import('got-scraping');
                     const artRes = await gotScraping({
                         url: link,
                         headerGeneratorOptions: {

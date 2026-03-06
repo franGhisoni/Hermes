@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Trash2, Settings2, Mail, Clock } from 'lucide-react';
+import { MultiSelect } from '../components/MultiSelect';
 
 interface Target {
     id: string;
@@ -194,33 +195,23 @@ export default function Flows() {
                             </div>
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Destino(s) (Medio)</label>
-                                <select
-                                    multiple
-                                    value={wfTargetIds}
-                                    onChange={e => setWfTargetIds(Array.from(e.target.selectedOptions, option => option.value))}
-                                    required
-                                    className="w-full border border-editorial-text/30 bg-transparent py-2 px-3 focus:outline-none focus:border-editorial-text cursor-pointer min-h-[100px]"
-                                >
-                                    {targets.map(t => (
-                                        <option key={t.id} value={t.id}>{t.name} ({t.email})</option>
-                                    ))}
-                                </select>
-                                <span className="text-[10px] opacity-40 italic mt-1 block">Ctrl+Click (o Cmd+Click) para seleccionar varios.</span>
+                                <MultiSelect
+                                    options={targets.map(t => ({ id: t.id, label: t.name }))}
+                                    selectedIds={wfTargetIds}
+                                    onChange={setWfTargetIds}
+                                    placeholder="Seleccionar destinos..."
+                                />
                             </div>
 
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Filtrar por Fuente(s) <span className="opacity-40">(opcional)</span></label>
-                                <select
-                                    multiple
-                                    value={wfSources}
-                                    onChange={e => setWfSources(Array.from(e.target.selectedOptions, option => option.value))}
-                                    className="w-full border border-editorial-text/30 bg-transparent py-2 px-3 focus:outline-none focus:border-editorial-text cursor-pointer min-h-[100px]"
-                                >
-                                    {availableSources.map(src => (
-                                        <option key={src.id} value={src.name}>{src.name}</option>
-                                    ))}
-                                </select>
-                                <span className="text-[10px] opacity-40 italic mt-1 block">Ctrl+Click para varios. Vacío = todas las fuentes.</span>
+                                <MultiSelect
+                                    options={availableSources.map(src => ({ id: src.name, label: src.name }))}
+                                    selectedIds={wfSources}
+                                    onChange={setWfSources}
+                                    placeholder="Todas las fuentes..."
+                                />
+                                <span className="text-[10px] opacity-40 italic mt-1 block">Vacío = todas las fuentes.</span>
                             </div>
 
                             <div className="col-span-2 md:col-span-1">

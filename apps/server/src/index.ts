@@ -208,7 +208,9 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 
 // POST /api/articles/:id/publish - Publish article to a target (send email)
 import { MailService } from './services/MailService';
+import { AIService } from './services/AIService';
 const mailService = new MailService();
+const aiService = new AIService();
 
 app.post('/api/articles/:id/publish', async (req, res) => {
     const { targetId, category } = req.body;
@@ -221,9 +223,22 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         const target = await prisma.target.findUnique({ where: { id: targetId } });
         if (!target) return res.status(404).json({ error: 'Target not found' });
 
+        console.log(`[MANUAL-PUBLISH] Rewriting article specifically for target: ${target.name}`);
+        const targetRewrite = await aiService.rewriteContent(
+            article.originalTitle,
+            article.originalContent,
+            'neutral'
+        );
+
+        const articleForTarget = {
+            ...article,
+            rewrittenTitle: targetRewrite.title,
+            rewrittenContent: targetRewrite.content
+        };
+
         // Use provided category, or fall back to article's section
         const articleCategory = category || article.section || undefined;
-        const sent = await mailService.sendArticleToTarget(target.email, article, articleCategory);
+        const sent = await mailService.sendArticleToTarget(target.email, articleForTarget as any, articleCategory);
         if (!sent) return res.status(500).json({ error: 'Failed to send email' });
 
         // Update article status to PUBLISHED

@@ -24,7 +24,15 @@ export abstract class BaseScraper {
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
         const browser = await puppeteerExtra.launch({
             headless: true, // Set to false for debugging
-            args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1920,1080']
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--window-size=1920,1080',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process,CrossOriginOpenerPolicy,CrossOriginEmbedderPolicy'
+            ]
         });
 
         const allArticles: ScrapedArticle[] = [];
@@ -68,7 +76,15 @@ export abstract class BaseScraper {
                 }
             });
 
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36');
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'Upgrade-Insecure-Requests': '1'
+            });
 
             // Construct list of URLs to visit: just use the active baseUrl
             // Derive section name from the URL path (e.g. /politica -> Politica)

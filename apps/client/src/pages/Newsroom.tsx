@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import type { Article } from '../types';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Target {
     id: string;
@@ -12,6 +13,7 @@ interface Target {
 export default function Newsroom() {
     const { id } = useParams();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const [article, setArticle] = useState<Article | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -169,9 +171,13 @@ export default function Newsroom() {
                         ) : targets.length === 0 ? (
                             <div className="py-8 text-center font-sans text-sm">
                                 <p className="text-editorial-text/60 mb-2">No hay medios configurados.</p>
-                                <Link to="/flows" className="text-editorial-text font-bold underline underline-offset-4 hover:opacity-80">
-                                    Configurar Medios →
-                                </Link>
+                                {user?.role === 'ADMIN' ? (
+                                    <Link to="/flows" className="text-editorial-text font-bold underline underline-offset-4 hover:opacity-80">
+                                        Configurar Medios →
+                                    </Link>
+                                ) : (
+                                    <span className="text-xs italic opacity-50 block mt-2">Ponte en contacto con un administrador.</span>
+                                )}
                             </div>
                         ) : (
                             <>

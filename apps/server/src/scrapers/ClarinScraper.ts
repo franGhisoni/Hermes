@@ -1,6 +1,7 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
 import * as cheerio from 'cheerio';
+import { gotScraping } from 'got-scraping';
 
 export class ClarinScraper extends BaseScraper {
     name = 'Clarin';
@@ -14,19 +15,20 @@ export class ClarinScraper extends BaseScraper {
         const seenUrls = new Set<string>();
 
         try {
-            const response = await fetch(this.baseUrl, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                    'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7'
+            const response = await gotScraping({
+                url: this.baseUrl,
+                headerGeneratorOptions: {
+                    browsers: [{ name: 'chrome', minVersion: 110 }],
+                    devices: ['desktop'],
+                    operatingSystems: ['windows']
                 }
             });
 
-            if (!response.ok) {
-                throw new Error(`Failed to fetch ${this.baseUrl}: ${response.status} ${response.statusText}`);
+            if (response.statusCode < 200 || response.statusCode >= 300) {
+                throw new Error(`Failed to fetch ${this.baseUrl}: ${response.statusCode}`);
             }
 
-            const html = await response.text();
+            const html = response.body;
             const $ = cheerio.load(html);
 
             const links: string[] = [];
@@ -58,14 +60,17 @@ export class ClarinScraper extends BaseScraper {
 
                 try {
                     console.log(`[Clarin] Fetching ${link}`);
-                    const artRes = await fetch(link, {
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    const artRes = await gotScraping({
+                        url: link,
+                        headerGeneratorOptions: {
+                            browsers: [{ name: 'chrome', minVersion: 110 }],
+                            devices: ['desktop'],
+                            operatingSystems: ['windows']
                         }
                     });
 
-                    if (!artRes.ok) continue;
-                    const artHtml = await artRes.text();
+                    if (artRes.statusCode < 200 || artRes.statusCode >= 300) continue;
+                    const artHtml = artRes.body;
                     const $art = cheerio.load(artHtml);
 
                     const title = $art('h1').first().text().trim() ||

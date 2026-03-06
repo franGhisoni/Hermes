@@ -14,45 +14,63 @@ export class ClarinScraper extends BaseScraper {
         const seenUrls = new Set<string>();
 
         try {
-            const { gotScraping } = await import('got-scraping');
+            // Determine the RSS URL based on the requested section
+            const urlObj = new URL(this.baseUrl);
+            const pathSegments = urlObj.pathname.split('/').filter(Boolean);
+            const sectionSegment = pathSegments.length > 0 ? pathSegments.pop() : 'lo-ultimo';
+            let rssSection = sectionSegment === 'ultimo-momento' ? 'lo-ultimo' : sectionSegment;
+            // Ensure we use the correct RSS structure
+            const rssUrl = `https://www.clarin.com/rss/${rssSection}/`;
 
-            const response = await gotScraping({
-                url: this.baseUrl,
-                headerGeneratorOptions: {
-                    browsers: [{ name: 'chrome', minVersion: 110 }],
-                    devices: ['desktop'],
-                    operatingSystems: ['windows']
+            console.log(`[Clarin] Fetching RSS feed: ${rssUrl}`);
+
+            // For RSS feeds, native fetch works perfectly, no Cloudflare block
+            const response = await fetch(rssUrl, {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'application/rss+xml, text/xml, application/xml;q=0.9, */*;q=0.8'
                 }
             });
 
-            if (response.statusCode < 200 || response.statusCode >= 300) {
-                throw new Error(`Failed to fetch ${this.baseUrl}: ${response.statusCode}`);
+            if (!response.ok) {
+                // If RSS fails for a specific sub-section, fallback to "lo-ultimo"
+                console.warn(`[Clarin] Warning: RSS feed ${rssUrl} returned ${response.status}. Falling back to lo-ultimo.`);
+                if (rssUrl !== 'https://www.clarin.com/rss/lo-ultimo/') {
+                    const fallbackRes = await fetch('https://www.clarin.com/rss/lo-ultimo/');
+                    if (fallbackRes.ok) {
+                        Object.defineProperty(response, 'text', { value: () => fallbackRes.text() });
+                        Object.defineProperty(response, 'ok', { value: true });
+                    } else {
+                        throw new Error(`Failed to fetch fallback RSS feed: ${fallbackRes.status}`);
+                    }
+                } else {
+                    throw new Error(`Failed to fetch RSS feed: ${response.status} ${response.statusText}`);
+                }
             }
 
-            const html = response.body;
-            const $ = cheerio.load(html);
+            const xml = await response.text();
 
+            // Simple regex extraction for RSS items (faster and perfectly valid for standard RSS)
             const links: string[] = [];
-            $('a').each((_, el) => {
-                const href = $(el).attr('href');
-                if (!href) return;
-                // Exclude videos, fotogalerias, etc.
-                if (href.includes('.html') && !href.includes('/videos/') && !href.includes('/fotogalerias/')) {
-                    const fullUrl = href.startsWith('http') ? href : `https://www.clarin.com${href}`;
-                    if (!seenUrls.has(fullUrl)) {
-                        seenUrls.add(fullUrl);
-                        links.push(fullUrl);
+            const linkRegex = /<link>(https:\/\/www\.clarin\.com\/[^<]+\.html.*?)<\/link>/g;
+            let match;
+            while ((match = linkRegex.exec(xml)) !== null) {
+                const url = match[1].replace('<![CDATA[', '').replace(']]>', '').trim();
+                // Exclude videos, fotogalerias
+                if (!url.includes('/videos/') && !url.includes('/fotogalerias/')) {
+                    if (!seenUrls.has(url)) {
+                        seenUrls.add(url);
+                        links.push(url);
                     }
                 }
-            });
+            }
 
-            console.log(`[Clarin] Found ${links.length} potential articles. Scraping up to ${limit}...`);
+            console.log(`[Clarin] Found ${links.length} potential articles from RSS. Scraping up to ${limit}...`);
 
             // Determine section based on current baseUrl
-            const urlPath = new URL(this.baseUrl).pathname;
             let sectionName = 'Portada';
-            if (urlPath && urlPath !== '/') {
-                const segment = urlPath.split('/').filter(p => p).pop() || 'Portada';
+            if (urlObj.pathname && urlObj.pathname !== '/') {
+                const segment = urlObj.pathname.split('/').filter(p => p).pop() || 'Portada';
                 sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
             }
 
@@ -61,6 +79,7 @@ export class ClarinScraper extends BaseScraper {
 
                 try {
                     console.log(`[Clarin] Fetching ${link}`);
+                    // Use dynamic dynamic import for got-scraping to spoof Datacenter IPs for actual articles
                     const { gotScraping } = await import('got-scraping');
                     const artRes = await gotScraping({
                         url: link,
@@ -115,11 +134,11 @@ export class ClarinScraper extends BaseScraper {
                 }
             }
 
-            console.log(`[Clarin] Scraped total ${allArticles.length} unique articles natively.`);
+            console.log(`[Clarin] Scraped total ${allArticles.length} unique articles via RSS + gotScraping.`);
             return allArticles;
 
         } catch (error) {
-            console.error(`[Clarin] Native fetch scrape failed:`, error);
+            console.error(`[Clarin] RSS feed scrape failed:`, error);
             throw error;
         }
     }

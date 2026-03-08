@@ -26,7 +26,9 @@ export class ClarinScraper extends BaseScraper {
 
             const fetchOptions = {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                    'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.5'
                 }
             };
 
@@ -82,7 +84,9 @@ export class ClarinScraper extends BaseScraper {
                     console.log(`[Clarin] Fetching ${link}`);
                     const artRes = await fetch(link, {
                         headers: {
-                            'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                            'User-Agent': 'facebookexternalhit/1.1 (+http://www.facebook.com/externalhit_uatext.php)',
+                            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                            'Accept-Language': 'en-US,en;q=0.5'
                         }
                     });
 

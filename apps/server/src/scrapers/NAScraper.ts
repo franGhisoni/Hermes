@@ -1,67 +1,121 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
+import * as cheerio from 'cheerio';
 
 export class NAScraper extends BaseScraper {
     name = 'NA';
     baseUrl = 'https://noticiasargentinas.com';
 
-    protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
-        console.log(`[NA] Navigating to ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
+    async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        console.log(`[NA] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 
-        const articleLinks = await page.evaluate(() => {
-            const seen = new Set<string>();
+        const allArticles: ScrapedArticle[] = [];
+        const seenUrls = new Set<string>();
+
+        try {
+            const urlObj = new URL(this.baseUrl);
+            let sectionName = 'Portada';
+            if (urlObj.pathname && urlObj.pathname !== '/') {
+                const segment = urlObj.pathname.split('/').filter(p => p).pop() || 'Portada';
+                sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
+            }
+
+            console.log(`[NA] Fetching section page: ${this.baseUrl}`);
+
+            const fetchOptions = {
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                }
+            };
+
+            const response = await fetch(this.baseUrl, fetchOptions);
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch section page: ${response.status} ${response.statusText}`);
+            }
+
+            const html = await response.text();
+            console.log(`[NA-Debug] HTML length: ${html.length}`);
+            const $ = cheerio.load(html);
+
             const links: string[] = [];
 
-            document.querySelectorAll('a').forEach(a => {
-                const href = a.getAttribute('href');
+            $('a').each((_, el) => {
+                const href = $(el).attr('href');
                 if (!href) return;
 
                 const fullUrl = href.startsWith('http') ? href : `https://noticiasargentinas.com${href}`;
 
-                // NA articles usually have /nota/ or just a long slug in section
-                if (href.includes('/politica/') || href.includes('/economia/') || href.includes('/sociedad/') || href.includes('/deportes/')) {
+                // NA articles usually have /politica/, /economia/, etc.
+                if (href.includes('/politica/') || href.includes('/economia/') || href.includes('/sociedad/') || href.includes('/deportes/') || href.includes('/internacional/') || href.includes('/espectaculos/')) {
                     if (href.length > 30 && !href.match(/\/(tag|tema|seccion)\//)) {
-                        if (!seen.has(fullUrl)) {
-                            seen.add(fullUrl);
+                        if (!seenUrls.has(fullUrl)) {
+                            seenUrls.add(fullUrl);
                             links.push(fullUrl);
                         }
                     }
                 }
             });
-            return links;
-        });
 
-        const articles: ScrapedArticle[] = [];
+            console.log(`[NA] Found ${links.length} potential articles. Scraping up to ${limit}...`);
 
-        for (const link of articleLinks) {
-            if (!link) continue;
-            console.log(`[NA] Visiting ${link}`);
-            try {
-                await page.goto(link, { waitUntil: 'domcontentloaded' });
+            for (const link of links) {
+                if (allArticles.length >= limit) break;
 
-                const data = await page.evaluate(() => {
-                    const title = (document.querySelector('h1') as HTMLElement)?.innerText || '';
-                    const content = (document.querySelector('.news-body') as HTMLElement)?.innerText ||
-                        (document.querySelector('.body') as HTMLElement)?.innerText || '';
-                    const image = document.querySelector('figure img')?.getAttribute('src');
-                    return { title, content, image };
-                });
+                try {
+                    console.log(`[NA] Fetching ${link}`);
+                    const artRes = await fetch(link, fetchOptions);
 
-                if (data.title && data.content) {
-                    articles.push({
-                        title: data.title,
-                        content: data.content,
-                        url: link,
-                        imageUrl: data.image || undefined,
-                        publishedAt: new Date()
-                    });
-                    console.log(`[NA] Success: ${data.title.substring(0, 30)}...`);
+                    if (!artRes.ok) continue;
+                    const artHtml = await artRes.text();
+                    const $art = cheerio.load(artHtml);
+
+                    const title = $art('h1').first().text().trim() || $art('article h1').first().text().trim();
+
+                    let content = '';
+                    const pars = $art('article p');
+                    if (pars.length > 1) {
+                        const pTexts: string[] = [];
+                        pars.each((_, p) => { pTexts.push($art(p).text().trim()); });
+                        content = pTexts.join('\n\n');
+                    } else {
+                        content = $art('.news-body').first().text().trim() ||
+                            $art('.body').first().text().trim() || '';
+                    }
+
+                    const image = $art('figure img').attr('src') || $art('article img').attr('src') || $art('meta[property="og:image"]').attr('content');
+
+                    if (title && content) {
+                        allArticles.push({
+                            title,
+                            content,
+                            url: link,
+                            imageUrl: image || undefined,
+                            publishedAt: new Date(),
+                            section: sectionName
+                        });
+                        console.log(`[NA] Success: ${title.substring(0, 30)}...`);
+                    } else {
+                        console.log(`[NA-Debug] Skip: ${link}. Title?: ${!!title}, Content length: ${content.length}`);
+                    }
+
+                } catch (e) {
+                    console.error(`[NA] Error processing article ${link}:`, e);
                 }
-            } catch (e) {
-                console.error(`Error scraping ${link}`, e);
             }
+
+            console.log(`[NA] Scraped total ${allArticles.length} unique articles via native fetch.`);
+            return allArticles;
+
+        } catch (error) {
+            console.error(`[NA] Native fetch scrape failed:`, error);
+            throw error;
         }
-        return articles;
+    }
+
+    // Required by BaseScraper interface, but unused here
+    protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
+        return [];
     }
 }

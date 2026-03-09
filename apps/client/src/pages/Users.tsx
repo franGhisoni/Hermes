@@ -37,7 +37,7 @@ export default function Users() {
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/api/users', { username: newUsername, password: newPassword, role: 'ADMIN' });
+            await api.post('/api/users', { username: newUsername, password: newPassword, role: 'EDITOR' });
             setNewUsername('');
             setNewPassword('');
             fetchUsers();
@@ -90,7 +90,7 @@ export default function Users() {
             <main className="max-w-4xl mx-auto p-12">
 
                 <div className="mb-12 border border-editorial-text/20 p-8 bg-white/50">
-                    <h2 className="text-xl font-bold uppercase tracking-widest mb-6 font-sans">Crear Nuevo Usuario (Admin)</h2>
+                    <h2 className="text-xl font-bold uppercase tracking-widest mb-6 font-sans">Crear Nuevo Usuario (Editor)</h2>
                     <form onSubmit={handleCreateUser} className="flex gap-4 items-end font-sans">
                         <div className="flex flex-col gap-2 flex-1">
                             <label className="text-xs font-bold uppercase tracking-widest opacity-60">Usuario</label>

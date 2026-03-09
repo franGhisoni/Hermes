@@ -3,8 +3,8 @@ import { Article } from '@prisma/client';
 import dns from 'dns';
 
 // Fix for Node >= 17 IPv6 ENETUNREACH issue
-// This prevents nodemailer from attempting to connect via IPv6 if the host lacks a route.
-dns.setDefaultResultOrder('ipv4first');
+// We removed dns.setDefaultResultOrder('ipv4first') because it conflicts 
+// with standard nodemailer fallback resolution on some Railway environments.
 
 export class MailService {
     private transporter: nodemailer.Transporter;

@@ -12,15 +12,21 @@ export class MailService {
     constructor() {
         // Use environment variables in production, but we provide a default ethereal test account
         // for local developmental testing if none are provided. Ethereal catches all emails for dev.
+        const port = parseInt(process.env.SMTP_PORT || '587');
         this.transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-            port: parseInt(process.env.SMTP_PORT || '587'),
+            port: port,
+            secure: port === 465, // true for 465, false for other ports
             auth: {
                 user: process.env.SMTP_USER || 'allie.robel@ethereal.email',
                 pass: process.env.SMTP_PASS || 'T9Q3J3m1vZv8zvFjP2'
             },
             // Force IPv4 to prevent ENETUNREACH timeouts in Railway/Cloud environments
-            family: 4
+            family: 4,
+            connectionTimeout: 15000,
+            socketTimeout: 15000,
+            logger: true,
+            debug: true
         } as any);
     }
 

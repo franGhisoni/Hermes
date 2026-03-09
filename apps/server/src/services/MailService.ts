@@ -1,33 +1,15 @@
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { Article } from '@prisma/client';
-import dns from 'dns';
-
-// Fix for Node >= 17 IPv6 ENETUNREACH issue
-// We removed dns.setDefaultResultOrder('ipv4first') because it conflicts 
-// with standard nodemailer fallback resolution on some Railway environments.
 
 export class MailService {
-    private transporter: nodemailer.Transporter;
+    private resend: Resend;
+    private fromEmail: string;
 
     constructor() {
-        // Use environment variables in production, but we provide a default ethereal test account
-        // for local developmental testing if none are provided. Ethereal catches all emails for dev.
-        const port = parseInt(process.env.SMTP_PORT || '587');
-        this.transporter = nodemailer.createTransport({
-            host: process.env.SMTP_HOST || 'smtp.ethereal.email',
-            port: port,
-            secure: port === 465, // true for 465, false for other ports
-            auth: {
-                user: process.env.SMTP_USER || 'allie.robel@ethereal.email',
-                pass: process.env.SMTP_PASS || 'T9Q3J3m1vZv8zvFjP2'
-            },
-            // Force IPv4 to prevent ENETUNREACH timeouts in Railway/Cloud environments
-            family: 4,
-            connectionTimeout: 15000,
-            socketTimeout: 15000,
-            logger: true,
-            debug: true
-        } as any);
+        // Usa tu API key de Resend. Si no existe, usamos una de prueba local que fallará amablemente.
+        this.resend = new Resend(process.env.RESEND_API_KEY || 're_test_123');
+        // Resend requiere enviar desde un dominio verificado o usar onboarding@resend.dev para testing
+        this.fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
     }
 
     public async sendArticleToTarget(targetEmail: string, article: Article, category?: string) {
@@ -51,26 +33,43 @@ export class MailService {
         // Attach image as file so Postie recognizes it as featured image
         const attachments: any[] = [];
         if (imageUrl) {
-            // Extract extension from URL, default to .jpg
-            const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg';
-            attachments.push({
-                filename: `featured-image${ext}`,
-                path: imageUrl // nodemailer downloads from URL automatically
-            });
+            try {
+                // Fetch the image manually since Resend requires a buffer for attachments
+                const response = await fetch(imageUrl);
+                if (response.ok) {
+                    const arrayBuffer = await response.arrayBuffer();
+                    const buffer = Buffer.from(arrayBuffer);
+                    const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg';
+                    attachments.push({
+                        filename: `featured-image${ext}`,
+                        content: buffer
+                    });
+                } else {
+                    console.error(`Status ${response.status} when fetching image for attachment: ${imageUrl}`);
+                }
+            } catch (err) {
+                console.error(`Failed to download image from ${imageUrl} for Resend attachment`, err);
+            }
         }
 
         try {
-            const info = await this.transporter.sendMail({
-                from: '"Hermes Publisher" <noreply@hermes.local>',
+            const data = await this.resend.emails.send({
+                from: this.fromEmail,
                 to: targetEmail,
                 subject: subject,
                 html: htmlBody,
-                attachments,
+                attachments: attachments.length > 0 ? attachments : undefined,
             });
-            console.log(`Article published to ${targetEmail}${category ? ` [${category}]` : ''}. Preview URL: ${nodemailer.getTestMessageUrl(info) || 'N/A'}`);
+
+            if (data.error) {
+                console.error(`Resend API Error when publishing to ${targetEmail}`, data.error);
+                return false;
+            }
+
+            console.log(`Article published to ${targetEmail}${category ? ` [${category}]` : ''} via Resend. ID: ${data.data?.id}`);
             return true;
         } catch (error) {
-            console.error(`Failed to publish article to ${targetEmail}`, error);
+            console.error(`Failed to publish article to ${targetEmail} via Resend`, error);
             return false;
         }
     }
@@ -101,16 +100,22 @@ export class MailService {
         `;
 
         try {
-            const info = await this.transporter.sendMail({
-                from: '"Hermes Auto-Publisher" <noreply@hermes.local>',
+            const data = await this.resend.emails.send({
+                from: this.fromEmail,
                 to: targetEmail,
                 subject: `Nuevas noticias de ${sourceName} - ${dateStr}`,
                 html: htmlBody,
             });
-            console.log(`Email sent to ${targetEmail}. Preview URL: ${nodemailer.getTestMessageUrl(info) || 'N/A'}`);
+
+            if (data.error) {
+                console.error(`Resend API Error when sending report to ${targetEmail}`, data.error);
+                return false;
+            }
+
+            console.log(`Email report sent to ${targetEmail} via Resend. ID: ${data.data?.id}`);
             return true;
         } catch (error) {
-            console.error(`Failed to send email to ${targetEmail}`, error);
+            console.error(`Failed to send email report to ${targetEmail} via Resend`, error);
             return false;
         }
     }

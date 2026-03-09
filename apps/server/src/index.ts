@@ -223,17 +223,12 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         const target = await prisma.target.findUnique({ where: { id: targetId } });
         if (!target) return res.status(404).json({ error: 'Target not found' });
 
-        console.log(`[MANUAL-PUBLISH] Rewriting article specifically for target: ${target.name}`);
-        const targetRewrite = await aiService.rewriteContent(
-            article.originalTitle,
-            article.originalContent,
-            'neutral'
-        );
+        console.log(`[MANUAL-PUBLISH] Publishing article to target: ${target.name}`);
 
         const articleForTarget = {
             ...article,
-            rewrittenTitle: targetRewrite.title,
-            rewrittenContent: targetRewrite.content
+            rewrittenTitle: article.rewrittenTitle || article.originalTitle,
+            rewrittenContent: article.rewrittenContent || article.originalContent
         };
 
         // Use provided category, or fall back to article's section

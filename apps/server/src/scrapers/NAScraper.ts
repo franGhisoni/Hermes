@@ -32,6 +32,10 @@ export class NAScraper extends BaseScraper {
             const response = await fetch(this.baseUrl, fetchOptions);
 
             if (!response.ok) {
+                if (response.status === 404) {
+                    console.log(`[NA] Section not found (404) for ${this.baseUrl}. Skipping.`);
+                    return [];
+                }
                 throw new Error(`Failed to fetch section page: ${response.status} ${response.statusText}`);
             }
 

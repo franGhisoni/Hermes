@@ -1,0 +1,4 @@
+https://alpha-app.tadevel-cdn.com/hostname/noticiasargentinas.com/api/v1/resizer?asset=657886df3c6a7c4070f4dd25&format=png&width=144&height=144&v=99034ec5c55a644c3c77d32644e3d675&s=e84201f8753363ee0e17b38a29518e5b
+https://alpha-app.tadevel-cdn.com/hostname/noticiasargentinas.com/css/index.css?v=1a664c813ee8d8412e61b106f51c6832
+https://alpha-app.tadevel-cdn.com/hostname/noticiasargentinas.com/manifest.json?v=2b90b36046528926375f2ca0d6f11288
+https://open.spotify.com/show/3HvZvFRLUzYLwqioAooJBg?si=1a26f331bc6a4a28

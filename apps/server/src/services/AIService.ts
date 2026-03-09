@@ -36,11 +36,17 @@ export class AIService {
             .replace('{{title}}', title)
             .replace('{{content}}', content.substring(0, 3000));
 
-        const completion = await this.openai.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "gpt-4o-mini",
-            response_format: { type: "json_object" },
-        });
+        let completion;
+        try {
+            completion = await this.openai.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: "gpt-4o-mini",
+                response_format: { type: "json_object" },
+            });
+        } catch (error) {
+            console.error('[AIService] API error during rewriteContent:', error);
+            return { title, content };
+        }
 
         const rawContent = completion.choices[0].message.content || '{}';
         let result: any = {};
@@ -78,10 +84,16 @@ export class AIService {
             .replace('{{title}}', title)
             .replace('{{content}}', content.substring(0, 500));
 
-        const completion = await this.openai.chat.completions.create({
-            messages: [{ role: "user", content: prompt }],
-            model: "gpt-4o-mini",
-        });
+        let completion;
+        try {
+            completion = await this.openai.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model: "gpt-4o-mini",
+            });
+        } catch (error) {
+            console.error('[AIService] API error during calculateInterestScore:', error);
+            return 5;
+        }
 
         const score = parseInt(completion.choices[0].message.content || '5');
         return isNaN(score) ? 5 : score;

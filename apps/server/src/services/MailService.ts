@@ -22,11 +22,10 @@ export class MailService {
         const subject = category ? `[${category}] ${title}` : title;
 
         // No inline <img> tag — Postie will insert the attached image as featured image
-        const htmlBody = `
+        const htmlBody = `\nstatus: publish\n
             <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 800px; margin: 0 auto; color: #333;">
                 <div style="line-height: 1.8; font-size: 16px; white-space: pre-wrap;">${content}</div>
-                <hr style="margin: 30px 0; border: 0; border-top: 1px solid #eee;" />
-                <p style="font-size: 11px; color: #999; text-align: center;">Publicado via Hermes Plataforma Automática de Noticias</p>
+                
             </div>
         `;
 
@@ -95,7 +94,7 @@ export class MailService {
         }
 
         htmlBody += `
-                <p style="font-size: 11px; color: #999; text-align: center; margin-top: 40px;">Enviado por Hermes Plataforma Automática de Noticias</p>
+                
             </div>
         `;
 

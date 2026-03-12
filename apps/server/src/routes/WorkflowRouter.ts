@@ -25,7 +25,7 @@ import { schedulerService } from '../index';
 
 // POST /api/workflows
 router.post('/', async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, maxArticles } = req.body;
     if (!name || !cron || !targetIds || !Array.isArray(targetIds) || targetIds.length === 0) {
         return res.status(400).json({ error: 'name, cron, and at least one targetId are required' });
     }
@@ -39,6 +39,7 @@ router.post('/', async (req, res) => {
                 minScore: minScore ? parseInt(minScore) : null,
                 targetCategory: targetCategory || null,
                 cron,
+                maxArticles: maxArticles ? parseInt(maxArticles) : 3,
                 targets: { connect: targetIds.map((id: string) => ({ id })) },
                 isActive: true
             },
@@ -53,7 +54,7 @@ router.post('/', async (req, res) => {
 
 // PUT /api/workflows/:id
 router.put('/:id', async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, maxArticles } = req.body;
 
     if (targetIds && (!Array.isArray(targetIds) || targetIds.length === 0)) {
         return res.status(400).json({ error: 'targetIds must be a non-empty array' });
@@ -67,6 +68,7 @@ router.put('/:id', async (req, res) => {
             minScore: minScore ? parseInt(minScore) : null,
             targetCategory: targetCategory || null,
             cron,
+            maxArticles: maxArticles ? parseInt(maxArticles) : undefined,
             isActive
         };
 

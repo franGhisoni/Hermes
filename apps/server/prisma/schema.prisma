@@ -54,6 +54,7 @@ model Workflow {
   targetCategory  String?  // Custom category name for the destination (e.g. WordPress)
   cron            String
   isActive        Boolean  @default(true)
+  maxArticles     Int      @default(3) // Maximum articles to publish per cycle
   targets         Target[] // Implicit many-to-many
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

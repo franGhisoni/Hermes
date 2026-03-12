@@ -21,11 +21,19 @@ export class MailService {
         // Format: [Category] Title — Postie strips the category prefix automatically
         const subject = category ? `[${category}] ${title}` : title;
 
+        const formattedContent = content
+            .split(/\n\s*\n/)
+            .map((p: string) => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`)
+            .join('\n');
+
         // No inline <img> tag — Postie will insert the attached image as featured image
-        const htmlBody = `\nstatus: publish\n
+        // status: publish -> publishes directly
+        // image: off -> prevents automatic gallery at the bottom
+        const htmlBody = `
+status: publish
+image: off
             <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 800px; margin: 0 auto; color: #333;">
-                <div style="line-height: 1.8; font-size: 16px; white-space: pre-wrap;">${content}</div>
-                
+                <div style="line-height: 1.8; font-size: 16px;">${formattedContent}</div>
             </div>
         `;
 

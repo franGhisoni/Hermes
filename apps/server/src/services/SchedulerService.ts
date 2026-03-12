@@ -137,7 +137,7 @@ export class SchedulerService {
                 const articles = await prisma.article.findMany({
                     where,
                     orderBy: { createdAt: 'desc' },
-                    take: 10
+                    take: workflow.maxArticles || 10
                 });
 
                 if (articles.length === 0) {

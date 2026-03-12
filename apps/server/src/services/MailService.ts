@@ -21,21 +21,18 @@ export class MailService {
         // Format: [Category] Title — Postie strips the category prefix automatically
         const subject = category ? `[${category}] ${title}` : title;
 
-        const formattedContent = content
-            .split(/\n\s*\n/)
-            .map((p: string) => `<p>${p.trim().replace(/\n/g, '<br>')}</p>`)
-            .join('\n');
+        const formattedContent = content.trim().replace(/\n\s*\n/g, '<br><br>');
 
         // No inline <img> tag — Postie will insert the attached image as featured image
-        // status: publish -> publishes directly
-        const htmlBody = `status: publish
-<div style="font-family: Georgia, 'Times New Roman', serif; max-width: 800px; margin: 0 auto; color: #333;">
-    <div style="line-height: 1.8; font-size: 16px;">${formattedContent}</div>
+        const htmlBody = `status: publish<br><br>
+<div style="font-family: Georgia, 'Times New Roman', serif; max-width: 800px; margin: 0 auto; color: #333; font-size: 18px; line-height: 1.8;">
+    ${formattedContent}
 </div>`;
 
         // Attach image as file so Postie recognizes it as featured image
         const attachments: any[] = [];
         if (imageUrl) {
+            console.log(`[MailService] Attempting to attach image: ${imageUrl}`);
             try {
                 // Fetch the image manually since Resend requires a buffer for attachments
                 const response = await fetch(imageUrl);
@@ -43,19 +40,24 @@ export class MailService {
                     const arrayBuffer = await response.arrayBuffer();
                     const buffer = Buffer.from(arrayBuffer);
                     const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg';
+                    const filename = `featured-image${ext}`;
                     attachments.push({
-                        filename: `featured-image${ext}`,
+                        filename: filename,
                         content: buffer
                     });
+                    console.log(`[MailService] Successfully attached image as ${filename} (${buffer.length} bytes)`);
                 } else {
                     console.error(`Status ${response.status} when fetching image for attachment: ${imageUrl}`);
                 }
             } catch (err) {
                 console.error(`Failed to download image from ${imageUrl} for Resend attachment`, err);
             }
+        } else {
+            console.log(`[MailService] No image URL provided for article: ${title}`);
         }
 
         try {
+            console.log(`[MailService] Sending email to ${targetEmail} with ${attachments.length} attachments...`);
             const data = await this.resend.emails.send({
                 from: this.fromEmail,
                 to: targetEmail,

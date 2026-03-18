@@ -259,6 +259,44 @@ app.delete('/api/articles/:id', async (req, res) => {
     }
 });
 
+// PUT /api/articles/:id - Update article
+app.put('/api/articles/:id', async (req, res) => {
+    try {
+        const { rewrittenTitle, rewrittenContent } = req.body;
+        const updated = await prisma.article.update({
+            where: { id: req.params.id },
+            data: { rewrittenTitle, rewrittenContent }
+        });
+        res.json(updated);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update article' });
+    }
+});
+
+// POST /api/articles/:id/rewrite - Rewrite article
+app.post('/api/articles/:id/rewrite', async (req, res) => {
+    try {
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Not found' });
+
+        const aiService = new AIService();
+        const result = await aiService.rewriteContent(article.originalTitle, article.originalContent);
+
+        const updated = await prisma.article.update({
+            where: { id: article.id },
+            data: {
+                rewrittenTitle: result.title,
+                rewrittenContent: result.content
+            }
+        });
+
+        res.json(updated);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Rewrite failed' });
+    }
+});
+
 // POST /api/articles/:id/regenerate-image
 import { ImageService } from './services/ImageService';
 app.post('/api/articles/:id/regenerate-image', async (req, res) => {

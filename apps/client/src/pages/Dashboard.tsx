@@ -103,12 +103,12 @@ export default function Dashboard() {
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                 </div>
                 <div className="flex gap-4 items-center">
+                    <ScraperControl />
                     {user?.role === 'ADMIN' && (
                         <>
                             <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
                             <Link to="/users" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Usuarios</Link>
                             <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
-                            <ScraperControl />
                         </>
                     )}
 

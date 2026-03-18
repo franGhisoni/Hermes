@@ -94,6 +94,43 @@ export default function Newsroom() {
         }
     };
 
+    const [rewriting, setRewriting] = useState(false);
+
+    const handleRewrite = async () => {
+        if (!id) return;
+        setRewriting(true);
+        try {
+            const res = await api.post(`/api/articles/${id}/rewrite`);
+            setArticle(prev => prev ? {
+                ...prev,
+                rewrittenTitle: res.data.rewrittenTitle,
+                rewrittenContent: res.data.rewrittenContent
+            } : null);
+        } catch (e) {
+            alert('Failed to rewrite article');
+        } finally {
+            setRewriting(false);
+        }
+    };
+
+    const [saving, setSaving] = useState(false);
+
+    const handleSave = async () => {
+        if (!id || !article) return;
+        setSaving(true);
+        try {
+            await api.put(`/api/articles/${id}`, {
+                rewrittenTitle: article.rewrittenTitle,
+                rewrittenContent: article.rewrittenContent
+            });
+            alert('¡Cambios guardados!');
+        } catch (e) {
+            alert('Error al guardar cambios');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const openPublishModal = async () => {
         setShowPublishModal(true);
         setLoadingTargets(true);
@@ -142,8 +179,27 @@ export default function Newsroom() {
                     <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
                 </div>
                 <div className="flex gap-3">
-                    <button onClick={handleReject} className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
+                    <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                         Rechazar
+                    </button>
+                    <button
+                        onClick={handleSave}
+                        disabled={saving}
+                        className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {saving ? 'Guardando...' : 'Guardar'}
+                    </button>
+                    <button
+                        onClick={handleRewrite}
+                        disabled={rewriting}
+                        className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                        {rewriting ? (
+                            <>
+                                <span className="inline-block w-3 h-3 border-2 border-editorial-text/30 border-t-editorial-text rounded-full animate-spin"></span>
+                                Reescribiendo...
+                            </>
+                        ) : 'Reescribir'}
                     </button>
                     <button
                         onClick={openPublishModal}
@@ -387,12 +443,14 @@ export default function Newsroom() {
 
                         <input
                             className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight"
-                            defaultValue={article.rewrittenTitle}
+                            value={article.rewrittenTitle || ''}
+                            onChange={(e) => setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null)}
                         />
 
                         <textarea
                             className="w-full h-[calc(100vh-400px)] bg-transparent resize-none focus:outline-none text-editorial-text text-lg leading-relaxed font-serif p-0"
-                            defaultValue={article.rewrittenContent}
+                            value={article.rewrittenContent || ''}
+                            onChange={(e) => setArticle(prev => prev ? { ...prev, rewrittenContent: e.target.value } : null)}
                             placeholder="Start writing..."
                         />
 

@@ -5,7 +5,6 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Users from './pages/Users';
 import Flows from './pages/Flows';
-import { ScraperControl } from './components/ScraperControl';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -13,7 +12,6 @@ function App() {
   return (
     <AuthProvider>
       <Router>
-        <ScraperControl />
         <Routes>
           <Route path="/login" element={<Login />} />
 

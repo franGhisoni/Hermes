@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Trash2 } from 'lucide-react';
+import { ScraperControl } from '../components/ScraperControl';
 
 interface PromptConfig {
     id: string;
@@ -154,6 +155,7 @@ export default function Settings() {
                     <h1 className="font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
                 </div>
                 <div className="flex gap-4 items-center">
+                    <ScraperControl />
                     <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 hover:underline">Volver</Link>
                     <button onClick={logout} className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors">
                         Salir

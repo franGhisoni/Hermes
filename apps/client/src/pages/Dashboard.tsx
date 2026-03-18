@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { ScraperControl } from '../components/ScraperControl';
 
 export default function Dashboard() {
     const { user, logout } = useAuth();
@@ -107,6 +108,7 @@ export default function Dashboard() {
                             <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
                             <Link to="/users" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Usuarios</Link>
                             <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
+                            <ScraperControl />
                         </>
                     )}
 

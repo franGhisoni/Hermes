@@ -34,15 +34,17 @@ export function ScraperControl() {
     };
 
     return (
-        <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-50">
-            {message && (
-                <div className="bg-editorial-text text-editorial-bg px-4 py-2 rounded shadow-lg text-xs font-bold uppercase tracking-widest animate-fade-in">
-                    {message}
-                </div>
-            )}
-            <div className="bg-white/90 backdrop-blur border border-editorial-text/10 p-4 rounded-lg shadow-xl">
-                <h3 className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 mb-3">Scraper Manual</h3>
-                <div className="flex flex-col gap-2">
+        <div className="relative group flex items-center h-full">
+            <button className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4 flex items-center gap-1">
+                Scraper Manual
+            </button>
+            <div className="absolute top-full right-0 mt-4 hidden group-hover:block bg-editorial-bg backdrop-blur border border-editorial-text/20 p-4 rounded shadow-xl w-64 z-50 before:absolute before:-top-4 before:left-0 before:w-full before:h-4">
+                <div className="flex flex-col gap-1">
+                    {message && (
+                        <div className="bg-editorial-text text-editorial-bg px-3 py-2 rounded mb-2 text-xs font-bold uppercase tracking-widest animate-fade-in text-center">
+                            {message}
+                        </div>
+                    )}
                     {scrapers.map(s => (
                         <button
                             key={s.source}
@@ -51,7 +53,7 @@ export function ScraperControl() {
                             className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-editorial-text/5 rounded transition-colors text-sm font-serif text-editorial-text disabled:opacity-50"
                         >
                             <span>{s.name}</span>
-                            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 opacity-50" />}
+                            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3 text-editorial-text/50" />}
                         </button>
                     ))}
                 </div>

@@ -5,7 +5,7 @@ import { requireAuth, requireAdmin } from '../middlewares/auth';
 const router = Router();
 const prisma = new PrismaClient();
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAuth);
 
 // GET /api/targets
 router.get('/', async (req, res) => {
@@ -20,7 +20,7 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/targets
-router.post('/', async (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
     const { name, email } = req.body;
     if (!name || !email) return res.status(400).json({ error: 'Name and email are required' });
 
@@ -38,7 +38,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/targets/:id
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
     const { name, email } = req.body;
     try {
         const target = await prisma.target.update({
@@ -52,7 +52,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/targets/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
     try {
         await prisma.target.delete({
             where: { id: req.params.id }

@@ -59,5 +59,38 @@ export class PromptService {
             
             Return ONLY the number.`);
         }
+
+        // Image Select
+        const imageSelect = await this.getPromptByType('IMAGE_SELECT');
+        if (!imageSelect) {
+            await this.createPrompt('Default Image Selector', 'IMAGE_SELECT',
+                `You are a photo editor for a digital news agency. You will receive a news article title, a content snippet, and candidate images.
+
+Your job is to select the ONE best image for this article, or REJECT ALL if none are suitable.
+Additionally, you must evaluate EVERY candidate image and assign it a score from 1 to 10 based on its quality, relevance, and lack of overlays.
+
+REJECT an image (score it low, e.g. 1-3) if it has ANY of these problems:
+- Text overlaid on the image (titles, headlines, captions, banners, zócalos)
+- TV screen captures or studio shots with chyrons/lower thirds
+- Visible logos or branding from media companies (e.g. "La Nación", "TN", "Clarín", "C5N", "NA", "Noticias Argentinas")
+- Huge blue bars at the bottom with "NA" (very common in Argentinian news)
+- Watermarks
+- Extremely low quality, blurry, or heavily compressed
+- Collages or composite images with multiple photos stitched together
+- Generic stock photo illustrations that don't relate to the specific news story
+
+PREFER images (score them high, e.g. 7-10) that are:
+- Clean photojournalistic shots without overlays
+- High quality, well-framed photos of people, events, or places relevant to the article
+- Photos that could stand on their own without explanation
+
+Return a JSON object: 
+{ 
+  "selectedIndex": number, 
+  "scores": [number] // Array of scores (1-10) corresponding to each image candidate in the exact order they were provided
+}
+- Use 0-based index for the best image
+- Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`);
+        }
     }
 }

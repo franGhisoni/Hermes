@@ -18,56 +18,33 @@ export default function Dashboard() {
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
     const [groupBy, setGroupBy] = useState<'none' | 'source' | 'section'>('none');
 
-    const sources = Array.from(new Set(articles.map(a => a.source?.name).filter(Boolean))) as string[];
-    const statuses = Array.from(new Set(articles.map(a => a.status).filter(Boolean))) as string[];
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalArticles, setTotalArticles] = useState(0);
+    const [dbSources, setDbSources] = useState<{name: string}[]>([]);
 
-    const processedArticles = useMemo(() => {
-        let result = [...articles];
+    const statuses = ['PENDING', 'APPROVED', 'REJECTED', 'PUBLISHED'];
 
-        if (filterSource !== 'all') result = result.filter(a => a.source?.name === filterSource);
-        if (filterSection !== 'all') {
-            result = result.filter(a => {
-                if (!a.section) return false;
-                // Match exact section or if the section URL/string contains the name
-                return a.section === filterSection || a.section.toLowerCase().includes(filterSection.toLowerCase());
-            });
-        }
-        if (filterStatus !== 'all') result = result.filter(a => a.status === filterStatus);
-
-        result.sort((a, b) => {
-            let valA = 0, valB = 0;
-            if (sortBy === 'date') {
-                valA = new Date(a.createdAt).getTime();
-                valB = new Date(b.createdAt).getTime();
-            } else if (sortBy === 'score') {
-                valA = a.interestScore || 0;
-                valB = b.interestScore || 0;
-            }
-            if (valA < valB) return sortOrder === 'desc' ? 1 : -1;
-            if (valA > valB) return sortOrder === 'desc' ? -1 : 1;
-            return 0;
-        });
-
-        return result;
-    }, [articles, filterSource, filterSection, filterStatus, sortBy, sortOrder]);
-
-    const groupedArticles = useMemo(() => {
-        if (groupBy === 'none') return null;
-        const groups: Record<string, Article[]> = {};
-        processedArticles.forEach(article => {
-            let key = 'Otros';
-            if (groupBy === 'source' && article.source?.name) key = article.source.name;
-            else if (groupBy === 'section' && article.section) key = article.section;
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(article);
-        });
-        return groups;
-    }, [processedArticles, groupBy]);
+    // Also reset page to 1 when filters change
+    useEffect(() => {
+        setPage(1);
+    }, [filterSource, filterSection, filterStatus, sortBy, sortOrder]);
 
     const fetchArticles = async () => {
         try {
-            const res = await api.get('/api/articles');
-            setArticles(res.data);
+            const params = new URLSearchParams({
+                page: page.toString(),
+                limit: '48',
+                source: filterSource,
+                section: filterSection,
+                status: filterStatus,
+                sortBy,
+                sortOrder
+            });
+            const res = await api.get(`/api/articles?${params.toString()}`);
+            setArticles(res.data.items || []);
+            setTotalArticles(res.data.total || 0);
+            setTotalPages(res.data.totalPages || 1);
         } catch (error) {
             console.error('Error fetching articles:', error);
         } finally {
@@ -84,12 +61,40 @@ export default function Dashboard() {
         }
     };
 
+    const fetchSources = async () => {
+        try {
+            const res = await api.get('/api/config/sources');
+            setDbSources(res.data);
+        } catch (error) {
+            console.error('Error fetching sources:', error);
+        }
+    };
+
     useEffect(() => {
-        fetchArticles();
         fetchSections();
-        const interval = setInterval(fetchArticles, 5000);
-        return () => clearInterval(interval);
+        fetchSources();
     }, []);
+
+    // Polling with current dependencies
+    useEffect(() => {
+        setLoading(true);
+        fetchArticles();
+        const interval = setInterval(fetchArticles, 10000); // 10s to lower load
+        return () => clearInterval(interval);
+    }, [page, filterSource, filterSection, filterStatus, sortBy, sortOrder]);
+
+    const groupedArticles = useMemo(() => {
+        if (groupBy === 'none') return null;
+        const groups: Record<string, Article[]> = {};
+        articles.forEach(article => {
+            let key = 'Otros';
+            if (groupBy === 'source' && article.source?.name) key = article.source.name;
+            else if (groupBy === 'section' && article.section) key = article.section;
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(article);
+        });
+        return groups;
+    }, [articles, groupBy]);
 
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
@@ -122,7 +127,7 @@ export default function Dashboard() {
             <main className="p-8 max-w-[1600px] mx-auto">
                 <div className="flex items-baseline justify-between mb-8">
                     <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h2>
-                    <span className="font-sans text-sm text-editorial-text/50">{processedArticles.length} Artículos Procesados {processedArticles.length !== articles.length && `(de ${articles.length})`}</span>
+                    <span className="font-sans text-sm text-editorial-text/50">{totalArticles} Artículos Procesados (Página {page} de {totalPages})</span>
                 </div>
 
                 {/* Toolbar */}
@@ -131,7 +136,7 @@ export default function Dashboard() {
                         <label className="font-bold uppercase tracking-widest text-editorial-text/50">Medio</label>
                         <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
                             <option value="all">Todos</option>
-                            {sources.map(s => <option key={s} value={s}>{s}</option>)}
+                            {dbSources.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
@@ -193,7 +198,30 @@ export default function Dashboard() {
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
-                        {processedArticles.map(article => <ArticleCard key={article.id} article={article} />)}
+                        {articles.map(article => <ArticleCard key={article.id} article={article} />)}
+                    </div>
+                )}
+
+                {/* Pagination Controls */}
+                {!loading && totalPages > 1 && (
+                    <div className="flex justify-center items-center gap-4 mt-12 mb-8 pt-8 border-t border-editorial-text/20">
+                        <button
+                            onClick={() => setPage(p => Math.max(1, p - 1))}
+                            disabled={page === 1}
+                            className="px-4 py-2 border border-editorial-text text-editorial-text hover:bg-editorial-text hover:text-editorial-bg transition-colors font-sans font-bold uppercase tracking-widest text-xs disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-editorial-text"
+                        >
+                            Anterior
+                        </button>
+                        <div className="font-sans text-sm font-bold opacity-70">
+                            Página {page} de {totalPages}
+                        </div>
+                        <button
+                            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                            disabled={page === totalPages}
+                            className="px-4 py-2 border border-editorial-text text-editorial-text hover:bg-editorial-text hover:text-editorial-bg transition-colors font-sans font-bold uppercase tracking-widest text-xs disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-editorial-text"
+                        >
+                            Siguiente
+                        </button>
                     </div>
                 )}
             </main>

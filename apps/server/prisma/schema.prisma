@@ -135,6 +135,7 @@ enum PromptType {
   REWRITE
   INTEREST
   STYLE
+  IMAGE_SELECT
 }
 
 model PublicationTarget {

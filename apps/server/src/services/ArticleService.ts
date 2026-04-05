@@ -92,12 +92,46 @@ export class ArticleService {
         return article;
     }
 
-    async getAllArticles() {
-        // Return raw query or typed if possible, but status is typed
-        return prisma.article.findMany({
-            orderBy: { createdAt: 'desc' },
-            include: { source: true }
-        });
+    async getArticles(params: {
+        page: number;
+        limit: number;
+        source?: string;
+        section?: string;
+        status?: string;
+        sortBy?: 'date' | 'score';
+        sortOrder?: 'desc' | 'asc';
+    }) {
+        const { page, limit, source, section, status, sortBy = 'date', sortOrder = 'desc' } = params;
+        const skip = (page - 1) * limit;
+
+        let where: any = {};
+        if (source && source !== 'all') where.source = { name: source };
+        if (section && section !== 'all') {
+            where.section = { contains: section, mode: 'insensitive' };
+        }
+        if (status && status !== 'all') where.status = status as any;
+
+        let orderBy: any = {};
+        if (sortBy === 'date') orderBy = { createdAt: sortOrder };
+        else if (sortBy === 'score') orderBy = { interestScore: sortOrder };
+
+        const [items, total] = await Promise.all([
+            prisma.article.findMany({
+                where,
+                orderBy,
+                skip,
+                take: limit,
+                include: { source: true }
+            }),
+            prisma.article.count({ where })
+        ]);
+
+        return {
+            items,
+            total,
+            page,
+            totalPages: Math.ceil(total / limit)
+        };
     }
 
     async getArticleById(id: string) {

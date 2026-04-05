@@ -104,10 +104,8 @@ export class AIService {
         if (imageUrls.length === 1) return { url: imageUrls[0], scores: [10] };
 
         try {
-            const messages: any[] = [
-                {
-                    role: "system",
-                    content: `You are a photo editor for a digital news agency. You will receive a news article title, a content snippet, and candidate images.
+            const config = await this.promptService.getPromptByType('IMAGE_SELECT');
+            let promptTemplate = config?.template || `You are a photo editor for a digital news agency. You will receive a news article title, a content snippet, and candidate images.
 
 Your job is to select the ONE best image for this article, or REJECT ALL if none are suitable.
 Additionally, you must evaluate EVERY candidate image and assign it a score from 1 to 10 based on its quality, relevance, and lack of overlays.
@@ -115,7 +113,8 @@ Additionally, you must evaluate EVERY candidate image and assign it a score from
 REJECT an image (score it low, e.g. 1-3) if it has ANY of these problems:
 - Text overlaid on the image (titles, headlines, captions, banners, zócalos)
 - TV screen captures or studio shots with chyrons/lower thirds
-- Visible logos or branding from media companies (e.g. "La Nación", "TN", "Clarín", "C5N")
+- Visible logos or branding from media companies (e.g. "La Nación", "TN", "Clarín", "C5N", "NA", "Noticias Argentinas")
+- Huge blue bars at the bottom with "NA" (very common in Argentinian news)
 - Watermarks
 - Extremely low quality, blurry, or heavily compressed
 - Collages or composite images with multiple photos stitched together
@@ -132,7 +131,12 @@ Return a JSON object:
   "scores": [number] // Array of scores (1-10) corresponding to each image candidate in the exact order they were provided
 }
 - Use 0-based index for the best image
-- Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`
+- Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`;
+
+            const messages: any[] = [
+                {
+                    role: "system",
+                    content: promptTemplate
                 },
                 {
                     role: "user",

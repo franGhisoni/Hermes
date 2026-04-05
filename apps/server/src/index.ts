@@ -86,8 +86,20 @@ app.use('/api', requireAuth);
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {
     try {
-        const articles = await articleService.getAllArticles();
-        res.json(articles);
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 50;
+        const { source, section, status, sortBy, sortOrder } = req.query as Record<string, string>;
+
+        const result = await articleService.getArticles({
+            page,
+            limit,
+            source,
+            section,
+            status,
+            sortBy: sortBy as 'date' | 'score',
+            sortOrder: sortOrder as 'desc' | 'asc'
+        });
+        res.json(result);
     } catch (error) {
         console.error('Error fetching articles:', error);
         res.status(500).json({ error: 'Internal Server Error' });

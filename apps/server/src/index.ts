@@ -346,16 +346,33 @@ app.post('/api/articles/:id/regenerate-image', async (req, res) => {
 });
 
 // PUT /api/articles/:id/select-image
+// Also accepts manually entered URLs — adds them to imageCandidates if not already present
 app.put('/api/articles/:id/select-image', async (req, res) => {
     const { imageUrl } = req.body;
+    if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('http')) {
+        return res.status(400).json({ error: 'Invalid imageUrl' });
+    }
     try {
         const article = await articleService.getArticleById(req.params.id);
-        // Ensure we are selecting from valid candidates or just update (trusting client for now or could validate)
+        if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        const currentCandidates: string[] = (article as any).imageCandidates || [];
+        const isNewUrl = !currentCandidates.includes(imageUrl);
+
+        const updatedCandidates = isNewUrl ? [...currentCandidates, imageUrl] : currentCandidates;
+        const currentScores: Record<string, number> = ((article as any).imageScores as Record<string, number>) || {};
+        const updatedScores = isNewUrl ? { ...currentScores, [imageUrl]: 5 } : currentScores;
+
         await prisma.article.update({
             where: { id: req.params.id },
-            data: { featureImageUrl: imageUrl }
+            data: {
+                featureImageUrl: imageUrl,
+                imageCandidates: updatedCandidates,
+                imageScores: updatedScores
+            }
         });
-        res.json({ success: true });
+
+        res.json({ success: true, candidates: updatedCandidates, imageScores: updatedScores });
     } catch (error) {
         res.status(500).json({ error: 'Failed to update' });
     }

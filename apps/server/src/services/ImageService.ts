@@ -5,7 +5,12 @@ const BLOCKED_URL_PATTERNS = [
     'logo', 'favicon', 'banner', 'icon', 'avatar', 'sprite',
     'widget', 'badge', 'button', 'arrow', 'nav-', 'menu-',
     'ad-', 'ads/', 'pixel', 'tracker', 'beacon',
-    'google.com/images', 'gstatic.com/images/branding'
+    'google.com/images', 'gstatic.com/images/branding',
+    // Noticias Argentinas always watermarks with blue "NA" bar
+    'noticiasargentinas.com', 'noticias-argentinas.com.ar',
+    // Stock photo sites — preview images always have visible watermarks
+    'dreamstime.com', 'shutterstock.com', 'gettyimages.com', 'istockphoto.com',
+    'alamy.com', '123rf.com', 'depositphotos.com', 'stock.adobe.com'
 ];
 
 export class ImageService {
@@ -58,8 +63,11 @@ export class ImageService {
             // Set viewport to ensure images render
             await page.setViewport({ width: 1280, height: 800 });
 
-            // Bing Images URL
-            const url = `https://www.bing.com/images/search?q=${encodeURIComponent(query)}`;
+            // Bing Images URL — enriched query biases toward news photojournalism,
+            // filter params request large landscape images typical of editorial use
+            const enrichedQuery = `${query} fotografía noticia`;
+            const qft = '%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide';
+            const url = `https://www.bing.com/images/search?q=${encodeURIComponent(enrichedQuery)}&qft=${qft}`;
 
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
             await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });

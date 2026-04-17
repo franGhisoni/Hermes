@@ -80,69 +80,73 @@ export class ProcessorService {
         const rewritten = await this.aiService.rewriteContent(article.title, article.content);
 
         // 5. Image Strategy
-        let featureImageUrl = article.imageUrl;
+        // Original image is treated as last resort — it often has text overlays,
+        // branding, or watermarks from the source publication.
+        let featureImageUrl: string | undefined = undefined;
         let imageCandidates: string[] = [];
+        let imageScoresDict: Record<string, number> | undefined = undefined;
 
-        // Always gather candidates to give AI a choice, even if original exists
         const imageService = new ImageService();
         const searchResults = await imageService.searchImages(article.title);
 
         // Extract source domain to filter out images from the same publication
-        // (they likely have the same branding/overlays as the original)
         const sourceDomain = this.extractDomain(article.url);
 
-        // Build candidate list: Start with original (if valid), then search results
-        const uniqueCandidates = new Set<string>();
-        if (article.imageUrl && article.imageUrl.startsWith('http')) {
-            uniqueCandidates.add(article.imageUrl);
-        }
-        // Filter search results: exclude images from the same domain as the article
-        searchResults
-            .filter(url => {
-                const imgDomain = this.extractDomain(url);
-                return imgDomain !== sourceDomain;
-            })
-            .forEach(url => uniqueCandidates.add(url));
+        // Build candidates from search results only (exclude same-domain branding)
+        const searchCandidates = searchResults.filter(url => {
+            const imgDomain = this.extractDomain(url);
+            return imgDomain !== sourceDomain;
+        });
 
-        imageCandidates = Array.from(uniqueCandidates);
-
-        let imageScoresDict: Record<string, number> | undefined = undefined;
-
-        // If we have candidates, let AI pick the best one
-        if (imageCandidates.length > 0) {
-            console.log(`[Processor] AI Selecting best image from ${imageCandidates.length} candidates...`);
-            const bestImageResult = await this.aiService.selectBestImage(article.title, article.content, imageCandidates);
+        if (searchCandidates.length > 0) {
+            console.log(`[Processor] AI Selecting best image from ${searchCandidates.length} search candidates...`);
+            const bestImageResult = await this.aiService.selectBestImage(article.title, article.content, searchCandidates, article.imageUrl);
 
             if (bestImageResult.url) {
                 featureImageUrl = bestImageResult.url;
                 console.log(`[Processor] AI selected: ${featureImageUrl}`);
             } else {
-                // AI rejected all candidates (text overlays, logos, etc.)
-                // Fall through to DALL-E generation
-                console.log(`[Processor] AI rejected all candidates. Falling back to DALL-E...`);
+                // AI rejected all search candidates → try DALL-E
+                console.log(`[Processor] AI rejected all search candidates. Falling back to DALL-E...`);
                 const generated = await imageService.generateImage(article.title);
                 if (generated) {
                     featureImageUrl = generated;
-                    imageCandidates.push(generated);
-                    bestImageResult.scores.push(10); // Assume DALL-E is 10
+                    searchCandidates.push(generated);
+                    bestImageResult.scores.push(10);
                 }
             }
 
-            // Create dictionary of scores
+            imageCandidates = [...searchCandidates];
+
+            // Build scores dict for search candidates
             imageScoresDict = {};
-            imageCandidates.forEach((url, i) => {
-                imageScoresDict![url] = bestImageResult.scores[i] || 0;
+            searchCandidates.forEach((url, i) => {
+                imageScoresDict![url] = bestImageResult.scores[i] ?? 0;
             });
 
         } else {
-            // No candidates at all ? generate
-            console.log(`[Processor] No images found. Generating...`);
+            // No search results → try DALL-E directly
+            console.log(`[Processor] No search results. Generating via DALL-E...`);
             const generated = await imageService.generateImage(article.title);
             if (generated) {
                 featureImageUrl = generated;
-                imageCandidates.push(generated);
+                imageCandidates = [generated];
                 imageScoresDict = { [generated]: 10 };
             }
+        }
+
+        // Always append original at the end of candidates so editor can access it,
+        // but score it low (2) to signal it's a fallback option
+        if (article.imageUrl && article.imageUrl.startsWith('http') && !imageCandidates.includes(article.imageUrl)) {
+            imageCandidates.push(article.imageUrl);
+            if (!imageScoresDict) imageScoresDict = {};
+            imageScoresDict[article.imageUrl] = 2;
+        }
+
+        // Absolute last resort: if every strategy failed, use original
+        if (!featureImageUrl && article.imageUrl) {
+            featureImageUrl = article.imageUrl;
+            console.log(`[Processor] ⚠️ All strategies failed. Using original as last resort.`);
         }
 
         // 6. Save

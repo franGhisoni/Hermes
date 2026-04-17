@@ -57,14 +57,44 @@ export default function Newsroom() {
     const handleSelectImage = async (url: string) => {
         if (!id) return;
         try {
-            await api.put(`/api/articles/${id}/select-image`, { imageUrl: url });
-            setArticle(prev => prev ? { ...prev, featureImageUrl: url } : null);
+            const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: url });
+            setArticle(prev => prev ? {
+                ...prev,
+                featureImageUrl: url,
+                imageCandidates: res.data.candidates ?? prev.imageCandidates,
+                imageScores: res.data.imageScores ?? prev.imageScores
+            } : null);
         } catch (e) {
             alert('Failed to update image selection');
         }
     };
 
     const [searching, setSearching] = useState(false);
+    const [customImageUrl, setCustomImageUrl] = useState('');
+    const [addingCustom, setAddingCustom] = useState(false);
+
+    const handleAddCustomUrl = async () => {
+        if (!id || !customImageUrl.trim()) return;
+        if (!customImageUrl.startsWith('http')) {
+            alert('Por favor ingresá una URL válida (debe comenzar con http)');
+            return;
+        }
+        setAddingCustom(true);
+        try {
+            const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: customImageUrl.trim() });
+            setArticle(prev => prev ? {
+                ...prev,
+                featureImageUrl: customImageUrl.trim(),
+                imageCandidates: res.data.candidates,
+                imageScores: res.data.imageScores
+            } : null);
+            setCustomImageUrl('');
+        } catch (e) {
+            alert('No se pudo agregar la imagen. Verificá la URL.');
+        } finally {
+            setAddingCustom(false);
+        }
+    };
 
     const handleSearch = async () => {
         if (!id) return;
@@ -436,6 +466,25 @@ export default function Newsroom() {
                                                 No hay más candidatas. Haz clic en "Buscar Web" o "Regenerar" para encontrar más imágenes.
                                             </div>
                                         )}
+
+                                        {/* Manual URL input */}
+                                        <div className="mt-3 flex gap-2 items-center">
+                                            <input
+                                                type="url"
+                                                value={customImageUrl}
+                                                onChange={e => setCustomImageUrl(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && handleAddCustomUrl()}
+                                                placeholder="Pegar URL de imagen..."
+                                                className="flex-1 bg-transparent border border-editorial-text/20 px-3 py-1.5 text-xs font-sans text-editorial-text placeholder-editorial-text/30 focus:outline-none focus:border-editorial-text/50 rounded"
+                                            />
+                                            <button
+                                                onClick={handleAddCustomUrl}
+                                                disabled={addingCustom || !customImageUrl.trim()}
+                                                className="px-3 py-1.5 bg-editorial-text text-editorial-bg text-xs font-sans font-bold uppercase tracking-widest rounded hover:bg-black disabled:opacity-40 transition-colors whitespace-nowrap"
+                                            >
+                                                {addingCustom ? '...' : 'Agregar'}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             );

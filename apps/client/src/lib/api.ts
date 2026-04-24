@@ -6,6 +6,12 @@ export const api = axios.create({
     baseURL: API_URL,
 });
 
+export function resolveAssetUrl(url?: string | null) {
+    if (!url) return '';
+    if (/^(https?:|data:|blob:)/i.test(url)) return url;
+    return new URL(url, API_URL).toString();
+}
+
 api.interceptors.request.use((config) => {
     const token = localStorage.getItem('hermes_token');
     if (token) {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { api } from '../lib/api';
+import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -399,7 +399,7 @@ export default function Newsroom() {
                                                 ★ Score: {featureScore}/10
                                             </div>
                                         )}
-                                        <img src={article.featureImageUrl} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
+                                        <img src={resolveAssetUrl(article.featureImageUrl)} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
                                         <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                                             <button
                                                 onClick={handleRegenerate}
@@ -451,7 +451,7 @@ export default function Newsroom() {
                                                                     {score}/10
                                                                 </div>
                                                             )}
-                                                            <img src={url} className="w-full h-full object-cover" />
+                                                            <img src={resolveAssetUrl(url)} className="w-full h-full object-cover" />
                                                             {isOriginal && (
                                                                 <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] font-bold uppercase text-center py-0.5">
                                                                     Original

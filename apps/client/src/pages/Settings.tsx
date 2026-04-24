@@ -51,12 +51,13 @@ export default function Settings() {
     // Schedule Form State
     const [newSchedSource, setNewSchedSource] = useState(AVAILABLE_SOURCES[0]);
     const [newSchedCron, setNewSchedCron] = useState(CRON_PRESETS[1].value);
+    const [scrapeLimit, setScrapeLimit] = useState(3);
+    const [articleRetentionHours, setArticleRetentionHours] = useState(48);
+    const [articleCleanupCron, setArticleCleanupCron] = useState('0 * * * *');
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
     }
-
-    const [_scrapeLimit, setScrapeLimit] = useState(3);
 
     useEffect(() => {
         fetchData();
@@ -81,7 +82,11 @@ export default function Settings() {
 
     useEffect(() => {
         api.get('/api/config/settings')
-            .then(res => setScrapeLimit(res.data.scrapeLimit));
+            .then(res => {
+                setScrapeLimit(res.data.scrapeLimit ?? 3);
+                setArticleRetentionHours(res.data.articleRetentionHours ?? 48);
+                setArticleCleanupCron(res.data.articleCleanupCron ?? '0 * * * *');
+            });
     }, []);
 
     const handleCreateSection = async (e: React.FormEvent) => {
@@ -244,7 +249,7 @@ export default function Settings() {
 
                     <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)] mb-8">
                         <h3 className="text-xl font-bold mb-4 font-sans uppercase tracking-widest text-sm">Nuevo Schedule</h3>
-                        <form onSubmit={handleCreateSchedule} className="grid grid-cols-1 md:grid-cols-3 gap-4 font-sans">
+                        <form onSubmit={handleCreateSchedule} className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
                             <select
                                 value={newSchedSource}
                                 onChange={e => setNewSchedSource(e.target.value)}
@@ -263,8 +268,18 @@ export default function Settings() {
                                     <option key={p.value} value={p.value}>{p.label}</option>
                                 ))}
                             </select>
+                            <input
+                                type="text"
+                                value={newSchedCron}
+                                onChange={e => setNewSchedCron(e.target.value)}
+                                className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent font-mono text-sm"
+                                placeholder="0 8,15 * * *"
+                            />
                             <div className="flex justify-end">
                                 <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs">Agregar</button>
+                            </div>
+                            <div className="md:col-span-4 text-[10px] text-editorial-text/40 italic">
+                                Cron flexible: `0 8,15 * * *` ejecuta a las 8:00 y 15:00.
                             </div>
                         </form>
                     </div>
@@ -304,21 +319,92 @@ export default function Settings() {
 
                 <section className="mb-12">
                     <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Sistema</h2>
-                    <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h3 className="text-xl font-bold">Limite de Scrapeo Por Seccion</h3>
-                                <p className="font-sans text-sm text-editorial-text/50">Cuantos articulos traer de cada seccion (Portada, Politica, Economia, etc) por ejecucion.</p>
+                    <div className="space-y-6">
+                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-xl font-bold">Limite de Scrapeo Por Seccion</h3>
+                                    <p className="font-sans text-sm text-editorial-text/50">Cuantos articulos traer de cada seccion (Portada, Politica, Economia, etc) por ejecucion.</p>
+                                </div>
+                                <div>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={scrapeLimit}
+                                        className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
+                                        onChange={(e) => setScrapeLimit(parseInt(e.target.value || '1', 10))}
+                                        onBlur={async (e) => {
+                                            const value = Math.max(1, parseInt(e.target.value || '1', 10));
+                                            setScrapeLimit(value);
+                                            await api.post('/api/config/settings', { scrapeLimit: value });
+                                        }}
+                                    />
+                                </div>
                             </div>
-                            <div>
-                                <input
-                                    type="number"
-                                    defaultValue={3}
-                                    className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
-                                    onBlur={async (e) => {
-                                        await api.post('/api/config/settings', { scrapeLimit: e.target.value });
-                                    }}
-                                />
+                        </div>
+
+                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-xl font-bold">Retencion de Noticias</h3>
+                                    <p className="font-sans text-sm text-editorial-text/50">Las noticias con mas antiguedad que este valor se eliminan automaticamente junto con sus imagenes generadas huerfanas.</p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={articleRetentionHours}
+                                        className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
+                                        onChange={(e) => setArticleRetentionHours(parseInt(e.target.value || '1', 10))}
+                                        onBlur={async (e) => {
+                                            const value = Math.max(1, parseInt(e.target.value || '1', 10));
+                                            setArticleRetentionHours(value);
+                                            await api.post('/api/config/settings', { articleRetentionHours: value });
+                                        }}
+                                    />
+                                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text/50">horas</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
+                            <div className="flex flex-col gap-4">
+                                <div className="flex justify-between items-center gap-6">
+                                    <div>
+                                        <h3 className="text-xl font-bold">Cron de Limpieza</h3>
+                                        <p className="font-sans text-sm text-editorial-text/50">Define cada cuanto el sistema revisa si hay noticias vencidas para borrar.</p>
+                                    </div>
+                                    <select
+                                        value={CRON_PRESETS.some(p => p.value === articleCleanupCron) ? articleCleanupCron : ''}
+                                        onChange={e => {
+                                            if (e.target.value) setArticleCleanupCron(e.target.value);
+                                        }}
+                                        className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer text-sm"
+                                    >
+                                        <option value="">Preset rapido</option>
+                                        {CRON_PRESETS.map(p => (
+                                            <option key={p.value} value={p.value}>{p.label}</option>
+                                        ))}
+                                        <option value="0 * * * *">Cada 1 hora exacta</option>
+                                    </select>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="text"
+                                        value={articleCleanupCron}
+                                        className="flex-1 p-2 font-mono text-sm border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none"
+                                        onChange={(e) => setArticleCleanupCron(e.target.value)}
+                                        onBlur={async (e) => {
+                                            const value = e.target.value.trim();
+                                            setArticleCleanupCron(value);
+                                            await api.post('/api/config/settings', { articleCleanupCron: value });
+                                        }}
+                                        placeholder="0 * * * *"
+                                    />
+                                </div>
+                                <div className="text-[10px] text-editorial-text/40 italic">
+                                    Ejemplos: `0 * * * *` = cada hora, `0 */6 * * *` = cada 6 horas, `0 3 * * *` = todos los dias a las 3:00.
+                                </div>
                             </div>
                         </div>
                     </div>

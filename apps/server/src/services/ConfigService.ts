@@ -17,7 +17,20 @@ export class ConfigService {
     }
 
     async getScrapeLimit(): Promise<number> {
-        const val = await this.getSetting('scrape_limit', '3');
-        return parseInt(val, 10);
+        return this.getIntSetting('scrape_limit', 3);
+    }
+
+    async getArticleRetentionHours(): Promise<number> {
+        return this.getIntSetting('article_retention_hours', 48);
+    }
+
+    async getArticleCleanupCron(): Promise<string> {
+        return this.getSetting('article_cleanup_cron', '0 * * * *');
+    }
+
+    private async getIntSetting(key: string, defaultValue: number): Promise<number> {
+        const val = await this.getSetting(key, defaultValue.toString());
+        const parsed = parseInt(val, 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
     }
 }

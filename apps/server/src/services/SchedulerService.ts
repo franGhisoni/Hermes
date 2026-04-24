@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
 import { ArticleService } from './ArticleService';
+import { ConfigService } from './ConfigService';
 
 const prisma = new PrismaClient();
 
@@ -10,12 +11,14 @@ export class SchedulerService {
     private queueService: QueueService;
     private mailService: MailService;
     private articleService: ArticleService;
+    private configService: ConfigService;
     private activeJobs: Map<string, ScheduledTask> = new Map();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
         this.queueService = queueService;
         this.articleService = articleService;
         this.mailService = new MailService();
+        this.configService = new ConfigService();
     }
 
     public async initialize() {
@@ -23,6 +26,10 @@ export class SchedulerService {
         this.stopAll();
 
         try {
+            // 0. Register retention cleanup
+            await this.scheduleArticleCleanup();
+            await this.cleanupExpiredArticles();
+
             // 1. Load and schedule scrape schedules
             const scrapeSchedules = await prisma.scrapeSchedule.findMany({
                 where: { isActive: true }
@@ -44,6 +51,83 @@ export class SchedulerService {
         } catch (error) {
             console.error('Failed to load schedules:', error);
         }
+    }
+
+    public async scheduleArticleCleanup() {
+        const jobId = 'cleanup_articles_retention';
+
+        if (this.activeJobs.has(jobId)) {
+            this.activeJobs.get(jobId)!.stop();
+            this.activeJobs.delete(jobId);
+        }
+
+        const cleanupCron = await this.configService.getArticleCleanupCron();
+        if (!cron.validate(cleanupCron)) {
+            console.error(`Invalid cron for article cleanup: ${cleanupCron}`);
+            return;
+        }
+
+        const task = cron.schedule(cleanupCron, async () => {
+            await this.cleanupExpiredArticles();
+        });
+
+        this.activeJobs.set(jobId, task);
+        console.log(`Scheduled article cleanup every [${cleanupCron}]`);
+    }
+
+    private async cleanupExpiredArticles() {
+        try {
+            const retentionHours = await this.configService.getArticleRetentionHours();
+            const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000);
+            console.log(`[CRON-CLEANUP] Removing articles older than ${retentionHours}h (before ${cutoff.toISOString()})...`);
+
+            const { count } = await prisma.article.deleteMany({
+                where: {
+                    createdAt: { lt: cutoff }
+                }
+            });
+
+            const deletedImages = await this.cleanupOrphanGeneratedImages(cutoff);
+            console.log(`[CRON-CLEANUP] Deleted ${count} expired articles and ${deletedImages} orphan generated images.`);
+        } catch (error) {
+            console.error('[CRON-CLEANUP] Failed to cleanup expired articles:', error);
+        }
+    }
+
+    private async cleanupOrphanGeneratedImages(cutoff: Date): Promise<number> {
+        const remainingArticles = await prisma.article.findMany({
+            select: {
+                featureImageUrl: true,
+                imageCandidates: true
+            }
+        });
+
+        const referencedImageIds = new Set<string>();
+        for (const article of remainingArticles) {
+            const featureId = this.extractInternalImageId(article.featureImageUrl);
+            if (featureId) referencedImageIds.add(featureId);
+
+            for (const candidate of article.imageCandidates || []) {
+                const candidateId = this.extractInternalImageId(candidate);
+                if (candidateId) referencedImageIds.add(candidateId);
+            }
+        }
+
+        const where: any = {
+            createdAt: { lt: cutoff }
+        };
+        if (referencedImageIds.size > 0) {
+            where.id = { notIn: Array.from(referencedImageIds) };
+        }
+
+        const { count } = await prisma.generatedImage.deleteMany({ where });
+        return count;
+    }
+
+    private extractInternalImageId(imageUrl?: string | null): string | null {
+        if (!imageUrl) return null;
+        const match = imageUrl.match(/^\/api\/images\/([^\/\?]+)/);
+        return match?.[1] || null;
     }
 
     // ---- SCRAPE SCHEDULES ----

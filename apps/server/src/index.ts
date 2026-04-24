@@ -26,6 +26,7 @@ import { requireAuth, requireAdmin } from './middlewares/auth';
 import bcrypt from 'bcrypt';
 
 import { SchedulerService } from './services/SchedulerService';
+import cron from 'node-cron';
 
 const queueService = new QueueService();
 const articleService = new ArticleService();
@@ -199,13 +200,26 @@ app.post('/api/scrape', async (req, res) => {
 
 app.get('/api/config/settings', async (req, res) => {
     const limit = await configService.getScrapeLimit();
-    res.json({ scrapeLimit: limit });
+    const articleRetentionHours = await configService.getArticleRetentionHours();
+    const articleCleanupCron = await configService.getArticleCleanupCron();
+    res.json({ scrapeLimit: limit, articleRetentionHours, articleCleanupCron });
 });
 
 app.post('/api/config/settings', async (req, res) => {
-    const { scrapeLimit } = req.body;
-    if (scrapeLimit) {
-        await configService.setSetting('scrape_limit', scrapeLimit.toString());
+    const { scrapeLimit, articleRetentionHours, articleCleanupCron } = req.body;
+    if (scrapeLimit !== undefined && scrapeLimit !== null) {
+        await configService.setSetting('scrape_limit', Math.max(1, parseInt(scrapeLimit.toString(), 10)).toString());
+    }
+    if (articleRetentionHours !== undefined && articleRetentionHours !== null) {
+        await configService.setSetting('article_retention_hours', Math.max(1, parseInt(articleRetentionHours.toString(), 10)).toString());
+    }
+    if (articleCleanupCron !== undefined && articleCleanupCron !== null) {
+        const normalizedCron = articleCleanupCron.toString().trim();
+        if (!cron.validate(normalizedCron)) {
+            return res.status(400).json({ error: 'Invalid articleCleanupCron' });
+        }
+        await configService.setSetting('article_cleanup_cron', normalizedCron);
+        await schedulerService.scheduleArticleCleanup();
     }
     res.json({ success: true });
 });

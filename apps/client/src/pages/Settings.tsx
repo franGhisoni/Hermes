@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Trash2 } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
+import { CronBuilder } from '../components/CronBuilder';
 
 interface PromptConfig {
     id: string;
@@ -249,7 +250,7 @@ export default function Settings() {
 
                     <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)] mb-8">
                         <h3 className="text-xl font-bold mb-4 font-sans uppercase tracking-widest text-sm">Nuevo Schedule</h3>
-                        <form onSubmit={handleCreateSchedule} className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+                        <form onSubmit={handleCreateSchedule} className="grid grid-cols-1 gap-4 font-sans">
                             <select
                                 value={newSchedSource}
                                 onChange={e => setNewSchedSource(e.target.value)}
@@ -259,27 +260,14 @@ export default function Settings() {
                                     <option key={s} value={s}>{s}</option>
                                 ))}
                             </select>
-                            <select
+                            <CronBuilder
                                 value={newSchedCron}
-                                onChange={e => setNewSchedCron(e.target.value)}
-                                className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer"
-                            >
-                                {CRON_PRESETS.map(p => (
-                                    <option key={p.value} value={p.value}>{p.label}</option>
-                                ))}
-                            </select>
-                            <input
-                                type="text"
-                                value={newSchedCron}
-                                onChange={e => setNewSchedCron(e.target.value)}
-                                className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent font-mono text-sm"
-                                placeholder="0 8,15 * * *"
+                                onChange={setNewSchedCron}
+                                presets={CRON_PRESETS}
+                                helperText="Ejemplo: 0 8,12,15 * * 1,2,3,4,5 corre lunes a viernes a las 8:00, 12:00 y 15:00."
                             />
                             <div className="flex justify-end">
                                 <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs">Agregar</button>
-                            </div>
-                            <div className="md:col-span-4 text-[10px] text-editorial-text/40 italic">
-                                Cron flexible: `0 8,15 * * *` ejecuta a las 8:00 y 15:00.
                             </div>
                         </form>
                     </div>
@@ -369,41 +357,28 @@ export default function Settings() {
 
                         <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
                             <div className="flex flex-col gap-4">
-                                <div className="flex justify-between items-center gap-6">
-                                    <div>
-                                        <h3 className="text-xl font-bold">Cron de Limpieza</h3>
-                                        <p className="font-sans text-sm text-editorial-text/50">Define cada cuanto el sistema revisa si hay noticias vencidas para borrar.</p>
-                                    </div>
-                                    <select
-                                        value={CRON_PRESETS.some(p => p.value === articleCleanupCron) ? articleCleanupCron : ''}
-                                        onChange={e => {
-                                            if (e.target.value) setArticleCleanupCron(e.target.value);
-                                        }}
-                                        className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer text-sm"
-                                    >
-                                        <option value="">Preset rapido</option>
-                                        {CRON_PRESETS.map(p => (
-                                            <option key={p.value} value={p.value}>{p.label}</option>
-                                        ))}
-                                        <option value="0 * * * *">Cada 1 hora exacta</option>
-                                    </select>
+                                <div>
+                                    <h3 className="text-xl font-bold">Cron de Limpieza</h3>
+                                    <p className="font-sans text-sm text-editorial-text/50">Define cada cuanto el sistema revisa si hay noticias vencidas para borrar.</p>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="text"
-                                        value={articleCleanupCron}
-                                        className="flex-1 p-2 font-mono text-sm border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none"
-                                        onChange={(e) => setArticleCleanupCron(e.target.value)}
-                                        onBlur={async (e) => {
-                                            const value = e.target.value.trim();
+                                <CronBuilder
+                                    value={articleCleanupCron}
+                                    onChange={setArticleCleanupCron}
+                                    presets={[...CRON_PRESETS, { label: 'Cada 1 hora exacta', value: '0 * * * *' }]}
+                                    helperText="Si no trabajan fines de semana, podés usar días hábiles y revisar solo de lunes a viernes."
+                                />
+                                <div className="flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={async () => {
+                                            const value = articleCleanupCron.trim();
                                             setArticleCleanupCron(value);
                                             await api.post('/api/config/settings', { articleCleanupCron: value });
                                         }}
-                                        placeholder="0 * * * *"
-                                    />
-                                </div>
-                                <div className="text-[10px] text-editorial-text/40 italic">
-                                    Ejemplos: `0 * * * *` = cada hora, `0 */6 * * *` = cada 6 horas, `0 3 * * *` = todos los dias a las 3:00.
+                                        className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs"
+                                    >
+                                        Guardar Cron
+                                    </button>
                                 </div>
                             </div>
                         </div>

@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Trash2, Settings2, Mail, Clock } from 'lucide-react';
 import { MultiSelect } from '../components/MultiSelect';
+import { CronBuilder } from '../components/CronBuilder';
 
 interface Target {
     id: string;
@@ -246,8 +247,11 @@ export default function Flows() {
 
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Horario (Cron)</label>
-                                <input type="text" value={wfCron} onChange={e => setWfCron(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text font-mono text-sm" placeholder="* * * * *" />
-                                <span className="text-[10px] opacity-40 italic mt-1 block">Minuto Hora Dia Mes DiaSemana (ej. 0 8 * * * = 8:00 AM)</span>
+                                <CronBuilder
+                                    value={wfCron}
+                                    onChange={setWfCron}
+                                    helperText="Ejemplo: 0 8,12,15 * * 1,2,3,4,5 publica a las 8:00, 12:00 y 15:00 de lunes a viernes."
+                                />
                             </div>
 
                             <div className="col-span-2 mt-4 flex justify-end">

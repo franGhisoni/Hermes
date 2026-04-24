@@ -87,7 +87,11 @@ export class ProcessorService {
         let imageScoresDict: Record<string, number> | undefined = undefined;
 
         const imageService = new ImageService();
-        const searchResults = await imageService.searchImages(article.title);
+        const searchResults = await imageService.searchImages({
+            title: article.title,
+            content: article.content,
+            rewrittenTitle: rewritten.title
+        });
 
         // Extract source domain to filter out images from the same publication
         const sourceDomain = this.extractDomain(article.url);

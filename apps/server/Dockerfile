@@ -19,6 +19,7 @@ WORKDIR /app
 
 # Copy package files
 COPY package.json package-lock.json* ./
+COPY prisma ./prisma
 
 # Install dependencies
 RUN npm ci
@@ -27,7 +28,7 @@ RUN npm ci
 COPY . .
 
 # Generate Prisma Client (Create .env file to guarantee validation passes, ignoring any ARGs)
-RUN echo "DATABASE_URL=postgresql://dummy:5432/mydb" > .env && npx prisma generate
+RUN echo "DATABASE_URL=postgresql://dummy:5432/mydb" > .env && npx prisma generate --schema prisma/schema.prisma
 
 # Build TypeScript
 RUN npm run build

@@ -4,11 +4,10 @@
     "description": "Backend API and Workers for Hermes",
     "main": "dist/index.js",
     "scripts": {
-        "prisma:generate": "prisma generate",
+        "prisma:generate": "prisma generate --schema prisma/schema.prisma",
         "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
         "build": "tsc",
-        "start": "node dist/index.js",
-        "postinstall": "prisma generate"
+        "start": "node dist/index.js"
     },
     "dependencies": {
         "@prisma/client": "^5.22.0",

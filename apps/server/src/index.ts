@@ -399,7 +399,11 @@ app.post('/api/articles/:id/search-images', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Not found' });
 
         const imageService = new ImageService();
-        const images = await imageService.searchImages(article.originalTitle);
+        const images = await imageService.searchImages({
+            title: article.originalTitle,
+            content: article.originalContent,
+            rewrittenTitle: article.rewrittenTitle || undefined
+        });
 
         // Actually findOrGenerate calls both. We might want just search.
         // But findOrGenerate is fine.

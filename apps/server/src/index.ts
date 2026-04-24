@@ -76,6 +76,20 @@ initSections();
 // Open routes
 app.use('/api/auth', authRouter);
 
+// Public image serving (must be before auth guard — consumed by frontend and email clients)
+app.get('/api/images/:id', async (req, res) => {
+    try {
+        const img = await prisma.generatedImage.findUnique({ where: { id: req.params.id } });
+        if (!img) return res.status(404).end();
+        res.setHeader('Content-Type', img.mimeType);
+        res.setHeader('Cache-Control', 'public, max-age=172800');
+        res.send(Buffer.from(img.data));
+    } catch (error) {
+        console.error('Error serving generated image:', error);
+        res.status(500).end();
+    }
+});
+
 // Protected global routers
 app.use('/api/users', userRouter);
 app.use('/api/targets', targetRouter);

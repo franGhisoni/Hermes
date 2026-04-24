@@ -42,6 +42,7 @@ export class AIService {
                 messages: [{ role: "user", content: prompt }],
                 model: "gpt-4o-mini",
                 response_format: { type: "json_object" },
+                max_tokens: 1500,
             });
         } catch (error) {
             console.error('[AIService] API error during rewriteContent:', error);
@@ -89,6 +90,7 @@ export class AIService {
             completion = await this.openai.chat.completions.create({
                 messages: [{ role: "user", content: prompt }],
                 model: "gpt-4o-mini",
+                max_tokens: 3,
             });
         } catch (error) {
             console.error('[AIService] API error during calculateInterestScore:', error);

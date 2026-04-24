@@ -1,5 +1,7 @@
 import { Resend } from 'resend';
-import { Article } from '@prisma/client';
+import { Article, PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export class MailService {
     private resend: Resend;
@@ -34,23 +36,39 @@ export class MailService {
         if (imageUrl) {
             console.log(`[MailService] Attempting to attach image: ${imageUrl}`);
             try {
-                // Fetch the image manually since Resend requires a buffer for attachments
-                const response = await fetch(imageUrl);
-                if (response.ok) {
-                    const arrayBuffer = await response.arrayBuffer();
-                    const buffer = Buffer.from(arrayBuffer);
-                    const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg';
-                    const filename = `featured-image${ext}`;
-                    attachments.push({
-                        filename: filename,
-                        content: buffer
-                    });
-                    console.log(`[MailService] Successfully attached image as ${filename} (${buffer.length} bytes)`);
+                const internalMatch = imageUrl.match(/^\/api\/images\/([^\/\?]+)/);
+                if (internalMatch) {
+                    // Internally-generated image — read bytes from DB directly
+                    const img = await prisma.generatedImage.findUnique({ where: { id: internalMatch[1] } });
+                    if (img) {
+                        const ext = img.mimeType === 'image/jpeg' ? '.jpg' : '.png';
+                        attachments.push({
+                            filename: `featured-image${ext}`,
+                            content: Buffer.from(img.data)
+                        });
+                        console.log(`[MailService] Attached internal image ${internalMatch[1]} (${img.data.length} bytes)`);
+                    } else {
+                        console.error(`[MailService] Internal image not found: ${internalMatch[1]}`);
+                    }
                 } else {
-                    console.error(`Status ${response.status} when fetching image for attachment: ${imageUrl}`);
+                    // External URL — fetch the image
+                    const response = await fetch(imageUrl);
+                    if (response.ok) {
+                        const arrayBuffer = await response.arrayBuffer();
+                        const buffer = Buffer.from(arrayBuffer);
+                        const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg';
+                        const filename = `featured-image${ext}`;
+                        attachments.push({
+                            filename: filename,
+                            content: buffer
+                        });
+                        console.log(`[MailService] Successfully attached image as ${filename} (${buffer.length} bytes)`);
+                    } else {
+                        console.error(`Status ${response.status} when fetching image for attachment: ${imageUrl}`);
+                    }
                 }
             } catch (err) {
-                console.error(`Failed to download image from ${imageUrl} for Resend attachment`, err);
+                console.error(`Failed to prepare image attachment from ${imageUrl}`, err);
             }
         } else {
             console.log(`[MailService] No image URL provided for article: ${title}`);

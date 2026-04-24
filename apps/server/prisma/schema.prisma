@@ -122,6 +122,15 @@ enum ArticleStatus {
   PUBLISHED
 }
 
+model GeneratedImage {
+  id        String   @id @default(uuid())
+  data      Bytes
+  mimeType  String   @default("image/png")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
 model PromptConfig {
   id          String      @id @default(uuid())
   name        String

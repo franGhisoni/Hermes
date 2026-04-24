@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
 import { ArticleService } from './ArticleService';
-import { AIService } from './AIService';
 
 const prisma = new PrismaClient();
 
@@ -11,14 +10,12 @@ export class SchedulerService {
     private queueService: QueueService;
     private mailService: MailService;
     private articleService: ArticleService;
-    private aiService: AIService;
     private activeJobs: Map<string, ScheduledTask> = new Map();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
         this.queueService = queueService;
         this.articleService = articleService;
         this.mailService = new MailService();
-        this.aiService = new AIService();
     }
 
     public async initialize() {
@@ -151,23 +148,8 @@ export class SchedulerService {
 
                 for (const article of articles) {
                     for (const target of targets) {
-                        console.log(`[CRON-PUBLISH] Rewriting article specifically for target: ${target.name}`);
-                        // Generate target-specific rewrite
-                        const targetRewrite = await this.aiService.rewriteContent(
-                            article.originalTitle,
-                            article.originalContent,
-                            'neutral'
-                        );
-
-                        // Create a temporary cloned article object for this specific target
-                        const articleForTarget = {
-                            ...article,
-                            rewrittenTitle: targetRewrite.title,
-                            rewrittenContent: targetRewrite.content
-                        };
-
                         const category = workflow.targetCategory || article.section || undefined;
-                        await this.mailService.sendArticleToTarget(target.email, articleForTarget as any, category);
+                        await this.mailService.sendArticleToTarget(target.email, article as any, category);
                     }
 
                     // Mark as published once processed for all targets

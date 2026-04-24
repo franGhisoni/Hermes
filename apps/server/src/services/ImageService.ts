@@ -1,4 +1,7 @@
 import OpenAI from 'openai';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 // Patterns in URLs that indicate non-content images (icons, UI elements, ads)
 const BLOCKED_URL_PATTERNS = [
@@ -20,28 +23,6 @@ export class ImageService {
         this.openai = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
         });
-    }
-
-    async findOrGenerateImage(title: string): Promise<string[]> {
-        console.log(`[ImageService] Finding image for: "${title}"`);
-
-        const candidates: string[] = [];
-
-        // 1. Try to search
-        const foundImages = await this.searchImages(title);
-        if (foundImages.length > 0) {
-            console.log(`[ImageService] Found ${foundImages.length} images via search.`);
-            candidates.push(...foundImages);
-        }
-
-        // 2. Always Generate one as fallback/option
-        console.log(`[ImageService] Generating via DALL-E...`);
-        const generated = await this.generateImage(title);
-        if (generated) {
-            candidates.push(generated);
-        }
-
-        return candidates;
     }
 
     public async searchImages(query: string): Promise<string[]> {
@@ -158,13 +139,24 @@ export class ImageService {
     public async generateImage(prompt: string): Promise<string | null> {
         try {
             const response = await this.openai.images.generate({
-                model: "dall-e-3",
-                prompt: `A professional news editorial illustration for an article titled: "${prompt}". Style: Photorealistic or detailed editorial illustration, neutral, high quality.`,
+                model: "gpt-image-2",
+                prompt: `Editorial news photograph for article: "${prompt}". Photorealistic, high quality, no text overlays, no watermarks, no logos.`,
                 n: 1,
                 size: "1024x1024",
+                quality: "low",
+            } as any);
+
+            const b64 = response.data?.[0]?.b64_json;
+            if (!b64) {
+                console.error('[ImageService] Generation returned no b64 data');
+                return null;
+            }
+
+            const record = await prisma.generatedImage.create({
+                data: { data: Buffer.from(b64, 'base64') }
             });
 
-            return response.data?.[0]?.url || null;
+            return `/api/images/${record.id}`;
         } catch (error) {
             console.error('[ImageService] Generation failed:', error);
             return null;

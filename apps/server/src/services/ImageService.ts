@@ -180,9 +180,44 @@ export class ImageService {
             queries.push(rewrittenTitle);
         }
 
+        // Lead-based query: first sentence of body, often introduces the actual
+        // protagonist when the title is metaphorical or trait-driven.
+        const leadQuery = this.buildLeadQuery(content);
+        if (leadQuery) {
+            queries.push(leadQuery);
+        }
+
         return this.uniqueStrings(queries)
             .filter(query => query.length >= 4)
-            .slice(0, 5);
+            .slice(0, 6);
+    }
+
+    private buildLeadQuery(content: string): string {
+        if (!content) return '';
+
+        const firstSentenceMatch = content.match(/^[^.!?\n]{20,300}[.!?\n]/);
+        const lead = firstSentenceMatch ? firstSentenceMatch[0] : content.substring(0, 220);
+
+        const cleaned = lead
+            .replace(/[^\w\sÁÉÍÓÚÜÑáéíóúüñ-]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        const stopwords = new Set([
+            'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas',
+            'de', 'del', 'al', 'a', 'en', 'con', 'por', 'para', 'sin', 'sobre',
+            'que', 'qué', 'como', 'cómo', 'cuando', 'cuándo', 'donde', 'dónde',
+            'es', 'son', 'fue', 'fueron', 'ser', 'estar', 'está', 'están',
+            'y', 'o', 'u', 'pero', 'sino', 'aunque',
+            'su', 'sus', 'mi', 'tu', 'lo', 'le', 'les', 'se',
+            'este', 'esta', 'esto', 'ese', 'esa', 'eso'
+        ]);
+
+        const words = cleaned
+            .split(' ')
+            .filter(w => w.length > 2 && !stopwords.has(w.toLowerCase()));
+
+        return words.slice(0, 8).join(' ');
     }
 
     private cleanTitleForSearch(title: string): string {

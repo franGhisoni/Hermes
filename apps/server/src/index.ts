@@ -415,7 +415,8 @@ app.post('/api/articles/:id/regenerate-image', async (req, res) => {
 // Also accepts manually entered URLs — adds them to imageCandidates if not already present
 app.put('/api/articles/:id/select-image', async (req, res) => {
     const { imageUrl } = req.body;
-    if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('http')) {
+    const isValidUrl = typeof imageUrl === 'string' && (imageUrl.startsWith('http') || imageUrl.startsWith('/api/images/'));
+    if (!imageUrl || !isValidUrl) {
         return res.status(400).json({ error: 'Invalid imageUrl' });
     }
     try {

@@ -101,7 +101,7 @@ export class AIService {
         return isNaN(score) ? 5 : score;
     }
 
-    async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string): Promise<{ url: string | null, scores: number[] }> {
+    async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[] }> {
         if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [] };
         // Single candidate still goes through AI — don't auto-approve without evaluation
 
@@ -186,9 +186,9 @@ Return a JSON object:
                 }
             });
 
-            // Reject if no image scored above 5
-            if (bestIndex === -1 || bestScore <= 5) {
-                console.log(`[AIService] ❌ No suitable candidate (best score: ${bestScore}).`);
+            // Reject if no image scored at or above the configured minimum
+            if (bestIndex === -1 || bestScore < minScore) {
+                console.log(`[AIService] ❌ No suitable candidate (best score: ${bestScore}, min required: ${minScore}).`);
                 return { url: null, scores };
             }
 

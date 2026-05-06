@@ -2,14 +2,17 @@ import { AIService } from './AIService';
 import { ArticleService } from './ArticleService';
 import { ScrapedArticle } from '../scrapers/BaseScraper';
 import { ImageService } from './ImageService';
+import { ConfigService } from './ConfigService';
 
 export class ProcessorService {
     private aiService: AIService;
     private articleService: ArticleService;
+    private configService: ConfigService;
 
     constructor() {
         this.aiService = new AIService();
         this.articleService = new ArticleService();
+        this.configService = new ConfigService();
     }
 
     async processScrapedArticles(sourceName: string, articles: ScrapedArticle[]) {
@@ -102,9 +105,11 @@ export class ProcessorService {
             return imgDomain !== sourceDomain;
         });
 
+        const imageMinScore = await this.configService.getImageMinScore();
+
         if (searchCandidates.length > 0) {
-            console.log(`[Processor] AI Selecting best image from ${searchCandidates.length} search candidates...`);
-            const bestImageResult = await this.aiService.selectBestImage(article.title, article.content, searchCandidates, article.imageUrl);
+            console.log(`[Processor] AI Selecting best image from ${searchCandidates.length} search candidates (min score: ${imageMinScore})...`);
+            const bestImageResult = await this.aiService.selectBestImage(article.title, article.content, searchCandidates, article.imageUrl, imageMinScore);
 
             if (bestImageResult.url) {
                 featureImageUrl = bestImageResult.url;

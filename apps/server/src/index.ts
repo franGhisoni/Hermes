@@ -202,11 +202,28 @@ app.get('/api/config/settings', async (req, res) => {
     const limit = await configService.getScrapeLimit();
     const articleRetentionHours = await configService.getArticleRetentionHours();
     const articleCleanupCron = await configService.getArticleCleanupCron();
-    res.json({ scrapeLimit: limit, articleRetentionHours, articleCleanupCron });
+    const imageSearchQueryTemplate = await configService.getImageSearchQueryTemplate();
+    const imageSearchUrlTemplate = await configService.getImageSearchUrlTemplate();
+    const imageMinScore = await configService.getImageMinScore();
+    res.json({
+        scrapeLimit: limit,
+        articleRetentionHours,
+        articleCleanupCron,
+        imageSearchQueryTemplate,
+        imageSearchUrlTemplate,
+        imageMinScore
+    });
 });
 
 app.post('/api/config/settings', async (req, res) => {
-    const { scrapeLimit, articleRetentionHours, articleCleanupCron } = req.body;
+    const {
+        scrapeLimit,
+        articleRetentionHours,
+        articleCleanupCron,
+        imageSearchQueryTemplate,
+        imageSearchUrlTemplate,
+        imageMinScore
+    } = req.body;
     if (scrapeLimit !== undefined && scrapeLimit !== null) {
         await configService.setSetting('scrape_limit', Math.max(1, parseInt(scrapeLimit.toString(), 10)).toString());
     }
@@ -220,6 +237,27 @@ app.post('/api/config/settings', async (req, res) => {
         }
         await configService.setSetting('article_cleanup_cron', normalizedCron);
         await schedulerService.scheduleArticleCleanup();
+    }
+    if (imageSearchQueryTemplate !== undefined && imageSearchQueryTemplate !== null) {
+        const value = imageSearchQueryTemplate.toString().trim();
+        if (!value.includes('{{query}}')) {
+            return res.status(400).json({ error: 'imageSearchQueryTemplate must contain {{query}}' });
+        }
+        await configService.setSetting('image_search_query_template', value);
+    }
+    if (imageSearchUrlTemplate !== undefined && imageSearchUrlTemplate !== null) {
+        const value = imageSearchUrlTemplate.toString().trim();
+        if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
+            return res.status(400).json({ error: 'imageSearchUrlTemplate must be a URL containing {{q}} or {{query}}' });
+        }
+        await configService.setSetting('image_search_url_template', value);
+    }
+    if (imageMinScore !== undefined && imageMinScore !== null) {
+        const parsed = parseInt(imageMinScore.toString(), 10);
+        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
+            return res.status(400).json({ error: 'imageMinScore must be an integer between 1 and 10' });
+        }
+        await configService.setSetting('image_min_score', parsed.toString());
     }
     res.json({ success: true });
 });

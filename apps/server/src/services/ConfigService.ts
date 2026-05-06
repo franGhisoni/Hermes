@@ -28,6 +28,21 @@ export class ConfigService {
         return this.getSetting('article_cleanup_cron', '0 * * * *');
     }
 
+    async getImageSearchQueryTemplate(): Promise<string> {
+        return this.getSetting('image_search_query_template', '{{query}} foto noticia');
+    }
+
+    async getImageSearchUrlTemplate(): Promise<string> {
+        return this.getSetting(
+            'image_search_url_template',
+            'https://www.bing.com/images/search?q={{q}}&qft=%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide'
+        );
+    }
+
+    async getImageMinScore(): Promise<number> {
+        return this.getIntSetting('image_min_score', 6);
+    }
+
     private async getIntSetting(key: string, defaultValue: number): Promise<number> {
         const val = await this.getSetting(key, defaultValue.toString());
         const parsed = parseInt(val, 10);

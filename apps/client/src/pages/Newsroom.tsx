@@ -391,12 +391,24 @@ export default function Newsroom() {
 
                         {article.featureImageUrl && (() => {
                             const featureScore = article.imageScores?.[article.featureImageUrl];
+                            const isFeatureGenerated = article.featureImageUrl.startsWith('/api/images/');
+                            const isFeatureOriginal = article.featureImageUrl === article.originalImageUrl;
                             return (
                                 <div className="mb-8">
                                     <div className="relative group rounded-lg overflow-hidden border border-editorial-text/10 shadow-md mb-4 bg-gray-100">
                                         {featureScore !== undefined && (
                                             <div className="absolute top-2 left-2 bg-editorial-text text-editorial-bg text-xs font-bold px-2 py-1 rounded shadow z-10">
                                                 ★ Score: {featureScore}/10
+                                            </div>
+                                        )}
+                                        {isFeatureGenerated && (
+                                            <div className="absolute top-2 left-2 mt-9 bg-purple-700 text-white text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded shadow z-10">
+                                                Generada IA
+                                            </div>
+                                        )}
+                                        {isFeatureOriginal && (
+                                            <div className="absolute top-2 left-2 mt-9 bg-black/70 text-white text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded shadow z-10">
+                                                Original
                                             </div>
                                         )}
                                         <img src={resolveAssetUrl(article.featureImageUrl)} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
@@ -438,6 +450,7 @@ export default function Newsroom() {
                                             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
                                                 {article.imageCandidates.map((url, idx) => {
                                                     const isOriginal = url === article.originalImageUrl;
+                                                    const isGenerated = url.startsWith('/api/images/');
                                                     const score = article.imageScores?.[url];
 
                                                     return (
@@ -455,6 +468,11 @@ export default function Newsroom() {
                                                             {isOriginal && (
                                                                 <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] font-bold uppercase text-center py-0.5">
                                                                     Original
+                                                                </div>
+                                                            )}
+                                                            {isGenerated && (
+                                                                <div className="absolute bottom-0 left-0 right-0 bg-purple-700/70 text-white text-[8px] font-bold uppercase text-center py-0.5">
+                                                                    Generada IA
                                                                 </div>
                                                             )}
                                                         </div>

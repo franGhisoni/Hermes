@@ -55,6 +55,9 @@ export default function Settings() {
     const [scrapeLimit, setScrapeLimit] = useState(3);
     const [articleRetentionHours, setArticleRetentionHours] = useState(48);
     const [articleCleanupCron, setArticleCleanupCron] = useState('0 * * * *');
+    const [imageSearchQueryTemplate, setImageSearchQueryTemplate] = useState('{{query}} foto noticia');
+    const [imageSearchUrlTemplate, setImageSearchUrlTemplate] = useState('https://www.bing.com/images/search?q={{q}}&qft=%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide');
+    const [imageMinScore, setImageMinScore] = useState(6);
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
@@ -87,6 +90,9 @@ export default function Settings() {
                 setScrapeLimit(res.data.scrapeLimit ?? 3);
                 setArticleRetentionHours(res.data.articleRetentionHours ?? 48);
                 setArticleCleanupCron(res.data.articleCleanupCron ?? '0 * * * *');
+                if (res.data.imageSearchQueryTemplate) setImageSearchQueryTemplate(res.data.imageSearchQueryTemplate);
+                if (res.data.imageSearchUrlTemplate) setImageSearchUrlTemplate(res.data.imageSearchUrlTemplate);
+                if (res.data.imageMinScore) setImageMinScore(res.data.imageMinScore);
             });
     }, []);
 
@@ -379,6 +385,106 @@ export default function Settings() {
                                     >
                                         Guardar Cron
                                     </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section className="mb-12">
+                    <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Imágenes</h2>
+                    <p className="font-sans text-editorial-text/70 mb-8 max-w-2xl">
+                        Controla cómo Hermes busca imágenes en la web y cuándo decide generarlas con IA en lugar de usar candidatas web.
+                    </p>
+
+                    <div className="space-y-6">
+                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
+                            <div className="flex flex-col gap-3">
+                                <div>
+                                    <h3 className="text-xl font-bold">Plantilla de Búsqueda (Query)</h3>
+                                    <p className="font-sans text-sm text-editorial-text/50">
+                                        Texto que se envía al buscador. Usá <code className="bg-editorial-text/5 px-1">{`{{query}}`}</code> como placeholder de la consulta generada a partir del título y contenido.
+                                    </p>
+                                </div>
+                                <input
+                                    type="text"
+                                    value={imageSearchQueryTemplate}
+                                    onChange={e => setImageSearchQueryTemplate(e.target.value)}
+                                    onBlur={async (e) => {
+                                        const value = e.target.value.trim();
+                                        if (!value.includes('{{query}}')) {
+                                            alert('La plantilla debe contener {{query}}');
+                                            return;
+                                        }
+                                        setImageSearchQueryTemplate(value);
+                                        try {
+                                            await api.post('/api/config/settings', { imageSearchQueryTemplate: value });
+                                        } catch (err: any) {
+                                            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                                        }
+                                    }}
+                                    placeholder="{{query}} foto noticia"
+                                    className="w-full p-3 font-mono text-sm bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
+                            <div className="flex flex-col gap-3">
+                                <div>
+                                    <h3 className="text-xl font-bold">URL del Buscador</h3>
+                                    <p className="font-sans text-sm text-editorial-text/50">
+                                        URL completa del motor de búsqueda. Usá <code className="bg-editorial-text/5 px-1">{`{{q}}`}</code> donde va la consulta URL-encoded. Ej: <code className="bg-editorial-text/5 px-1 break-all">https://www.bing.com/images/search?q={`{{q}}`}</code>
+                                    </p>
+                                </div>
+                                <textarea
+                                    value={imageSearchUrlTemplate}
+                                    onChange={e => setImageSearchUrlTemplate(e.target.value)}
+                                    onBlur={async (e) => {
+                                        const value = e.target.value.trim();
+                                        if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
+                                            alert('La URL debe empezar con http y contener {{q}} o {{query}}');
+                                            return;
+                                        }
+                                        setImageSearchUrlTemplate(value);
+                                        try {
+                                            await api.post('/api/config/settings', { imageSearchUrlTemplate: value });
+                                        } catch (err: any) {
+                                            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                                        }
+                                    }}
+                                    className="w-full h-24 p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h3 className="text-xl font-bold">Puntaje Mínimo de Imagen</h3>
+                                    <p className="font-sans text-sm text-editorial-text/50">
+                                        Si ninguna candidata web supera este puntaje (1-10), Hermes genera la imagen automáticamente con IA.
+                                    </p>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={10}
+                                        value={imageMinScore}
+                                        className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
+                                        onChange={(e) => setImageMinScore(parseInt(e.target.value || '6', 10))}
+                                        onBlur={async (e) => {
+                                            const value = Math.min(10, Math.max(1, parseInt(e.target.value || '6', 10)));
+                                            setImageMinScore(value);
+                                            try {
+                                                await api.post('/api/config/settings', { imageMinScore: value });
+                                            } catch (err: any) {
+                                                alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                                            }
+                                        }}
+                                    />
+                                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text/50">/ 10</span>
                                 </div>
                             </div>
                         </div>

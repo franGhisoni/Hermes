@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
+import { ConfigService } from './ConfigService';
 
 const prisma = new PrismaClient();
 
@@ -24,11 +25,13 @@ const BLOCKED_URL_PATTERNS = [
 
 export class ImageService {
     private openai: OpenAI;
+    private configService: ConfigService;
 
     constructor() {
         this.openai = new OpenAI({
             apiKey: process.env.OPENAI_API_KEY,
         });
+        this.configService = new ConfigService();
     }
 
     public async searchImages(input: string | ImageSearchInput): Promise<string[]> {
@@ -53,9 +56,12 @@ export class ImageService {
             await page.setViewport({ width: 1280, height: 800 });
             await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36');
 
+            const queryTemplate = await this.configService.getImageSearchQueryTemplate();
+            const urlTemplate = await this.configService.getImageSearchUrlTemplate();
+
             const images: string[] = [];
             for (const query of queries) {
-                const results = await this.fetchBingResults(page, query);
+                const results = await this.fetchBingResults(page, query, queryTemplate, urlTemplate);
                 for (const imageUrl of results) {
                     if (!images.includes(imageUrl)) {
                         images.push(imageUrl);
@@ -85,14 +91,20 @@ export class ImageService {
         }
     }
 
-    private async fetchBingResults(page: any, query: string): Promise<string[]> {
-        const enrichedQuery = `${query} foto noticia`;
-        const qft = '%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide';
-        const url = `https://www.bing.com/images/search?q=${encodeURIComponent(enrichedQuery)}&qft=${qft}`;
+    private async fetchBingResults(
+        page: any,
+        query: string,
+        queryTemplate: string,
+        urlTemplate: string
+    ): Promise<string[]> {
+        const enrichedQuery = (queryTemplate || '{{query}}').replace(/\{\{query\}\}/g, query).trim();
+        const url = (urlTemplate || 'https://www.bing.com/images/search?q={{q}}')
+            .replace(/\{\{q\}\}/g, encodeURIComponent(enrichedQuery))
+            .replace(/\{\{query\}\}/g, encodeURIComponent(enrichedQuery));
 
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         await page.waitForSelector('a.iusc', { timeout: 8000 }).catch(() => null);
-        console.log(`[ImageService] Bing query loaded: "${enrichedQuery}"`);
+        console.log(`[ImageService] Image search loaded: "${enrichedQuery}"`);
 
         return page.evaluate(() => {
             const results: string[] = [];
@@ -158,9 +170,19 @@ export class ImageService {
             queries.push(cleanedRewrittenTitle);
         }
 
+        // Fallback queries: raw titles, mimicking what an editor would paste manually
+        // into a search engine. Useful when the smart extractors miss the point.
+        if (title) {
+            queries.push(title);
+        }
+
+        if (rewrittenTitle && rewrittenTitle !== title) {
+            queries.push(rewrittenTitle);
+        }
+
         return this.uniqueStrings(queries)
             .filter(query => query.length >= 4)
-            .slice(0, 3);
+            .slice(0, 5);
     }
 
     private cleanTitleForSearch(title: string): string {

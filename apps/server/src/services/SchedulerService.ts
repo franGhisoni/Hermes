@@ -1,17 +1,28 @@
 import cron, { ScheduledTask } from 'node-cron';
-import { PrismaClient } from '@prisma/client';
+import { Article, PrismaClient, WorkflowRunStatus } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
 import { ArticleService } from './ArticleService';
 import { ConfigService } from './ConfigService';
+import { AIService } from './AIService';
+import { ImageService } from './ImageService';
 
 const prisma = new PrismaClient();
+
+interface RunStats {
+    targetsTotal: number;
+    targetsCovered: number;
+    targetsSkipped: number;
+    articlesUnique: number;
+    articlesRefilled: number;
+}
 
 export class SchedulerService {
     private queueService: QueueService;
     private mailService: MailService;
     private articleService: ArticleService;
     private configService: ConfigService;
+    private aiService: AIService;
     private activeJobs: Map<string, ScheduledTask> = new Map();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
@@ -19,6 +30,7 @@ export class SchedulerService {
         this.articleService = articleService;
         this.mailService = new MailService();
         this.configService = new ConfigService();
+        this.aiService = new AIService();
     }
 
     public async initialize() {
@@ -198,59 +210,211 @@ export class SchedulerService {
         }
 
         const task = cron.schedule(workflow.cron, async () => {
-            console.log(`[CRON-PUBLISH] Executing workflow: ${workflow.name}`);
-            try {
-                // Find recent PENDING articles (last 24h), optionally filtered by section
-                const where: any = {
-                    status: 'PENDING',
-                    createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-                };
-                if (workflow.section) {
-                    where.section = workflow.section;
-                }
-                if (workflow.sources && workflow.sources.length > 0) {
-                    where.source = { name: { in: workflow.sources } };
-                }
-                if (workflow.minScore !== null && workflow.minScore !== undefined) {
-                    where.interestScore = { gte: workflow.minScore };
-                }
+            await this.executeWorkflow(workflow);
+        });
 
-                const articles = await prisma.article.findMany({
-                    where,
-                    orderBy: { createdAt: 'desc' },
-                    take: workflow.maxArticles || 10
-                });
+        this.activeJobs.set(jobId, task);
+        console.log(`Scheduled workflow: ${workflow.name} -> ${workflow.targets?.length || 0} targets [${workflow.cron}]`);
+    }
 
-                if (articles.length === 0) {
-                    console.log(`[CRON-PUBLISH] No new articles for workflow: ${workflow.name}`);
-                    return;
-                }
+    private async executeWorkflow(workflow: any) {
+        console.log(`[CRON-PUBLISH] Executing workflow: ${workflow.name}`);
+        const startedAt = Date.now();
+        const targets = workflow.targets || [];
+        const stats: RunStats = {
+            targetsTotal: targets.length,
+            targetsCovered: 0,
+            targetsSkipped: 0,
+            articlesUnique: 0,
+            articlesRefilled: 0
+        };
 
-                // Send each article to all targets
-                const targets = workflow.targets;
-                if (!targets || targets.length === 0) return;
+        if (targets.length === 0) {
+            await this.recordRun(workflow.id, 'EMPTY', startedAt, stats, 'El flujo no tiene destinos configurados.');
+            return;
+        }
 
-                for (const article of articles) {
-                    for (const target of targets) {
-                        const category = workflow.targetCategory || article.section || undefined;
-                        await this.mailService.sendArticleToTarget(target.email, article as any, category);
-                    }
+        try {
+            const where: any = {
+                status: 'PENDING',
+                createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+            };
+            if (workflow.section) where.section = workflow.section;
+            if (workflow.sources?.length > 0) where.source = { name: { in: workflow.sources } };
+            if (workflow.minScore !== null && workflow.minScore !== undefined) {
+                where.interestScore = { gte: workflow.minScore };
+            }
 
-                    // Mark as published once processed for all targets
+            // Cap the unique-article pool at min(maxArticles, targets.length).
+            // We never need more unique articles than there are destinations: any
+            // extras would either be unused (refill off) or replaced by refills
+            // of the same pool (refill on).
+            const poolCap = Math.min(workflow.maxArticles || 3, targets.length);
+            const articles = await prisma.article.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                take: poolCap
+            });
+
+            if (articles.length === 0) {
+                const msg = 'No se encontraron artículos PENDING en la ventana.';
+                console.log(`[CRON-PUBLISH] ${workflow.name}: ${msg}`);
+                await this.recordRun(workflow.id, 'EMPTY', startedAt, stats, msg);
+                return;
+            }
+
+            stats.articlesUnique = articles.length;
+
+            // Phase 1: 1:1 distribution — first N targets get the N unique articles.
+            const publishedIds = new Set<string>();
+            for (let i = 0; i < articles.length; i++) {
+                const article = articles[i];
+                const target = targets[i];
+                const category = workflow.targetCategory || article.section || undefined;
+                const ok = await this.mailService.sendArticleToTarget(target.email, article, category);
+                if (ok) stats.targetsCovered++;
+
+                if (!publishedIds.has(article.id)) {
+                    publishedIds.add(article.id);
                     await prisma.article.update({
                         where: { id: article.id },
                         data: { status: 'PUBLISHED' }
                     });
                 }
-
-                console.log(`[CRON-PUBLISH] Published ${articles.length} articles to ${targets.length} targets`);
-            } catch (error) {
-                console.error(`[CRON-PUBLISH] Failed workflow ${workflow.name}:`, error);
             }
+
+            // Phase 2: refill remaining targets (if any) when allowed.
+            const remainingTargets = targets.slice(articles.length);
+            if (remainingTargets.length > 0) {
+                if (workflow.allowRepublish) {
+                    for (let i = 0; i < remainingTargets.length; i++) {
+                        const sourceArticle = articles[i % articles.length];
+                        const target = remainingTargets[i];
+                        try {
+                            const variant = await this.buildRepublishedVariant(sourceArticle);
+                            const category = workflow.targetCategory || sourceArticle.section || undefined;
+                            const ok = await this.mailService.sendArticleToTarget(target.email, variant, category);
+                            if (ok) {
+                                stats.targetsCovered++;
+                                stats.articlesRefilled++;
+                            }
+                        } catch (err) {
+                            console.error(`[CRON-PUBLISH] Refill failed for target ${target.name}:`, err);
+                        }
+                    }
+                } else {
+                    stats.targetsSkipped = remainingTargets.length;
+                    console.log(`[CRON-PUBLISH] ${workflow.name}: ${remainingTargets.length} destino(s) omitidos (republicación desactivada, pool=${articles.length} / destinos=${targets.length}).`);
+                }
+            }
+
+            let status: WorkflowRunStatus = 'SUCCESS';
+            if (stats.targetsCovered === 0) status = 'ERROR';
+            else if (stats.targetsCovered < stats.targetsTotal) status = 'PARTIAL';
+
+            const parts: string[] = [`${stats.targetsCovered}/${stats.targetsTotal} destinos cubiertos`];
+            if (stats.articlesRefilled > 0) parts.push(`${stats.articlesRefilled} republicación(es)`);
+            if (stats.targetsSkipped > 0) parts.push(`${stats.targetsSkipped} omitido(s) por falta de notas`);
+            const summary = parts.join(' · ');
+
+            console.log(`[CRON-PUBLISH] ${workflow.name}: ${summary}`);
+            await this.recordRun(workflow.id, status, startedAt, stats, summary);
+        } catch (error: any) {
+            console.error(`[CRON-PUBLISH] Failed workflow ${workflow.name}:`, error);
+            await this.recordRun(workflow.id, 'ERROR', startedAt, stats, error?.message || 'Error desconocido', error?.message);
+        }
+    }
+
+    /**
+     * Produce a one-shot variant of an article for refill dispatching: fresh AI
+     * rewrite + fresh image search, computed in-memory (not persisted). The
+     * underlying Article row stays as it was after the first publish.
+     */
+    private async buildRepublishedVariant(article: Article): Promise<Article> {
+        const rewritten = await this.aiService.rewriteContent(article.originalTitle, article.originalContent);
+
+        const imageService = new ImageService();
+        const searchResults = await imageService.searchImages({
+            title: article.originalTitle,
+            content: article.originalContent,
+            rewrittenTitle: rewritten.title
         });
 
-        this.activeJobs.set(jobId, task);
-        console.log(`Scheduled workflow: ${workflow.name} -> ${workflow.targets?.length || 0} targets [${workflow.cron}]`);
+        const sourceDomain = this.extractDomain(article.originalUrl);
+        const previousImage = article.featureImageUrl || article.originalImageUrl || '';
+        const candidates = searchResults.filter(url => {
+            if (this.extractDomain(url) === sourceDomain) return false;
+            // Avoid reusing the same image that the first dispatch already sent.
+            if (previousImage && url === previousImage) return false;
+            return true;
+        });
+
+        const imageMinScore = await this.configService.getImageMinScore();
+        let featureImageUrl: string | null = null;
+
+        if (candidates.length > 0) {
+            const result = await this.aiService.selectBestImage(
+                article.originalTitle,
+                article.originalContent,
+                candidates,
+                article.originalImageUrl || undefined,
+                imageMinScore
+            );
+            if (result.url) featureImageUrl = result.url;
+        }
+
+        if (!featureImageUrl) {
+            const generated = await imageService.generateImage(article.originalTitle);
+            if (generated) featureImageUrl = generated;
+        }
+
+        if (!featureImageUrl) {
+            // Last resort: the original image (better than no image at all).
+            featureImageUrl = article.originalImageUrl ?? null;
+        }
+
+        return {
+            ...article,
+            rewrittenTitle: rewritten.title,
+            rewrittenContent: rewritten.content,
+            featureImageUrl
+        };
+    }
+
+    private extractDomain(url: string): string {
+        try {
+            return new URL(url).hostname.replace(/^www\./, '');
+        } catch {
+            return '';
+        }
+    }
+
+    private async recordRun(
+        workflowId: string,
+        status: WorkflowRunStatus,
+        startedAt: number,
+        stats: RunStats,
+        summary: string,
+        errorMessage?: string
+    ) {
+        try {
+            await prisma.workflowRun.create({
+                data: {
+                    workflowId,
+                    status,
+                    durationMs: Date.now() - startedAt,
+                    targetsTotal: stats.targetsTotal,
+                    targetsCovered: stats.targetsCovered,
+                    targetsSkipped: stats.targetsSkipped,
+                    articlesUnique: stats.articlesUnique,
+                    articlesRefilled: stats.articlesRefilled,
+                    summary,
+                    errorMessage: errorMessage || null
+                }
+            });
+        } catch (err) {
+            console.error('[CRON-PUBLISH] Failed to persist WorkflowRun:', err);
+        }
     }
 
     public unscheduleWorkflow(workflowId: string) {

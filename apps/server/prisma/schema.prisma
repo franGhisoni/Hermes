@@ -55,9 +55,40 @@ model Workflow {
   cron            String
   isActive        Boolean  @default(true)
   maxArticles     Int      @default(3) // Maximum articles to publish per cycle
+  // When true and the article pool is smaller than the number of targets, the
+  // workflow refills the missing destinations by reusing articles with a fresh
+  // AI rewrite and a fresh image search so each target still receives unique
+  // content. When false, missing destinations are skipped and logged.
+  allowRepublish  Boolean  @default(false)
   targets         Target[] // Implicit many-to-many
+  runs            WorkflowRun[]
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+model WorkflowRun {
+  id               String   @id @default(uuid())
+  workflowId       String
+  workflow         Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  startedAt        DateTime @default(now())
+  durationMs       Int?
+  status           WorkflowRunStatus
+  targetsTotal     Int      @default(0)
+  targetsCovered   Int      @default(0)  // sends that succeeded
+  targetsSkipped   Int      @default(0)  // targets with no article (refill off, pool empty)
+  articlesUnique   Int      @default(0)  // distinct articles dispatched
+  articlesRefilled Int      @default(0)  // refill dispatches (republished with fresh rewrite/image)
+  summary          String
+  errorMessage     String?
+
+  @@index([workflowId, startedAt])
+}
+
+enum WorkflowRunStatus {
+  SUCCESS
+  PARTIAL
+  EMPTY
+  ERROR
 }
 
 model ScrapeSchedule {

@@ -11,7 +11,10 @@ router.use(requireAuth, requireAdmin);
 router.get('/', async (req, res) => {
     try {
         const workflows = await prisma.workflow.findMany({
-            include: { targets: true },
+            include: {
+                targets: true,
+                runs: { orderBy: { startedAt: 'desc' }, take: 1 }
+            },
             orderBy: { createdAt: 'desc' }
         });
         res.json(workflows);
@@ -20,12 +23,26 @@ router.get('/', async (req, res) => {
     }
 });
 
+// GET /api/workflows/:id/runs
+router.get('/:id/runs', async (req, res) => {
+    try {
+        const runs = await prisma.workflowRun.findMany({
+            where: { workflowId: req.params.id },
+            orderBy: { startedAt: 'desc' },
+            take: 20
+        });
+        res.json(runs);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch workflow runs' });
+    }
+});
+
 // exported instance from index
 import { schedulerService } from '../index';
 
 // POST /api/workflows
 router.post('/', async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, maxArticles } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, maxArticles, allowRepublish } = req.body;
     if (!name || !cron || !targetIds || !Array.isArray(targetIds) || targetIds.length === 0) {
         return res.status(400).json({ error: 'name, cron, and at least one targetId are required' });
     }
@@ -40,6 +57,7 @@ router.post('/', async (req, res) => {
                 targetCategory: targetCategory || null,
                 cron,
                 maxArticles: maxArticles ? parseInt(maxArticles) : 3,
+                allowRepublish: Boolean(allowRepublish),
                 targets: { connect: targetIds.map((id: string) => ({ id })) },
                 isActive: true
             },
@@ -54,7 +72,7 @@ router.post('/', async (req, res) => {
 
 // PUT /api/workflows/:id
 router.put('/:id', async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, maxArticles } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, maxArticles, allowRepublish } = req.body;
 
     if (targetIds && (!Array.isArray(targetIds) || targetIds.length === 0)) {
         return res.status(400).json({ error: 'targetIds must be a non-empty array' });
@@ -71,6 +89,10 @@ router.put('/:id', async (req, res) => {
             maxArticles: maxArticles ? parseInt(maxArticles) : undefined,
             isActive
         };
+
+        if (typeof allowRepublish === 'boolean') {
+            data.allowRepublish = allowRepublish;
+        }
 
         if (targetIds) {
             data.targets = { set: targetIds.map((id: string) => ({ id })) };

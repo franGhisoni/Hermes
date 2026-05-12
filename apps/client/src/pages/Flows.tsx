@@ -12,6 +12,19 @@ interface Target {
     email: string;
 }
 
+interface WorkflowRun {
+    id: string;
+    startedAt: string;
+    status: 'SUCCESS' | 'PARTIAL' | 'EMPTY' | 'ERROR';
+    targetsTotal: number;
+    targetsCovered: number;
+    targetsSkipped: number;
+    articlesUnique: number;
+    articlesRefilled: number;
+    summary: string;
+    errorMessage?: string | null;
+}
+
 interface Workflow {
     id: string;
     name: string;
@@ -21,7 +34,9 @@ interface Workflow {
     targetCategory?: string;
     cron: string;
     isActive: boolean;
+    allowRepublish?: boolean;
     targets?: Target[];
+    runs?: WorkflowRun[];
 }
 
 export default function Flows() {
@@ -43,6 +58,7 @@ export default function Flows() {
     const [wfTargetCategory, setWfTargetCategory] = useState('');
     const [wfCron, setWfCron] = useState('0 8 * * *'); // Default 8 AM
     const [wfTargetIds, setWfTargetIds] = useState<string[]>([]);
+    const [wfAllowRepublish, setWfAllowRepublish] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -102,11 +118,13 @@ export default function Flows() {
                 minScore: wfMinScore ? parseInt(wfMinScore) : undefined,
                 targetCategory: wfTargetCategory || undefined,
                 cron: wfCron,
-                targetIds: wfTargetIds
+                targetIds: wfTargetIds,
+                allowRepublish: wfAllowRepublish
             });
             setWfName('');
             setWfTargetCategory('');
             setWfMinScore('');
+            setWfAllowRepublish(false);
             fetchData();
         } catch (error: any) {
             alert('Error: ' + (error.response?.data?.error || 'Failed to create workflow'));
@@ -129,6 +147,19 @@ export default function Flows() {
             fetchData();
         } catch (error) {
             alert('Error toggling workflow');
+        }
+    };
+
+    const handleToggleRepublish = async (wf: Workflow) => {
+        try {
+            await api.put(`/api/workflows/${wf.id}`, {
+                ...wf,
+                targetIds: wf.targets?.map(t => t.id),
+                allowRepublish: !wf.allowRepublish
+            });
+            fetchData();
+        } catch (error) {
+            alert('Error toggling republish');
         }
     };
 
@@ -254,6 +285,23 @@ export default function Flows() {
                                 />
                             </div>
 
+                            <div className="col-span-2">
+                                <label className="flex items-start gap-3 cursor-pointer select-none border border-editorial-text/15 p-4 hover:bg-editorial-text/5 transition-colors">
+                                    <input
+                                        type="checkbox"
+                                        checked={wfAllowRepublish}
+                                        onChange={e => setWfAllowRepublish(e.target.checked)}
+                                        className="mt-1 cursor-pointer"
+                                    />
+                                    <span className="flex-1">
+                                        <span className="block text-xs font-bold uppercase tracking-widest">Permitir republicar para rellenar</span>
+                                        <span className="block text-[11px] opacity-60 mt-1 leading-snug">
+                                            Si hay menos notas que destinos, los destinos faltantes reciben republicaciones con reescritura e imagen nuevas. Desactivado: los destinos sobrantes se omiten y se loguean.
+                                        </span>
+                                    </span>
+                                </label>
+                            </div>
+
                             <div className="col-span-2 mt-4 flex justify-end">
                                 <button type="submit" disabled={targets.length === 0} className="bg-editorial-text text-editorial-bg px-8 py-3 font-bold uppercase tracking-widest hover:bg-black transition-colors disabled:opacity-50">
                                     Guardar Flujo
@@ -267,12 +315,24 @@ export default function Flows() {
 
                         {loading ? <div className="animate-pulse">Cargando...</div> : (
                             <div className="flex flex-col gap-4">
-                                {workflows.map(wf => (
+                                {workflows.map(wf => {
+                                    const lastRun = wf.runs?.[0];
+                                    const runColor = !lastRun ? 'border-editorial-text/10 text-editorial-text/40'
+                                        : lastRun.status === 'SUCCESS' ? 'border-green-700/20 text-green-800 bg-green-50/40'
+                                        : lastRun.status === 'PARTIAL' ? 'border-amber-700/30 text-amber-800 bg-amber-50/40'
+                                        : lastRun.status === 'EMPTY' ? 'border-editorial-text/10 text-editorial-text/50 bg-editorial-text/[0.02]'
+                                        : 'border-red-700/30 text-red-800 bg-red-50/40';
+                                    return (
                                     <div key={wf.id} className={`border border-editorial-text/10 p-5 flex justify-between items-center transition-opacity ${wf.isActive ? 'bg-white/40' : 'opacity-50 grayscale'}`}>
-                                        <div className="flex flex-col gap-1">
+                                        <div className="flex flex-col gap-1 flex-1">
                                             <div className="flex items-center gap-3">
                                                 <h3 className="font-bold text-lg font-sans">{wf.name}</h3>
                                                 <span className="text-[10px] font-mono px-2 py-0.5 bg-editorial-text/10 rounded">{wf.cron}</span>
+                                                {wf.allowRepublish && (
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded" title="Si hay menos notas que destinos, se rellena con republicaciones (reescritura + imagen nuevas)">
+                                                        Republica
+                                                    </span>
+                                                )}
                                             </div>
                                             <div className="text-xs font-sans opacity-70 flex flex-wrap gap-2">
                                                 {wf.section && <span className="font-mono bg-editorial-text/5 px-1.5 py-0.5 rounded border border-editorial-text/10" title="Sección">{wf.section}</span>}
@@ -285,8 +345,27 @@ export default function Flows() {
                                                 <span>Destino(s): {wf.targets?.map(t => <strong key={t.id} className="mr-1">{t.name}</strong>)}</span>
                                                 <span className="opacity-50 break-all">{wf.targets?.map(t => t.email).join(', ')}</span>
                                             </div>
+                                            <div className={`text-[11px] font-sans mt-3 px-2.5 py-1.5 border ${runColor} flex flex-wrap gap-2 items-baseline`}>
+                                                <span className="font-bold uppercase tracking-widest text-[10px]">Última ejecución:</span>
+                                                {lastRun ? (
+                                                    <>
+                                                        <span>{lastRun.summary}</span>
+                                                        <span className="opacity-50">· {new Date(lastRun.startedAt).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' })}</span>
+                                                        {lastRun.errorMessage && <span className="text-red-700 opacity-80">· {lastRun.errorMessage}</span>}
+                                                    </>
+                                                ) : (
+                                                    <span className="opacity-60 italic">Aún no se ejecutó.</span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-3 ml-4">
+                                            <button
+                                                onClick={() => handleToggleRepublish(wf)}
+                                                className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 border transition-colors ${wf.allowRepublish ? 'border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100' : 'border-editorial-text/20 text-editorial-text/60 hover:bg-editorial-text/5'}`}
+                                                title="Permitir republicar para rellenar destinos faltantes"
+                                            >
+                                                {wf.allowRepublish ? 'Republica ✓' : 'Republica ✗'}
+                                            </button>
                                             <button
                                                 onClick={() => handleToggleWorkflow(wf)}
                                                 className={`text-xs font-bold uppercase tracking-widest px-3 py-1 border transition-colors ${wf.isActive ? 'border-editorial-text/20 text-editorial-text hover:bg-editorial-text/5' : 'border-green-500 text-green-700 bg-green-50 hover:bg-green-100'}`}
@@ -298,7 +377,8 @@ export default function Flows() {
                                             </button>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                                 {workflows.length === 0 && <div className="text-center p-8 opacity-40 font-sans text-sm border border-dashed border-editorial-text/20">No hay flujos configurados.</div>}
                             </div>
                         )}

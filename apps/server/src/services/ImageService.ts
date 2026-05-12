@@ -59,16 +59,18 @@ export class ImageService {
             const queryTemplate = await this.configService.getImageSearchQueryTemplate();
             const urlTemplate = await this.configService.getImageSearchUrlTemplate();
 
+            // Run every query and take a capped slice from each so a single
+            // bad first query (which Bing pads with "related content" garbage)
+            // can't starve the title-based fallbacks. Diversity over volume.
+            const PER_QUERY_CAP = 6;
             const images: string[] = [];
             for (const query of queries) {
                 const results = await this.fetchBingResults(page, query, queryTemplate, urlTemplate);
-                for (const imageUrl of results) {
+                for (const imageUrl of results.slice(0, PER_QUERY_CAP)) {
                     if (!images.includes(imageUrl)) {
                         images.push(imageUrl);
                     }
                 }
-
-                if (images.length >= 12) break;
             }
 
             const filtered = images.filter((imgUrl: string) => {
@@ -76,10 +78,10 @@ export class ImageService {
                 return !BLOCKED_URL_PATTERNS.some(pattern => lower.includes(pattern));
             });
 
-            const toValidate = filtered.slice(0, 8);
+            const toValidate = filtered.slice(0, 20);
             const validated = await this.validateImageUrls(toValidate);
 
-            const finalResults = validated.slice(0, 6);
+            const finalResults = validated.slice(0, 12);
             console.log(`[ImageService] Found ${images.length} raw -> ${filtered.length} filtered -> ${finalResults.length} validated.`);
             return finalResults;
 

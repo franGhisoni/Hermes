@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Settings2, Mail, Clock } from 'lucide-react';
+import { Trash2, Settings2, Mail, Clock, Pencil, X } from 'lucide-react';
 import { MultiSelect } from '../components/MultiSelect';
 import { CronBuilder } from '../components/CronBuilder';
 
@@ -59,6 +59,8 @@ export default function Flows() {
     const [wfCron, setWfCron] = useState('0 8 * * *'); // Default 8 AM
     const [wfTargetIds, setWfTargetIds] = useState<string[]>([]);
     const [wfAllowRepublish, setWfAllowRepublish] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const formRef = useRef<HTMLDivElement | null>(null);
 
     useEffect(() => {
         fetchData();
@@ -108,26 +110,54 @@ export default function Flows() {
         }
     };
 
-    const handleCreateWorkflow = async (e: React.FormEvent) => {
+    const resetWorkflowForm = () => {
+        setEditingId(null);
+        setWfName('');
+        setWfSection('');
+        setWfSources([]);
+        setWfMinScore('');
+        setWfTargetCategory('');
+        setWfCron('0 8 * * *');
+        setWfTargetIds(targets.length > 0 ? [targets[0].id] : []);
+        setWfAllowRepublish(false);
+    };
+
+    const startEditWorkflow = (wf: Workflow) => {
+        setEditingId(wf.id);
+        setWfName(wf.name);
+        setWfSection(wf.section || '');
+        setWfSources(wf.sources || []);
+        setWfMinScore(wf.minScore ? String(wf.minScore) : '');
+        setWfTargetCategory(wf.targetCategory || '');
+        setWfCron(wf.cron);
+        setWfTargetIds(wf.targets?.map(t => t.id) || []);
+        setWfAllowRepublish(Boolean(wf.allowRepublish));
+        // Scroll the form into view so the user sees what they're editing.
+        setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    };
+
+    const handleSubmitWorkflow = async (e: React.FormEvent) => {
         e.preventDefault();
+        const payload = {
+            name: wfName,
+            section: wfSection || undefined,
+            sources: wfSources,
+            minScore: wfMinScore ? parseInt(wfMinScore) : undefined,
+            targetCategory: wfTargetCategory || undefined,
+            cron: wfCron,
+            targetIds: wfTargetIds,
+            allowRepublish: wfAllowRepublish
+        };
         try {
-            await api.post('/api/workflows', {
-                name: wfName,
-                section: wfSection || undefined,
-                sources: wfSources,
-                minScore: wfMinScore ? parseInt(wfMinScore) : undefined,
-                targetCategory: wfTargetCategory || undefined,
-                cron: wfCron,
-                targetIds: wfTargetIds,
-                allowRepublish: wfAllowRepublish
-            });
-            setWfName('');
-            setWfTargetCategory('');
-            setWfMinScore('');
-            setWfAllowRepublish(false);
+            if (editingId) {
+                await api.put(`/api/workflows/${editingId}`, payload);
+            } else {
+                await api.post('/api/workflows', payload);
+            }
+            resetWorkflowForm();
             fetchData();
         } catch (error: any) {
-            alert('Error: ' + (error.response?.data?.error || 'Failed to create workflow'));
+            alert('Error: ' + (error.response?.data?.error || 'Failed to save workflow'));
         }
     };
 
@@ -217,10 +247,23 @@ export default function Flows() {
 
                 {/* Workflows Main */}
                 <div className="lg:col-span-2 flex flex-col gap-8">
-                    <div className="border border-editorial-text/20 p-8 bg-white/50">
-                        <h2 className="text-lg font-bold uppercase tracking-widest mb-6 font-sans flex items-center gap-2"><Settings2 size={18} /> Crear Flujo Automático</h2>
+                    <div ref={formRef} className={`border p-8 bg-white/50 transition-colors ${editingId ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-editorial-text/20'}`}>
+                        <h2 className="text-lg font-bold uppercase tracking-widest mb-6 font-sans flex items-center gap-2">
+                            <Settings2 size={18} />
+                            {editingId ? 'Editar Flujo Automático' : 'Crear Flujo Automático'}
+                            {editingId && (
+                                <button
+                                    type="button"
+                                    onClick={resetWorkflowForm}
+                                    className="ml-auto flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors normal-case"
+                                    title="Cancelar edición y volver al modo creación"
+                                >
+                                    <X size={12} /> Cancelar
+                                </button>
+                            )}
+                        </h2>
 
-                        <form onSubmit={handleCreateWorkflow} className="grid grid-cols-2 gap-6 font-sans">
+                        <form onSubmit={handleSubmitWorkflow} className="grid grid-cols-2 gap-6 font-sans">
                             <div className="col-span-2 md:col-span-1">
                                 <label className="text-xs font-bold uppercase tracking-widest opacity-60 block mb-2">Nombre del Flujo</label>
                                 <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text" placeholder="ej. Clarín Matutino" />
@@ -302,9 +345,18 @@ export default function Flows() {
                                 </label>
                             </div>
 
-                            <div className="col-span-2 mt-4 flex justify-end">
+                            <div className="col-span-2 mt-4 flex justify-end gap-3">
+                                {editingId && (
+                                    <button
+                                        type="button"
+                                        onClick={resetWorkflowForm}
+                                        className="px-6 py-3 border border-editorial-text/20 font-bold uppercase tracking-widest text-xs hover:bg-editorial-text/5 transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                )}
                                 <button type="submit" disabled={targets.length === 0} className="bg-editorial-text text-editorial-bg px-8 py-3 font-bold uppercase tracking-widest hover:bg-black transition-colors disabled:opacity-50">
-                                    Guardar Flujo
+                                    {editingId ? 'Guardar Cambios' : 'Guardar Flujo'}
                                 </button>
                             </div>
                         </form>
@@ -371,6 +423,13 @@ export default function Flows() {
                                                 className={`text-xs font-bold uppercase tracking-widest px-3 py-1 border transition-colors ${wf.isActive ? 'border-editorial-text/20 text-editorial-text hover:bg-editorial-text/5' : 'border-green-500 text-green-700 bg-green-50 hover:bg-green-100'}`}
                                             >
                                                 {wf.isActive ? 'Pausar' : 'Activar'}
+                                            </button>
+                                            <button
+                                                onClick={() => startEditWorkflow(wf)}
+                                                className={`p-1.5 border transition-colors ${editingId === wf.id ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-editorial-text/20 text-editorial-text/60 hover:bg-editorial-text/5'}`}
+                                                title="Editar flujo"
+                                            >
+                                                <Pencil size={14} />
                                             </button>
                                             <button onClick={() => handleDeleteWorkflow(wf.id)} className="text-editorial-text/30 hover:text-red-500 transition-colors">
                                                 <Trash2 size={18} />

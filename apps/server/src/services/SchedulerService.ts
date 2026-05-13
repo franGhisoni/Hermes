@@ -220,7 +220,27 @@ export class SchedulerService {
     private async executeWorkflow(workflow: any) {
         console.log(`[CRON-PUBLISH] Executing workflow: ${workflow.name}`);
         const startedAt = Date.now();
-        const targets = workflow.targets || [];
+
+        // Re-load the workflow so we get an up-to-date cursor (the cached
+        // closure value can be stale if previous runs already advanced it).
+        const fresh = await prisma.workflow.findUnique({
+            where: { id: workflow.id },
+            include: { targets: true }
+        });
+        if (!fresh) {
+            console.error(`[CRON-PUBLISH] Workflow ${workflow.id} no longer exists.`);
+            return;
+        }
+
+        // Deterministic target ordering by id so the cursor refers to the same
+        // destination across runs even if Prisma's join order changes.
+        const sortedTargets = [...(fresh.targets || [])].sort((a, b) => a.id.localeCompare(b.id));
+
+        // Rotate so the run starts from the cursor — destinations skipped in
+        // the previous cycle land at the front of this cycle's queue.
+        const cursor = sortedTargets.length === 0 ? 0 : (fresh.nextTargetIndex ?? 0) % sortedTargets.length;
+        const targets = [...sortedTargets.slice(cursor), ...sortedTargets.slice(0, cursor)];
+
         const stats: RunStats = {
             targetsTotal: targets.length,
             targetsCovered: 0,
@@ -239,17 +259,17 @@ export class SchedulerService {
                 status: 'PENDING',
                 createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
             };
-            if (workflow.section) where.section = workflow.section;
-            if (workflow.sources?.length > 0) where.source = { name: { in: workflow.sources } };
-            if (workflow.minScore !== null && workflow.minScore !== undefined) {
-                where.interestScore = { gte: workflow.minScore };
+            if (fresh.section) where.section = fresh.section;
+            if (fresh.sources?.length > 0) where.source = { name: { in: fresh.sources } };
+            if (fresh.minScore !== null && fresh.minScore !== undefined) {
+                where.interestScore = { gte: fresh.minScore };
             }
 
             // Cap the unique-article pool at min(maxArticles, targets.length).
             // We never need more unique articles than there are destinations: any
             // extras would either be unused (refill off) or replaced by refills
             // of the same pool (refill on).
-            const poolCap = Math.min(workflow.maxArticles || 3, targets.length);
+            const poolCap = Math.min(fresh.maxArticles || 3, targets.length);
             const articles = await prisma.article.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
@@ -258,7 +278,7 @@ export class SchedulerService {
 
             if (articles.length === 0) {
                 const msg = 'No se encontraron artículos PENDING en la ventana.';
-                console.log(`[CRON-PUBLISH] ${workflow.name}: ${msg}`);
+                console.log(`[CRON-PUBLISH] ${fresh.name}: ${msg}`);
                 await this.recordRun(workflow.id, 'EMPTY', startedAt, stats, msg);
                 return;
             }
@@ -270,7 +290,7 @@ export class SchedulerService {
             for (let i = 0; i < articles.length; i++) {
                 const article = articles[i];
                 const target = targets[i];
-                const category = workflow.targetCategory || article.section || undefined;
+                const category = fresh.targetCategory || article.section || undefined;
                 const ok = await this.mailService.sendArticleToTarget(target.email, article, category);
                 if (ok) stats.targetsCovered++;
 
@@ -286,13 +306,13 @@ export class SchedulerService {
             // Phase 2: refill remaining targets (if any) when allowed.
             const remainingTargets = targets.slice(articles.length);
             if (remainingTargets.length > 0) {
-                if (workflow.allowRepublish) {
+                if (fresh.allowRepublish) {
                     for (let i = 0; i < remainingTargets.length; i++) {
                         const sourceArticle = articles[i % articles.length];
                         const target = remainingTargets[i];
                         try {
                             const variant = await this.buildRepublishedVariant(sourceArticle);
-                            const category = workflow.targetCategory || sourceArticle.section || undefined;
+                            const category = fresh.targetCategory || sourceArticle.section || undefined;
                             const ok = await this.mailService.sendArticleToTarget(target.email, variant, category);
                             if (ok) {
                                 stats.targetsCovered++;
@@ -304,9 +324,21 @@ export class SchedulerService {
                     }
                 } else {
                     stats.targetsSkipped = remainingTargets.length;
-                    console.log(`[CRON-PUBLISH] ${workflow.name}: ${remainingTargets.length} destino(s) omitidos (republicación desactivada, pool=${articles.length} / destinos=${targets.length}).`);
+                    console.log(`[CRON-PUBLISH] ${fresh.name}: ${remainingTargets.length} destino(s) omitidos (republicación desactivada, pool=${articles.length} / destinos=${targets.length}).`);
                 }
             }
+
+            // Advance the cursor by the number of unique articles dispatched so
+            // the next execution starts on the destinations skipped here (or,
+            // when republish is on, just rotates which target gets the unique
+            // version each cycle).
+            const newCursor = sortedTargets.length === 0
+                ? 0
+                : (cursor + articles.length) % sortedTargets.length;
+            await prisma.workflow.update({
+                where: { id: workflow.id },
+                data: { nextTargetIndex: newCursor }
+            });
 
             let status: WorkflowRunStatus = 'SUCCESS';
             if (stats.targetsCovered === 0) status = 'ERROR';
@@ -317,10 +349,10 @@ export class SchedulerService {
             if (stats.targetsSkipped > 0) parts.push(`${stats.targetsSkipped} omitido(s) por falta de notas`);
             const summary = parts.join(' · ');
 
-            console.log(`[CRON-PUBLISH] ${workflow.name}: ${summary}`);
+            console.log(`[CRON-PUBLISH] ${fresh.name}: ${summary}`);
             await this.recordRun(workflow.id, status, startedAt, stats, summary);
         } catch (error: any) {
-            console.error(`[CRON-PUBLISH] Failed workflow ${workflow.name}:`, error);
+            console.error(`[CRON-PUBLISH] Failed workflow ${fresh.name}:`, error);
             await this.recordRun(workflow.id, 'ERROR', startedAt, stats, error?.message || 'Error desconocido', error?.message);
         }
     }

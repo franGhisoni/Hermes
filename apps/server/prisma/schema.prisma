@@ -60,6 +60,11 @@ model Workflow {
   // AI rewrite and a fresh image search so each target still receives unique
   // content. When false, missing destinations are skipped and logged.
   allowRepublish  Boolean  @default(false)
+  // Round-robin cursor: index into the alphabetically-sorted target list where
+  // the next execution should start dispatching. Lets multi-run cron schedules
+  // eventually cover every destination when the article pool is smaller than
+  // the workflow's target count.
+  nextTargetIndex Int      @default(0)
   targets         Target[] // Implicit many-to-many
   runs            WorkflowRun[]
   createdAt       DateTime @default(now())

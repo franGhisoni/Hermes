@@ -51,24 +51,54 @@ export class MailService {
                         console.error(`[MailService] Internal image not found: ${internalMatch[1]}`);
                     }
                 } else {
-                    // External URL — fetch the image
-                    const response = await fetch(imageUrl);
-                    if (response.ok) {
-                        const arrayBuffer = await response.arrayBuffer();
-                        const buffer = Buffer.from(arrayBuffer);
-                        const ext = imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0] || '.jpg';
-                        const filename = `featured-image${ext}`;
-                        attachments.push({
-                            filename: filename,
-                            content: buffer
+                    // External URL — fetch the image. Many CDNs (Bing thumbs,
+                    // Getty, big newsrooms) block bare Node fetches and return
+                    // 403 silently, so we send a real browser UA + Accept.
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 10000);
+                    let response: Response;
+                    try {
+                        response = await fetch(imageUrl, {
+                            signal: controller.signal,
+                            redirect: 'follow',
+                            headers: {
+                                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                                'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8',
+                                'Referer': new URL(imageUrl).origin
+                            }
                         });
-                        console.log(`[MailService] Successfully attached image as ${filename} (${buffer.length} bytes)`);
+                    } finally {
+                        clearTimeout(timeout);
+                    }
+
+                    if (response.ok) {
+                        const contentType = response.headers.get('content-type') || '';
+                        if (!contentType.startsWith('image/')) {
+                            console.error(`[MailService] Non-image content-type "${contentType}" from ${imageUrl} — skipping attachment.`);
+                        } else {
+                            const arrayBuffer = await response.arrayBuffer();
+                            const buffer = Buffer.from(arrayBuffer);
+                            const extFromCT = contentType.includes('jpeg') ? '.jpg'
+                                : contentType.includes('png') ? '.png'
+                                : contentType.includes('webp') ? '.webp'
+                                : contentType.includes('gif') ? '.gif'
+                                : null;
+                            const ext = extFromCT
+                                || imageUrl.match(/\.(jpg|jpeg|png|webp|gif)/i)?.[0]
+                                || '.jpg';
+                            const filename = `featured-image${ext}`;
+                            attachments.push({ filename, content: buffer });
+                            console.log(`[MailService] Attached image as ${filename} (${buffer.length} bytes, ${contentType}) from ${imageUrl}`);
+                        }
                     } else {
-                        console.error(`Status ${response.status} when fetching image for attachment: ${imageUrl}`);
+                        console.error(`[MailService] HTTP ${response.status} ${response.statusText} when fetching image: ${imageUrl}`);
                     }
                 }
-            } catch (err) {
-                console.error(`Failed to prepare image attachment from ${imageUrl}`, err);
+            } catch (err: any) {
+                const reason = err?.name === 'AbortError' ? 'timeout after 10s'
+                    : err?.message || String(err);
+                console.error(`[MailService] Failed to prepare image attachment from ${imageUrl} — ${reason}`);
             }
         } else {
             console.log(`[MailService] No image URL provided for article: ${title}`);

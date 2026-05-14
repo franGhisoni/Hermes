@@ -4,6 +4,7 @@ import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ScraperControl } from '../components/ScraperControl';
+import { NotificationsPanel } from '../components/NotificationsPanel';
 
 export default function Dashboard() {
     const { user, logout } = useAuth();
@@ -108,6 +109,7 @@ export default function Dashboard() {
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                 </div>
                 <div className="flex gap-4 items-center">
+                    <NotificationsPanel />
                     <ScraperControl />
                     {user?.role === 'ADMIN' && (
                         <>

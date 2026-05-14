@@ -5,6 +5,7 @@ import { InfobaeScraper } from '../scrapers/InfobaeScraper';
 import { TNScraper } from '../scrapers/TNScraper';
 import { NAScraper } from '../scrapers/NAScraper';
 import { ProcessorService } from './ProcessorService';
+import { notificationService } from './NotificationService';
 
 // Connection config
 // Connection config
@@ -53,6 +54,13 @@ export class QueueService {
 
             if (!ScraperClass) {
                 console.error(`[Worker] Unknown source: ${job.data.source}`);
+                await notificationService.emit({
+                    level: 'ERROR',
+                    source: 'SCRAPER',
+                    title: `Medio desconocido: ${job.data.source}`,
+                    message: `No hay scraper registrado para "${job.data.source}". Revisá la configuración.`,
+                    metadata: { source: job.data.source, url: job.data.url }
+                });
                 return;
             }
 
@@ -70,6 +78,16 @@ export class QueueService {
                 const articles = await scraper.scrape(limit);
                 console.log(`[Worker] Scraped ${articles.length} articles from ${job.data.source}.`);
 
+                if (articles.length === 0) {
+                    await notificationService.emit({
+                        level: 'WARN',
+                        source: 'SCRAPER',
+                        title: `${job.data.source}: scraping vacío`,
+                        message: `No se extrajeron artículos${job.data.url ? ` de ${job.data.url}` : ''}. Puede haber un bloqueo del sitio o cambios en su HTML.`,
+                        metadata: { source: job.data.source, url: job.data.url, limit }
+                    });
+                }
+
                 if (articles.length > 0) {
                     // Pipeline Integration
                     console.log('[Worker] Invoking processScrapedArticles...');
@@ -80,8 +98,15 @@ export class QueueService {
 
                 return articles;
 
-            } catch (err) {
+            } catch (err: any) {
                 console.error(`[Worker] Error scraping ${job.data.source}:`, err);
+                await notificationService.emit({
+                    level: 'ERROR',
+                    source: 'SCRAPER',
+                    title: `${job.data.source}: error al scrapear`,
+                    message: err?.message || String(err) || 'Error desconocido durante el scraping.',
+                    metadata: { source: job.data.source, url: job.data.url }
+                });
                 throw err;
             }
 

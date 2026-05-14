@@ -157,6 +157,10 @@ app.get('/api/config/sources', async (req, res) => {
 import scrapeScheduleRouter from './routes/ScrapeScheduleRouter';
 app.use('/api/scrape-schedules', scrapeScheduleRouter);
 
+// Notifications router (accessible to all authenticated users)
+import notificationRouter from './routes/NotificationRouter';
+app.use('/api/notifications', notificationRouter);
+
 // Config API (admin-only for the remaining config endpoints)
 app.use('/api/config', requireAdmin);
 

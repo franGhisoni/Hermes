@@ -6,6 +6,7 @@ import { ArticleService } from './ArticleService';
 import { ConfigService } from './ConfigService';
 import { AIService } from './AIService';
 import { ImageService } from './ImageService';
+import { notificationService } from './NotificationService';
 
 const prisma = new PrismaClient();
 
@@ -295,7 +296,18 @@ export class SchedulerService {
                 const target = targets[i];
                 const category = fresh.targetCategory || article.section || undefined;
                 const ok = await this.mailService.sendArticleToTarget(target.email, article, category);
-                if (ok) stats.targetsCovered++;
+                if (ok) {
+                    stats.targetsCovered++;
+                    if (!article.featureImageUrl && !article.originalImageUrl) {
+                        await notificationService.emit({
+                            level: 'WARN',
+                            source: 'PUBLISH',
+                            title: `Publicación sin imagen`,
+                            message: `"${article.rewrittenTitle || article.originalTitle}" se envió a ${target.name} sin imagen destacada.`,
+                            metadata: { workflowId: fresh.id, workflowName: fresh.name, articleId: article.id, targetName: target.name }
+                        });
+                    }
+                }
 
                 if (!publishedIds.has(article.id)) {
                     publishedIds.add(article.id);
@@ -449,6 +461,49 @@ export class SchedulerService {
             });
         } catch (err) {
             console.error('[CRON-PUBLISH] Failed to persist WorkflowRun:', err);
+        }
+
+        // Notify only on non-success outcomes (per spec: no success spam).
+        if (status === 'SUCCESS') return;
+
+        try {
+            const workflow = await prisma.workflow.findUnique({
+                where: { id: workflowId },
+                select: { name: true }
+            });
+            const workflowName = workflow?.name || workflowId;
+
+            const level = status === 'ERROR' ? 'ERROR' : 'WARN';
+            let title = '';
+            let message = '';
+
+            if (status === 'ERROR') {
+                title = `${workflowName}: el flujo falló`;
+                message = errorMessage || summary || 'Error durante la ejecución del flujo.';
+            } else if (status === 'EMPTY') {
+                title = `${workflowName}: sin publicaciones`;
+                message = summary || 'No se publicó a ningún destino.';
+            } else if (status === 'PARTIAL') {
+                title = `${workflowName}: publicación parcial (${stats.targetsCovered}/${stats.targetsTotal})`;
+                message = summary;
+            }
+
+            await notificationService.emit({
+                level,
+                source: 'WORKFLOW',
+                title,
+                message,
+                metadata: {
+                    workflowId,
+                    workflowName,
+                    status,
+                    targetsCovered: stats.targetsCovered,
+                    targetsTotal: stats.targetsTotal,
+                    targetsSkipped: stats.targetsSkipped
+                }
+            });
+        } catch (err) {
+            console.error('[CRON-PUBLISH] Failed to emit workflow notification:', err);
         }
     }
 

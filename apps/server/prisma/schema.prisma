@@ -162,6 +162,33 @@ enum ArticleStatus {
   PUBLISHED
 }
 
+model Notification {
+  id        String              @id @default(uuid())
+  level     NotificationLevel
+  source    NotificationSource
+  title     String
+  message   String
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  @@index([createdAt])
+  @@index([readAt])
+}
+
+enum NotificationLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum NotificationSource {
+  SCRAPER
+  WORKFLOW
+  PUBLISH
+  SYSTEM
+}
+
 model GeneratedImage {
   id        String   @id @default(uuid())
   data      Bytes

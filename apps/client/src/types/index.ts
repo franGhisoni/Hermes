@@ -17,3 +17,14 @@ export interface Article {
     };
     section?: string;
 }
+
+export interface Notification {
+    id: string;
+    level: 'INFO' | 'WARN' | 'ERROR';
+    source: 'SCRAPER' | 'WORKFLOW' | 'PUBLISH' | 'SYSTEM';
+    title: string;
+    message: string;
+    metadata?: Record<string, any> | null;
+    readAt?: string | null;
+    createdAt: string;
+}

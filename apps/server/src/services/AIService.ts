@@ -227,51 +227,100 @@ Return a JSON object:
   "selectedIndex": number            // best candidate's index, or -1 if none scores >= threshold
 }`;
 
-            // Build reference image block (shown before candidates, labeled as context only).
-            // Reference uses "high" detail so we can actually recognize faces/locations.
-            const referenceBlock: any[] = originalImageUrl ? [
-                { type: "text", text: `--- REFERENCE IMAGE (ground truth for protagonist; NOT a candidate, do not select or score it) ---` },
-                { type: "image_url", image_url: { url: originalImageUrl, detail: "high" } },
-                { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${Math.min(imageUrls.length, 30)} candidates. Identify the protagonist first, then score each one against the protagonist and the reference.` }
-            ] : [
-                { type: "text", text: `No reference image available. Identify the protagonist from the title and excerpt, then score the following ${Math.min(imageUrls.length, 30)} candidates against it.` }
-            ];
+            // Run the actual scoring call inside a retry loop: when OpenAI
+            // fails to download one of the candidate URLs (some CDNs reject
+            // its user-agent or block hot-linking) the API returns 400 and
+            // the WHOLE batch goes to waste. We parse the failing URL out of
+            // the error message, drop it, and retry with the rest.
+            const candidatePool = imageUrls.slice(0, 30);
+            let attemptUrls = [...candidatePool];
+            const droppedUrls = new Set<string>();
+            let rawResult: any = null;
+            const MAX_RETRIES = 6;
 
-            const messages: any[] = [
-                {
-                    role: "system",
-                    content: promptTemplate
-                },
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: `Article Title: ${title}\n\nContent Excerpt:\n${content.substring(0, 1200)}\n` },
-                        ...referenceBlock,
-                        ...imageUrls.slice(0, 30).flatMap((url, i) => ([
-                            { type: "text", text: `--- Candidate Index: ${i} ---` },
-                            { type: "image_url", image_url: { url: url, detail: "low" } }
-                        ]))
-                    ]
+            for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+                if (attemptUrls.length === 0) {
+                    console.warn(`[AIService] All candidate URLs failed OpenAI download — giving up.`);
+                    break;
                 }
-            ];
 
-            const completion = await this.openai.chat.completions.create({
-                // Use the full vision model (not -mini) — the smaller one
-                // routinely misidentified subjects (e.g. scoring a surfer
-                // higher than the matching tractor photo). The extra cost
-                // is worth it for editorial relevance.
-                model: "gpt-4o",
-                messages: messages,
-                response_format: { type: "json_object" },
-                // Up to 30 reasonings + scores + protagonist. ~30 reasonings *
-                // ~25 tokens each = 750, plus the scores array and protagonist
-                // line, comfortably within 2000.
-                max_tokens: 2000
+                const referenceBlock: any[] = originalImageUrl ? [
+                    { type: "text", text: `--- REFERENCE IMAGE (ground truth for protagonist; NOT a candidate, do not select or score it) ---` },
+                    { type: "image_url", image_url: { url: originalImageUrl, detail: "high" } },
+                    { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${attemptUrls.length} candidates. Identify the protagonist first, then score each one against the protagonist and the reference.` }
+                ] : [
+                    { type: "text", text: `No reference image available. Identify the protagonist from the title and excerpt, then score the following ${attemptUrls.length} candidates against it.` }
+                ];
+
+                const messages: any[] = [
+                    { role: "system", content: promptTemplate },
+                    {
+                        role: "user",
+                        content: [
+                            { type: "text", text: `Article Title: ${title}\n\nContent Excerpt:\n${content.substring(0, 1200)}\n` },
+                            ...referenceBlock,
+                            ...attemptUrls.flatMap((url, i) => ([
+                                { type: "text", text: `--- Candidate Index: ${i} ---` },
+                                { type: "image_url", image_url: { url: url, detail: "low" } }
+                            ]))
+                        ]
+                    }
+                ];
+
+                try {
+                    const completion = await this.openai.chat.completions.create({
+                        model: "gpt-4o",
+                        messages: messages,
+                        response_format: { type: "json_object" },
+                        // Up to 30 reasonings + scores + protagonist. ~30 reasonings *
+                        // ~25 tokens each = 750, plus the scores array and protagonist
+                        // line, comfortably within 2000.
+                        max_tokens: 2000
+                    });
+                    rawResult = JSON.parse(completion.choices[0].message.content || '{}');
+                    break;
+                } catch (err: any) {
+                    if (err?.code === 'invalid_image_url' || err?.error?.code === 'invalid_image_url') {
+                        const msg: string = err?.error?.message || err?.message || '';
+                        const match = msg.match(/Error while downloading\s+(https?:\/\/\S+)/);
+                        let badUrl: string | undefined = match?.[1];
+                        // OpenAI's error message ends with a trailing period that isn't
+                        // actually part of the URL — strip it before matching.
+                        if (badUrl && badUrl.endsWith('.') && !badUrl.endsWith('..')) {
+                            badUrl = badUrl.slice(0, -1);
+                        }
+                        const exact = attemptUrls.find(u => u === badUrl);
+                        if (exact) {
+                            console.warn(`[AIService] OpenAI couldn't download ${exact} — dropping and retrying without it.`);
+                            droppedUrls.add(exact);
+                            attemptUrls = attemptUrls.filter(u => u !== exact);
+                            continue;
+                        }
+                        console.warn(`[AIService] OpenAI rejected an image URL but we couldn't identify which (parsed: ${badUrl}) — aborting retries.`);
+                    }
+                    throw err;
+                }
+            }
+
+            // Map scores from attemptUrls order back to the original imageUrls order.
+            // Dropped (un-downloadable) URLs get 0; URLs that weren't in this run get 0.
+            const attemptScores: number[] = Array.isArray(rawResult?.scores) ? rawResult.scores : [];
+            const attemptReasonings: string[] = Array.isArray(rawResult?.reasonings) ? rawResult.reasonings : [];
+            const scores: number[] = imageUrls.map(() => 0);
+            const reasonings: string[] = imageUrls.map(() => '');
+            attemptUrls.forEach((url, idx) => {
+                const origIdx = imageUrls.indexOf(url);
+                if (origIdx >= 0) {
+                    scores[origIdx] = attemptScores[idx] ?? 0;
+                    if (attemptReasonings[idx]) reasonings[origIdx] = attemptReasonings[idx];
+                }
+            });
+            droppedUrls.forEach(url => {
+                const origIdx = imageUrls.indexOf(url);
+                if (origIdx >= 0) reasonings[origIdx] = '⚠ OpenAI could not download this image';
             });
 
-            const result = JSON.parse(completion.choices[0].message.content || '{}');
-            const scores: number[] = result.scores || imageUrls.map(() => 0);
-            const reasonings: string[] = Array.isArray(result.reasonings) ? result.reasonings : [];
+            const result = rawResult || {};
 
             if (result.protagonist) {
                 console.log(`[AIService] 🎯 Protagonist identified: ${result.protagonist}`);

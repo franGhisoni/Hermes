@@ -446,9 +446,28 @@ export default function Newsroom() {
                                     <div className="mt-2">
                                         <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/40 mb-1 block">Imágenes Candidatas</span>
 
-                                        {article.imageCandidates && article.imageCandidates.length > 0 ? (
+                                        {(() => {
+                                            // Hide candidates the AI scored at 0 — they are explicit
+                                            // "this is unusable" picks (wrong subject, broken URL, etc.)
+                                            // and surfacing them clogs the editor with junk. We still
+                                            // keep the original image and AI-generated ones regardless
+                                            // of score so the editor always has a fallback.
+                                            // Admins see everything for debugging the scorer.
+                                            const isAdmin = user?.role === 'ADMIN';
+                                            const allCandidates = article.imageCandidates || [];
+                                            const visibleCandidates = isAdmin ? allCandidates : allCandidates.filter(url => {
+                                                if (url === article.originalImageUrl) return true;
+                                                if (url.startsWith('/api/images/')) return true;
+                                                const score = article.imageScores?.[url];
+                                                if (score === undefined || score === null) return true;
+                                                return score > 0;
+                                            });
+                                            const hiddenCount = allCandidates.length - visibleCandidates.length;
+
+                                            return visibleCandidates.length > 0 ? (
+                                            <>
                                             <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
-                                                {article.imageCandidates.map((url, idx) => {
+                                                {visibleCandidates.map((url, idx) => {
                                                     const isOriginal = url === article.originalImageUrl;
                                                     const isGenerated = url.startsWith('/api/images/');
                                                     const score = article.imageScores?.[url];
@@ -479,11 +498,20 @@ export default function Newsroom() {
                                                     );
                                                 })}
                                             </div>
-                                        ) : (
+                                            {hiddenCount > 0 && (
+                                                <span className="text-[10px] font-sans italic text-editorial-text/40 block mt-1">
+                                                    {hiddenCount} candidata{hiddenCount === 1 ? '' : 's'} oculta{hiddenCount === 1 ? '' : 's'} por puntaje 0.
+                                                </span>
+                                            )}
+                                            </>
+                                            ) : (
                                             <div className="text-xs text-editorial-text/50 italic border border-dashed border-editorial-text/20 rounded p-4 text-center">
-                                                No hay más candidatas. Haz clic en "Buscar Web" o "Regenerar" para encontrar más imágenes.
+                                                {hiddenCount > 0
+                                                    ? `Todas las candidatas (${hiddenCount}) fueron descartadas por puntaje 0. Probá "Regenerar" o subir una manual.`
+                                                    : 'No hay más candidatas. Haz clic en "Buscar Web" o "Regenerar" para encontrar más imágenes.'}
                                             </div>
-                                        )}
+                                            );
+                                        })()}
 
                                         {/* Manual URL input */}
                                         <div className="mt-3 flex gap-2 items-center">

@@ -107,44 +107,53 @@ export class AIService {
 
         try {
             const config = await this.promptService.getPromptByType('IMAGE_SELECT');
-            let promptTemplate = config?.template || `You are a photo editor for a digital news agency. You will receive a news article title, a content snippet, and candidate images.
+            let promptTemplate = config?.template || `You are a photo editor for a digital news agency.
 
-You may also receive a REFERENCE IMAGE extracted from the original news article. This image is NOT a candidate — do not select or score it. Use it only to understand the subject, protagonist, or visual context of the story (e.g., to recognize a person's face or a specific location).
+You will receive:
+1. The article TITLE and a CONTENT EXCERPT — use these to identify the PROTAGONIST or SUBJECT of the story (a specific person, organization, location, event, or object).
+2. A REFERENCE IMAGE pulled from the original publication (when available). This image is NOT a candidate. Treat it as ground-truth for what the protagonist looks like (face, setting, object). Candidates that visually match the reference are almost always the right pick.
+3. A list of CANDIDATE IMAGES indexed 0..N.
 
-Your job is to select the ONE best image for this article, or REJECT ALL if none are suitable.
-Additionally, you must evaluate EVERY candidate image and assign it a score from 1 to 10 based on its quality, relevance, and lack of overlays.
+YOUR JOB:
+- Internally decide who/what the story is about before scoring (the title alone is rarely enough — read the excerpt).
+- Score EVERY candidate from 0 to 10. Use the full range — be harsh.
+- Return the index of the single best image, or -1 if no candidate scores above the threshold.
 
-REJECT an image (score it low, e.g. 1-3) if it has ANY of these problems:
-- Text overlaid on the image (titles, headlines, captions, banners, zócalos)
-- TV screen captures or studio shots with chyrons/lower thirds
-- Visible logos or branding from media companies (e.g. "La Nación", "TN", "Clarín", "C5N", "NA", "Noticias Argentinas")
-- Huge blue bars at the bottom with "NA" (very common in Argentinian news)
-- Watermarks
-- Extremely low quality, blurry, or heavily compressed
-- Collages or composite images with multiple photos stitched together
-- Generic stock photo illustrations that don't relate to the specific news story
+SCORING RUBRIC (anchor each candidate against this):
+- 9-10: Clean photojournalistic shot of the exact protagonist/subject (matches reference if provided). Could run on the front page.
+- 7-8: Same protagonist/subject but framing/quality is OK, not great. Or a clearly relevant scene from the event.
+- 5-6: Related subject matter (same field/topic) but not the specific protagonist. Generic but acceptable.
+- 3-4: Tangentially related — same general theme but clearly the wrong person/place/object.
+- 1-2: Wrong subject entirely, or has serious quality issues (text overlays, TV chyrons, watermarks, logos, low quality).
+- 0: Completely unrelated (a surfer for a politics story, a city skyline for a tractor story, etc.) or unusable junk.
 
-PREFER images (score them high, e.g. 7-10) that are:
-- Clean photojournalistic shots without overlays
-- High quality, well-framed photos of people, events, or places relevant to the article
-- Photos that could stand on their own without explanation
-- Photos showing the same person or location as the reference image (if provided)
+HARD REJECTIONS (score 0-2 regardless of other qualities):
+- Visible text overlays, captions, lower-thirds, "zócalos"
+- TV screen captures with channel logos/chyrons
+- Newsroom branding (La Nación, TN, Clarín, C5N, NA, Noticias Argentinas, etc.)
+- Blue "NA" bar at the bottom (Noticias Argentinas watermark)
+- Other watermarks, low quality, blurriness, collages
+- Obvious AI-generated or stock illustrations not specific to the story
+
+CRITICAL: If a candidate clearly shows the wrong subject (e.g. a surfer when the story is about a farmer, a different person than the reference), it must score 0-2. Do not be polite — incorrect subject = unusable.
 
 Return a JSON object:
 {
+  "protagonist": string,  // one short sentence identifying who/what the story is about
   "selectedIndex": number,
-  "scores": [number] // Array of scores (1-10) corresponding to each image candidate in the exact order they were provided
+  "scores": [number]      // Array of scores (0-10) corresponding to each candidate in the exact order provided
 }
 - Use 0-based index for the best image
-- Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`;
+- Use -1 if every candidate scores below the threshold`;
 
-            // Build reference image block (shown before candidates, labeled as context only)
+            // Build reference image block (shown before candidates, labeled as context only).
+            // Reference uses "high" detail so we can actually recognize faces/locations.
             const referenceBlock: any[] = originalImageUrl ? [
-                { type: "text", text: `--- REFERENCE IMAGE (NOT a candidate — use to identify the protagonist/subject) ---` },
-                { type: "image_url", image_url: { url: originalImageUrl, detail: "low" } },
-                { type: "text", text: `--- END REFERENCE ---\n\nNow select the best from the following ${Math.min(imageUrls.length, 5)} candidates:` }
+                { type: "text", text: `--- REFERENCE IMAGE (ground truth for protagonist; NOT a candidate, do not select or score it) ---` },
+                { type: "image_url", image_url: { url: originalImageUrl, detail: "high" } },
+                { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${Math.min(imageUrls.length, 5)} candidates. Identify the protagonist first, then score each one against the protagonist and the reference.` }
             ] : [
-                { type: "text", text: `Select the best image from the following ${Math.min(imageUrls.length, 5)} candidates:` }
+                { type: "text", text: `No reference image available. Identify the protagonist from the title and excerpt, then score the following ${Math.min(imageUrls.length, 5)} candidates against it.` }
             ];
 
             const messages: any[] = [
@@ -155,7 +164,7 @@ Return a JSON object:
                 {
                     role: "user",
                     content: [
-                        { type: "text", text: `Article Title: ${title}\nContent Snippet: ${content.substring(0, 300)}\n` },
+                        { type: "text", text: `Article Title: ${title}\n\nContent Excerpt:\n${content.substring(0, 1200)}\n` },
                         ...referenceBlock,
                         ...imageUrls.slice(0, 5).flatMap((url, i) => ([
                             { type: "text", text: `--- Candidate Index: ${i} ---` },
@@ -166,14 +175,23 @@ Return a JSON object:
             ];
 
             const completion = await this.openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                // Use the full vision model (not -mini) — the smaller one
+                // routinely misidentified subjects (e.g. scoring a surfer
+                // higher than the matching tractor photo). The extra cost
+                // is worth it for editorial relevance.
+                model: "gpt-4o",
                 messages: messages,
                 response_format: { type: "json_object" },
-                max_tokens: 100
+                max_tokens: 1000
             });
 
             const result = JSON.parse(completion.choices[0].message.content || '{}');
             const scores: number[] = result.scores || imageUrls.map(() => 0);
+
+            if (result.protagonist) {
+                console.log(`[AIService] 🎯 Protagonist identified: ${result.protagonist}`);
+            }
+            console.log(`[AIService] Scores: [${scores.join(', ')}]`);
 
             // Pick the URL with the highest score — more reliable than trusting selectedIndex
             // since the AI sometimes returns an inconsistent selectedIndex vs scores array

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2 } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 
@@ -39,12 +39,21 @@ const CRON_PRESETS = [
     { label: 'Dos veces al día (8AM y 6PM)', value: '0 8,18 * * *' },
 ];
 
+type TabKey = 'prompts' | 'fuentes' | 'sistema';
+
+const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
+    { key: 'prompts', label: 'Prompts IA', icon: Sparkles },
+    { key: 'fuentes', label: 'Fuentes', icon: Layers },
+    { key: 'sistema', label: 'Sistema', icon: SlidersHorizontal }
+];
+
 export default function Settings() {
     const { user, logout } = useAuth();
     const [prompts, setPrompts] = useState<PromptConfig[]>([]);
     const [sections, setSections] = useState<Section[]>([]);
     const [schedules, setSchedules] = useState<ScrapeSchedule[]>([]);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState<TabKey>('fuentes');
 
     // Section Form State
     const [newSecName, setNewSecName] = useState('');
@@ -146,7 +155,6 @@ export default function Settings() {
         }
     };
 
-    // Scrape Schedule handlers
     const handleCreateSchedule = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
@@ -178,10 +186,11 @@ export default function Settings() {
 
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
-            <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
+            <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-20">
                 <div className="flex items-center gap-4">
-                    <img src="/logo.png" alt="Logo" className="h-10 w-auto mix-blend-multiply opacity-90" />
-                    <Link to="/" className="text-4xl font-black tracking-tight italic hover:opacity-80">Editor.</Link>
+                    <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
+                        <img src="/logo.png" alt="Logo" className="h-10 w-auto mix-blend-multiply" />
+                    </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <h1 className="font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
                 </div>
@@ -194,156 +203,316 @@ export default function Settings() {
                 </div>
             </nav>
 
-            <main className="p-8 max-w-4xl mx-auto">
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Personalidad & Logica</h2>
-                    <p className="font-sans text-editorial-text/70 mb-8 max-w-2xl">
-                        Define como la Inteligencia Artificial interpreta, reescribe y califica el contenido de las noticias.
-                        Cambios aqui afectan a todo el procesamiento futuro.
-                    </p>
+            <div className="relative">
+                {/*
+                 * On lg+ the sidebar is taken out of flow (fixed at left:32px,
+                 * below the sticky header) so the <main> can stay centered on
+                 * the viewport. On smaller screens it falls back to a normal
+                 * horizontally-scrollable strip above the content.
+                 */}
+                <aside className="lg:fixed lg:left-8 lg:top-[110px] lg:w-[220px] lg:z-10 px-8 lg:px-0 pt-6 lg:pt-0">
+                    <nav className="flex lg:flex-col gap-2 lg:gap-1 overflow-x-auto lg:overflow-visible">
+                        {TABS.map(tab => {
+                            const Icon = tab.icon;
+                            const isActive = activeTab === tab.key;
+                            return (
+                                <button
+                                    key={tab.key}
+                                    onClick={() => setActiveTab(tab.key)}
+                                    className={`group flex items-center gap-3 py-3 pr-4 text-left transition-all duration-200 ease-out flex-shrink-0 ${
+                                        isActive
+                                            ? 'pl-4 text-editorial-text translate-x-1'
+                                            : 'pl-2 text-editorial-text/30 hover:text-editorial-text/70 -translate-x-0.5 hover:translate-x-0'
+                                    }`}
+                                >
+                                    <Icon size={isActive ? 22 : 18} />
+                                    <span className={`font-serif italic transition-all duration-200 ${
+                                        isActive
+                                            ? 'text-3xl font-black underline decoration-2 underline-offset-4'
+                                            : 'text-2xl font-bold'
+                                    }`}>
+                                        {tab.label}
+                                    </span>
+                                </button>
+                            );
+                        })}
+                    </nav>
+                </aside>
 
-                    {loading ? <div>Loading configuration...</div> : (
-                        <div className="space-y-12">
-                            {prompts.map(prompt => (
-                                <div key={prompt.id} className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                                    <div className="flex justify-between items-baseline mb-4">
-                                        <h3 className="text-xl font-bold">{prompt.name}</h3>
-                                        <span className="font-sans text-xs uppercase tracking-widest bg-editorial-text/5 px-2 py-1 rounded">
-                                            {prompt.type}
-                                        </span>
-                                    </div>
+                {/* Main panel — centered on the viewport, sidebar floats over the gutter */}
+                <main className="max-w-5xl mx-auto px-8 py-10 min-w-0">
+                    {activeTab === 'prompts' && (
+                        <PromptsTab
+                            prompts={prompts}
+                            loading={loading}
+                            savePrompt={savePrompt}
+                        />
+                    )}
 
-                                    <div className="font-sans text-sm text-editorial-text/50 mb-2">Prompt Template</div>
-                                    <textarea
-                                        className="w-full h-64 p-4 font-mono text-sm bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none leading-relaxed"
-                                        defaultValue={prompt.template}
-                                        onBlur={(e) => savePrompt(prompt.id, e.target.value)}
-                                    />
-                                    <div className="mt-2 text-right">
-                                        <span className="text-xs font-sans text-editorial-text/40 italic">
-                                            Click afuera de la caja para guardar automaticamente.
-                                        </span>
+                    {activeTab === 'fuentes' && (
+                        <FuentesTab
+                            sections={sections}
+                            schedules={schedules}
+                            scrapeLimit={scrapeLimit}
+                            newSecName={newSecName}
+                            setNewSecName={setNewSecName}
+                            newSecPath={newSecPath}
+                            setNewSecPath={setNewSecPath}
+                            newSecLimit={newSecLimit}
+                            setNewSecLimit={setNewSecLimit}
+                            newSchedSource={newSchedSource}
+                            setNewSchedSource={setNewSchedSource}
+                            newSchedCron={newSchedCron}
+                            setNewSchedCron={setNewSchedCron}
+                            handleCreateSection={handleCreateSection}
+                            handleUpdateSectionLimit={handleUpdateSectionLimit}
+                            handleDeleteSection={handleDeleteSection}
+                            handleCreateSchedule={handleCreateSchedule}
+                            handleToggleSchedule={handleToggleSchedule}
+                            handleDeleteSchedule={handleDeleteSchedule}
+                        />
+                    )}
+
+                    {activeTab === 'sistema' && (
+                        <SistemaTab
+                            scrapeLimit={scrapeLimit}
+                            setScrapeLimit={setScrapeLimit}
+                            articleRetentionHours={articleRetentionHours}
+                            setArticleRetentionHours={setArticleRetentionHours}
+                            articleCleanupCron={articleCleanupCron}
+                            setArticleCleanupCron={setArticleCleanupCron}
+                            imageSearchQueryTemplate={imageSearchQueryTemplate}
+                            setImageSearchQueryTemplate={setImageSearchQueryTemplate}
+                            imageSearchUrlTemplate={imageSearchUrlTemplate}
+                            setImageSearchUrlTemplate={setImageSearchUrlTemplate}
+                            imageMinScore={imageMinScore}
+                            setImageMinScore={setImageMinScore}
+                        />
+                    )}
+                </main>
+            </div>
+        </div>
+    );
+}
+
+// ---------- Tabs ----------
+
+interface PromptsTabProps {
+    prompts: PromptConfig[];
+    loading: boolean;
+    savePrompt: (id: string, template: string) => Promise<void>;
+}
+
+function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
+    return (
+        <section>
+            <Header
+                title="Personalidad & Lógica"
+                subtitle="Define cómo la IA interpreta, reescribe y califica el contenido. Click afuera del recuadro para guardar."
+            />
+            {loading ? <div>Cargando configuración...</div> : (
+                <div className="space-y-6">
+                    {prompts.map(prompt => (
+                        <Card key={prompt.id}>
+                            <div className="flex justify-between items-baseline mb-3">
+                                <h3 className="text-base font-bold">{prompt.name}</h3>
+                                <span className="font-sans text-[10px] uppercase tracking-widest bg-editorial-text/5 px-2 py-1 rounded">
+                                    {prompt.type}
+                                </span>
+                            </div>
+                            <textarea
+                                className="w-full h-48 p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none leading-relaxed"
+                                defaultValue={prompt.template}
+                                onBlur={(e) => savePrompt(prompt.id, e.target.value)}
+                            />
+                        </Card>
+                    ))}
+                </div>
+            )}
+        </section>
+    );
+}
+
+interface FuentesTabProps {
+    sections: Section[];
+    schedules: ScrapeSchedule[];
+    scrapeLimit: number;
+    newSecName: string;
+    setNewSecName: (v: string) => void;
+    newSecPath: string;
+    setNewSecPath: (v: string) => void;
+    newSecLimit: string;
+    setNewSecLimit: (v: string) => void;
+    newSchedSource: string;
+    setNewSchedSource: (v: string) => void;
+    newSchedCron: string;
+    setNewSchedCron: (v: string) => void;
+    handleCreateSection: (e: React.FormEvent) => Promise<void>;
+    handleUpdateSectionLimit: (id: string, raw: string) => Promise<void>;
+    handleDeleteSection: (id: string) => Promise<void>;
+    handleCreateSchedule: (e: React.FormEvent) => Promise<void>;
+    handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
+    handleDeleteSchedule: (id: string) => Promise<void>;
+}
+
+function FuentesTab(props: FuentesTabProps) {
+    const {
+        sections, schedules, scrapeLimit,
+        newSecName, setNewSecName, newSecPath, setNewSecPath, newSecLimit, setNewSecLimit,
+        newSchedSource, setNewSchedSource, newSchedCron, setNewSchedCron,
+        handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
+        handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule
+    } = props;
+
+    return (
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Sections column */}
+            <div className="flex flex-col gap-4">
+                <Header
+                    title="Secciones"
+                    subtitle="URLs específicas por medio. Disponibles al crear un Flujo."
+                    dense
+                />
+                <Card>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">Añadir sección</h3>
+                    <form onSubmit={handleCreateSection} className="grid grid-cols-2 gap-3 font-sans">
+                        <input
+                            type="text"
+                            placeholder="Nombre (ej. Política)"
+                            value={newSecName}
+                            onChange={e => setNewSecName(e.target.value)}
+                            required
+                            className="col-span-2 border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent text-sm"
+                        />
+                        <input
+                            type="text"
+                            placeholder="Ruta (ej. /politica)"
+                            value={newSecPath}
+                            onChange={e => setNewSecPath(e.target.value)}
+                            required
+                            className="col-span-2 sm:col-span-1 border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent text-sm"
+                        />
+                        <input
+                            type="number"
+                            min="1"
+                            max="100"
+                            placeholder={`Límite (def. ${scrapeLimit})`}
+                            value={newSecLimit}
+                            onChange={e => setNewSecLimit(e.target.value)}
+                            className="col-span-2 sm:col-span-1 border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent text-sm"
+                            title="Cuántas notas levantar por scrapeo. Vacío = usa el global."
+                        />
+                        <div className="col-span-2 flex items-center justify-between mt-1">
+                            <span className="text-[10px] opacity-50 italic">Vacío = global ({scrapeLimit})</span>
+                            <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]">
+                                Añadir
+                            </button>
+                        </div>
+                    </form>
+                </Card>
+
+                <Card>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">
+                        Secciones configuradas <span className="opacity-50">({sections.length})</span>
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {sections.map(sec => (
+                            <div key={sec.id} className="group flex justify-between items-start gap-2 border border-editorial-text/10 px-3 py-2 hover:bg-editorial-text/[0.02] transition-colors">
+                                <div className="flex flex-col flex-1 min-w-0">
+                                    <span className="font-sans font-bold text-sm truncate">{sec.name}</span>
+                                    <span className="font-sans text-[10px] text-editorial-text/60 font-mono bg-black/5 px-1.5 py-0.5 mt-1 rounded w-fit max-w-full truncate">{sec.path}</span>
+                                    <div className="flex items-center gap-1.5 mt-2">
+                                        <label className="text-[9px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="100"
+                                            defaultValue={sec.scrapeLimit ?? ''}
+                                            placeholder={String(scrapeLimit)}
+                                            onBlur={e => {
+                                                const raw = e.target.value;
+                                                const current = sec.scrapeLimit;
+                                                const next = raw.trim() === '' ? null : parseInt(raw, 10);
+                                                if (next !== current) handleUpdateSectionLimit(sec.id, raw);
+                                            }}
+                                            className="w-12 border border-editorial-text/20 px-1.5 py-0.5 text-[11px] font-mono focus:outline-none focus:border-editorial-text bg-white"
+                                            title="Vacío = global"
+                                        />
+                                        {sec.scrapeLimit == null && (
+                                            <span className="text-[9px] font-sans italic opacity-50">(global)</span>
+                                        )}
                                     </div>
                                 </div>
-                            ))}
-                        </div>
-                    )}
-                </section>
-
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Secciones por Medio</h2>
-                    <p className="font-sans text-editorial-text/70 mb-8 max-w-2xl">
-                        Administra las URLs de las secciones específicas para cada medio (ej. Política en Clarín, Economía en La Nación).
-                        Estas secciones estarán disponibles como opciones al crear un Flujo Automático.
-                    </p>
-
-                    <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)] mb-8">
-                        <h3 className="text-xl font-bold mb-4 font-sans uppercase tracking-widest text-sm">Añadir Nueva Sección</h3>
-                        <form onSubmit={handleCreateSection} className="grid grid-cols-1 md:grid-cols-5 gap-4 font-sans">
-                            <input type="text" placeholder="Nombre (ej. Política)" value={newSecName} onChange={e => setNewSecName(e.target.value)} required className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent md:col-span-2" />
-                            <input type="text" placeholder="Ruta Global (ej. /politica)" value={newSecPath} onChange={e => setNewSecPath(e.target.value)} required className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent md:col-span-2" />
-                            <input
-                                type="number"
-                                min="1"
-                                max="100"
-                                placeholder={`Límite (def. ${scrapeLimit})`}
-                                value={newSecLimit}
-                                onChange={e => setNewSecLimit(e.target.value)}
-                                className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent md:col-span-1"
-                                title="Cuántas notas levantar por scrapeo en esta sección. Si está vacío usa el límite general."
-                            />
-                            <div className="md:col-span-5 flex items-center justify-between mt-2">
-                                <span className="text-[11px] opacity-50 italic">Vacío = usa el límite general ({scrapeLimit}).</span>
-                                <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs">Añadir</button>
+                                <button
+                                    onClick={() => handleDeleteSection(sec.id)}
+                                    className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all mt-1"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
                             </div>
-                        </form>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        <div className="border border-editorial-text/20 p-4 bg-white/50 col-span-1 md:col-span-2 lg:col-span-3">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {sections.map(sec => (
-                                    <div key={sec.id} className="flex justify-between items-start group border-b border-editorial-text/10 pb-2 gap-2">
-                                        <div className="flex flex-col flex-1 min-w-0">
-                                            <span className="font-sans font-bold text-sm">{sec.name}</span>
-                                            <span className="font-sans text-xs text-editorial-text/60 font-mono bg-black/5 px-2 py-1 mt-1 rounded w-fit truncate max-w-full">{sec.path}</span>
-                                            <div className="flex items-center gap-2 mt-2">
-                                                <label className="text-[10px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
-                                                <input
-                                                    type="number"
-                                                    min="1"
-                                                    max="100"
-                                                    defaultValue={sec.scrapeLimit ?? ''}
-                                                    placeholder={String(scrapeLimit)}
-                                                    onBlur={e => {
-                                                        const raw = e.target.value;
-                                                        const current = sec.scrapeLimit;
-                                                        const next = raw.trim() === '' ? null : parseInt(raw, 10);
-                                                        if (next !== current) {
-                                                            handleUpdateSectionLimit(sec.id, raw);
-                                                        }
-                                                    }}
-                                                    className="w-16 border border-editorial-text/20 px-2 py-1 text-xs font-mono focus:outline-none focus:border-editorial-text bg-white"
-                                                    title="Cuántas notas levantar por scrapeo. Vacío = usar el límite general."
-                                                />
-                                                {sec.scrapeLimit == null && (
-                                                    <span className="text-[10px] font-sans italic opacity-50">(global)</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                        <button onClick={() => handleDeleteSection(sec.id)} className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all mt-1"><Trash2 size={16} /></button>
-                                    </div>
-                                ))}
-                                {sections.length === 0 && <div className="text-sm opacity-50 col-span-3">No hay secciones globales configuradas.</div>}
+                        ))}
+                        {sections.length === 0 && (
+                            <div className="text-xs opacity-50 italic col-span-2 py-4 text-center border border-dashed border-editorial-text/20">
+                                Sin secciones configuradas.
                             </div>
-                        </div>
+                        )}
                     </div>
-                </section>
+                </Card>
+            </div>
 
-                {/* SCRAPE SCHEDULES - NEW SECTION */}
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Scrapeos Programados</h2>
-                    <p className="font-sans text-editorial-text/70 mb-8 max-w-2xl">
-                        Configura cada cuánto se scrapean las fuentes de noticias. Cada schedule scrapea todas las secciones configuradas arriba automáticamente.
-                    </p>
-
-                    <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)] mb-8">
-                        <h3 className="text-xl font-bold mb-4 font-sans uppercase tracking-widest text-sm">Nuevo Schedule</h3>
-                        <form onSubmit={handleCreateSchedule} className="grid grid-cols-1 gap-4 font-sans">
+            {/* Schedules column */}
+            <div className="flex flex-col gap-4">
+                <Header
+                    title="Scrapeos Programados"
+                    subtitle="Cada cuánto se levanta cada fuente. Aplica a todas las secciones."
+                    dense
+                />
+                <Card>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">Nuevo schedule</h3>
+                    <form onSubmit={handleCreateSchedule} className="flex flex-col gap-3 font-sans">
+                        <div>
+                            <label className="text-[10px] uppercase tracking-widest opacity-60 block mb-1">Fuente</label>
                             <select
                                 value={newSchedSource}
                                 onChange={e => setNewSchedSource(e.target.value)}
-                                className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer"
+                                className="w-full border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer text-sm"
                             >
                                 {AVAILABLE_SOURCES.map(s => (
                                     <option key={s} value={s}>{s}</option>
                                 ))}
                             </select>
-                            <CronBuilder
-                                value={newSchedCron}
-                                onChange={setNewSchedCron}
-                                presets={CRON_PRESETS}
-                                helperText="Ejemplo: 0 8,12,15 * * 1,2,3,4,5 corre lunes a viernes a las 8:00, 12:00 y 15:00."
-                            />
-                            <div className="flex justify-end">
-                                <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs">Agregar</button>
-                            </div>
-                        </form>
-                    </div>
+                        </div>
+                        <CronBuilder
+                            value={newSchedCron}
+                            onChange={setNewSchedCron}
+                            presets={CRON_PRESETS}
+                            helperText="Ej: 0 8,12,15 * * 1-5 corre L-V a las 8, 12 y 15hs."
+                        />
+                        <div className="flex justify-end">
+                            <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]">
+                                Agregar
+                            </button>
+                        </div>
+                    </form>
+                </Card>
 
-                    <div className="space-y-3">
+                <Card>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">
+                        Activos <span className="opacity-50">({schedules.length})</span>
+                    </h3>
+                    <div className="space-y-2">
                         {schedules.map(sched => (
-                            <div key={sched.id} className="bg-white border border-editorial-text/10 p-4 flex items-center justify-between group shadow-sm">
-                                <div className="flex items-center gap-4">
+                            <div key={sched.id} className="flex items-center justify-between group border border-editorial-text/10 px-3 py-2 hover:bg-editorial-text/[0.02] transition-colors">
+                                <div className="flex items-center gap-3">
                                     <button
                                         onClick={() => handleToggleSchedule(sched)}
-                                        className={`w-10 h-5 rounded-full relative transition-colors ${sched.isActive ? 'bg-green-500' : 'bg-editorial-text/20'}`}
+                                        className={`w-9 h-5 rounded-full relative transition-colors flex-shrink-0 ${sched.isActive ? 'bg-green-500' : 'bg-editorial-text/20'}`}
                                     >
-                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${sched.isActive ? 'left-5' : 'left-0.5'}`}></span>
+                                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${sched.isActive ? 'left-[18px]' : 'left-0.5'}`}></span>
                                     </button>
-                                    <div>
+                                    <div className="flex flex-col">
                                         <span className="font-sans font-bold text-sm">{sched.source}</span>
-                                        <span className="font-sans text-xs text-editorial-text/50 ml-3 font-mono bg-black/5 px-2 py-0.5 rounded">
+                                        <span className="font-sans text-[10px] text-editorial-text/60 font-mono bg-black/5 px-1.5 py-0.5 rounded w-fit mt-0.5">
                                             {CRON_PRESETS.find(p => p.value === sched.cron)?.label || sched.cron}
                                         </span>
                                     </div>
@@ -352,198 +521,247 @@ export default function Settings() {
                                     onClick={() => handleDeleteSchedule(sched.id)}
                                     className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all"
                                 >
-                                    <Trash2 size={16} />
+                                    <Trash2 size={14} />
                                 </button>
                             </div>
                         ))}
                         {schedules.length === 0 && (
-                            <div className="text-sm font-sans opacity-50 text-center py-6 border border-dashed border-editorial-text/20">
-                                No hay scrapeos programados. Agregá uno arriba.
+                            <div className="text-xs opacity-50 italic py-4 text-center border border-dashed border-editorial-text/20">
+                                Sin schedules activos.
                             </div>
                         )}
                     </div>
-                </section>
+                </Card>
+            </div>
+        </section>
+    );
+}
 
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Sistema</h2>
-                    <div className="space-y-6">
-                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-xl font-bold">Limite de Scrapeo Por Seccion</h3>
-                                    <p className="font-sans text-sm text-editorial-text/50">Cuantos articulos traer de cada seccion (Portada, Politica, Economia, etc) por ejecucion.</p>
-                                </div>
-                                <div>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        value={scrapeLimit}
-                                        className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
-                                        onChange={(e) => setScrapeLimit(parseInt(e.target.value || '1', 10))}
-                                        onBlur={async (e) => {
-                                            const value = Math.max(1, parseInt(e.target.value || '1', 10));
-                                            setScrapeLimit(value);
-                                            await api.post('/api/config/settings', { scrapeLimit: value });
-                                        }}
-                                    />
-                                </div>
-                            </div>
-                        </div>
+interface SistemaTabProps {
+    scrapeLimit: number;
+    setScrapeLimit: (n: number) => void;
+    articleRetentionHours: number;
+    setArticleRetentionHours: (n: number) => void;
+    articleCleanupCron: string;
+    setArticleCleanupCron: (v: string) => void;
+    imageSearchQueryTemplate: string;
+    setImageSearchQueryTemplate: (v: string) => void;
+    imageSearchUrlTemplate: string;
+    setImageSearchUrlTemplate: (v: string) => void;
+    imageMinScore: number;
+    setImageMinScore: (n: number) => void;
+}
 
-                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-xl font-bold">Retencion de Noticias</h3>
-                                    <p className="font-sans text-sm text-editorial-text/50">Las noticias con mas antiguedad que este valor se eliminan automaticamente junto con sus imagenes generadas huerfanas.</p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        value={articleRetentionHours}
-                                        className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
-                                        onChange={(e) => setArticleRetentionHours(parseInt(e.target.value || '1', 10))}
-                                        onBlur={async (e) => {
-                                            const value = Math.max(1, parseInt(e.target.value || '1', 10));
-                                            setArticleRetentionHours(value);
-                                            await api.post('/api/config/settings', { articleRetentionHours: value });
-                                        }}
-                                    />
-                                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text/50">horas</span>
-                                </div>
-                            </div>
-                        </div>
+function SistemaTab(props: SistemaTabProps) {
+    const {
+        scrapeLimit, setScrapeLimit,
+        articleRetentionHours, setArticleRetentionHours,
+        articleCleanupCron, setArticleCleanupCron,
+        imageSearchQueryTemplate, setImageSearchQueryTemplate,
+        imageSearchUrlTemplate, setImageSearchUrlTemplate,
+        imageMinScore, setImageMinScore
+    } = props;
 
-                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                            <div className="flex flex-col gap-4">
-                                <div>
-                                    <h3 className="text-xl font-bold">Cron de Limpieza</h3>
-                                    <p className="font-sans text-sm text-editorial-text/50">Define cada cuanto el sistema revisa si hay noticias vencidas para borrar.</p>
-                                </div>
-                                <CronBuilder
-                                    value={articleCleanupCron}
-                                    onChange={setArticleCleanupCron}
-                                    presets={[...CRON_PRESETS, { label: 'Cada 1 hora exacta', value: '0 * * * *' }]}
-                                    helperText="Si no trabajan fines de semana, podés usar días hábiles y revisar solo de lunes a viernes."
-                                />
-                                <div className="flex justify-end">
-                                    <button
-                                        type="button"
-                                        onClick={async () => {
-                                            const value = articleCleanupCron.trim();
-                                            setArticleCleanupCron(value);
-                                            await api.post('/api/config/settings', { articleCleanupCron: value });
-                                        }}
-                                        className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs"
-                                    >
-                                        Guardar Cron
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+    return (
+        <section>
+            <Header
+                title="Sistema & Imágenes"
+                subtitle="Parámetros globales: volumen, retención de datos, y configuración de búsqueda de imágenes."
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <NumericCard
+                    title="Límite global de scrapeo"
+                    description="Notas por sección. Cada sección puede tener su propio override."
+                    value={scrapeLimit}
+                    unit=""
+                    min={1}
+                    onCommit={async (value) => {
+                        setScrapeLimit(value);
+                        await api.post('/api/config/settings', { scrapeLimit: value });
+                    }}
+                />
+
+                <NumericCard
+                    title="Retención de noticias"
+                    description="Noticias más viejas que este valor se borran junto con sus imágenes huérfanas."
+                    value={articleRetentionHours}
+                    unit="horas"
+                    min={1}
+                    onCommit={async (value) => {
+                        setArticleRetentionHours(value);
+                        await api.post('/api/config/settings', { articleRetentionHours: value });
+                    }}
+                />
+
+                <NumericCard
+                    title="Puntaje mínimo de imagen"
+                    description="Si ninguna candidata web supera este puntaje, Hermes genera la imagen con IA."
+                    value={imageMinScore}
+                    unit="/ 10"
+                    min={1}
+                    max={10}
+                    onCommit={async (value) => {
+                        setImageMinScore(value);
+                        try {
+                            await api.post('/api/config/settings', { imageMinScore: value });
+                        } catch (err: any) {
+                            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                        }
+                    }}
+                />
+
+                <Card>
+                    <CardHeading
+                        title="Cron de limpieza"
+                        description="Cada cuánto el sistema revisa si hay noticias vencidas."
+                    />
+                    <CronBuilder
+                        value={articleCleanupCron}
+                        onChange={setArticleCleanupCron}
+                        presets={[...CRON_PRESETS, { label: 'Cada 1 hora exacta', value: '0 * * * *' }]}
+                        helperText="Si no trabajan fines de semana, podés usar días hábiles."
+                    />
+                    <div className="flex justify-end mt-3">
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                const value = articleCleanupCron.trim();
+                                setArticleCleanupCron(value);
+                                await api.post('/api/config/settings', { articleCleanupCron: value });
+                            }}
+                            className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]"
+                        >
+                            Guardar
+                        </button>
                     </div>
-                </section>
+                </Card>
 
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold mb-6 border-b-2 border-editorial-text pb-2">Imágenes</h2>
-                    <p className="font-sans text-editorial-text/70 mb-8 max-w-2xl">
-                        Controla cómo Hermes busca imágenes en la web y cuándo decide generarlas con IA en lugar de usar candidatas web.
-                    </p>
+                <Card>
+                    <CardHeading
+                        title="Plantilla de búsqueda"
+                        description={<>Texto enviado al buscador. Usá <code className="bg-editorial-text/5 px-1">{`{{query}}`}</code> como placeholder.</>}
+                    />
+                    <input
+                        type="text"
+                        value={imageSearchQueryTemplate}
+                        onChange={e => setImageSearchQueryTemplate(e.target.value)}
+                        onBlur={async (e) => {
+                            const value = e.target.value.trim();
+                            if (!value.includes('{{query}}')) {
+                                alert('La plantilla debe contener {{query}}');
+                                return;
+                            }
+                            setImageSearchQueryTemplate(value);
+                            try {
+                                await api.post('/api/config/settings', { imageSearchQueryTemplate: value });
+                            } catch (err: any) {
+                                alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                            }
+                        }}
+                        placeholder="{{query}} foto noticia"
+                        className="w-full p-2 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
+                    />
+                </Card>
 
-                    <div className="space-y-6">
-                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                            <div className="flex flex-col gap-3">
-                                <div>
-                                    <h3 className="text-xl font-bold">Plantilla de Búsqueda (Query)</h3>
-                                    <p className="font-sans text-sm text-editorial-text/50">
-                                        Texto que se envía al buscador. Usá <code className="bg-editorial-text/5 px-1">{`{{query}}`}</code> como placeholder de la consulta generada a partir del título y contenido.
-                                    </p>
-                                </div>
-                                <input
-                                    type="text"
-                                    value={imageSearchQueryTemplate}
-                                    onChange={e => setImageSearchQueryTemplate(e.target.value)}
-                                    onBlur={async (e) => {
-                                        const value = e.target.value.trim();
-                                        if (!value.includes('{{query}}')) {
-                                            alert('La plantilla debe contener {{query}}');
-                                            return;
-                                        }
-                                        setImageSearchQueryTemplate(value);
-                                        try {
-                                            await api.post('/api/config/settings', { imageSearchQueryTemplate: value });
-                                        } catch (err: any) {
-                                            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                                        }
-                                    }}
-                                    placeholder="{{query}} foto noticia"
-                                    className="w-full p-3 font-mono text-sm bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
-                                />
-                            </div>
-                        </div>
+                <Card className="md:col-span-2">
+                    <CardHeading
+                        title="URL del buscador"
+                        description={<>URL completa del motor de búsqueda. Usá <code className="bg-editorial-text/5 px-1">{`{{q}}`}</code> donde va la consulta URL-encoded.</>}
+                    />
+                    <textarea
+                        value={imageSearchUrlTemplate}
+                        onChange={e => setImageSearchUrlTemplate(e.target.value)}
+                        onBlur={async (e) => {
+                            const value = e.target.value.trim();
+                            if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
+                                alert('La URL debe empezar con http y contener {{q}} o {{query}}');
+                                return;
+                            }
+                            setImageSearchUrlTemplate(value);
+                            try {
+                                await api.post('/api/config/settings', { imageSearchUrlTemplate: value });
+                            } catch (err: any) {
+                                alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                            }
+                        }}
+                        className="w-full h-20 p-2 font-mono text-[11px] bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none"
+                    />
+                </Card>
+            </div>
+        </section>
+    );
+}
 
-                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                            <div className="flex flex-col gap-3">
-                                <div>
-                                    <h3 className="text-xl font-bold">URL del Buscador</h3>
-                                    <p className="font-sans text-sm text-editorial-text/50">
-                                        URL completa del motor de búsqueda. Usá <code className="bg-editorial-text/5 px-1">{`{{q}}`}</code> donde va la consulta URL-encoded. Ej: <code className="bg-editorial-text/5 px-1 break-all">https://www.bing.com/images/search?q={`{{q}}`}</code>
-                                    </p>
-                                </div>
-                                <textarea
-                                    value={imageSearchUrlTemplate}
-                                    onChange={e => setImageSearchUrlTemplate(e.target.value)}
-                                    onBlur={async (e) => {
-                                        const value = e.target.value.trim();
-                                        if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
-                                            alert('La URL debe empezar con http y contener {{q}} o {{query}}');
-                                            return;
-                                        }
-                                        setImageSearchUrlTemplate(value);
-                                        try {
-                                            await api.post('/api/config/settings', { imageSearchUrlTemplate: value });
-                                        } catch (err: any) {
-                                            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                                        }
-                                    }}
-                                    className="w-full h-24 p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none"
-                                />
-                            </div>
-                        </div>
+// ---------- Atoms ----------
 
-                        <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)]">
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h3 className="text-xl font-bold">Puntaje Mínimo de Imagen</h3>
-                                    <p className="font-sans text-sm text-editorial-text/50">
-                                        Si ninguna candidata web supera este puntaje (1-10), Hermes genera la imagen automáticamente con IA.
-                                    </p>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={10}
-                                        value={imageMinScore}
-                                        className="w-24 p-2 font-bold text-xl border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
-                                        onChange={(e) => setImageMinScore(parseInt(e.target.value || '6', 10))}
-                                        onBlur={async (e) => {
-                                            const value = Math.min(10, Math.max(1, parseInt(e.target.value || '6', 10)));
-                                            setImageMinScore(value);
-                                            try {
-                                                await api.post('/api/config/settings', { imageMinScore: value });
-                                            } catch (err: any) {
-                                                alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                                            }
-                                        }}
-                                    />
-                                    <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text/50">/ 10</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </main>
+function Header({ title, subtitle, dense }: { title: string; subtitle: string; dense?: boolean }) {
+    return (
+        <div className={dense ? 'mb-1' : 'mb-6'}>
+            <h2 className={`font-bold border-b-2 border-editorial-text pb-2 ${dense ? 'text-lg' : 'text-2xl mb-3'}`}>{title}</h2>
+            {!dense && <p className="font-sans text-sm text-editorial-text/70 max-w-2xl">{subtitle}</p>}
+            {dense && <p className="font-sans text-[11px] text-editorial-text/60 mt-1">{subtitle}</p>}
         </div>
+    );
+}
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+    return (
+        <div className={`bg-white border border-editorial-text/10 p-5 shadow-[2px_2px_0px_0px_rgba(12,7,53,0.08)] ${className}`}>
+            {children}
+        </div>
+    );
+}
+
+function CardHeading({ title, description }: { title: string; description: React.ReactNode }) {
+    return (
+        <div className="mb-3">
+            <h3 className="text-sm font-bold">{title}</h3>
+            <p className="font-sans text-[11px] text-editorial-text/60 leading-snug mt-0.5">{description}</p>
+        </div>
+    );
+}
+
+interface NumericCardProps {
+    title: string;
+    description: string;
+    value: number;
+    unit: string;
+    min: number;
+    max?: number;
+    onCommit: (value: number) => Promise<void>;
+}
+
+function NumericCard({ title, description, value, unit, min, max, onCommit }: NumericCardProps) {
+    return (
+        <Card>
+            <div className="flex justify-between items-start gap-3">
+                <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold">{title}</h3>
+                    <p className="font-sans text-[11px] text-editorial-text/60 leading-snug mt-0.5">{description}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <input
+                        // key={value} remounts the input whenever the parent's
+                        // value updates (e.g. after a save) so defaultValue
+                        // re-syncs — letting the user freely type without
+                        // controlled-input fights, while still committing on blur.
+                        key={value}
+                        type="number"
+                        min={min}
+                        max={max}
+                        defaultValue={value}
+                        className="w-20 p-1.5 font-bold text-lg border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
+                        onBlur={async (e) => {
+                            const raw = parseInt(e.target.value || String(min), 10);
+                            const clamped = max != null
+                                ? Math.min(max, Math.max(min, raw))
+                                : Math.max(min, raw);
+                            if (clamped !== value) await onCommit(clamped);
+                        }}
+                    />
+                    {unit && <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-editorial-text/50">{unit}</span>}
+                </div>
+            </div>
+        </Card>
     );
 }

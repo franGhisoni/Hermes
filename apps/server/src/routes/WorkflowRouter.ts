@@ -23,6 +23,27 @@ router.get('/', async (req, res) => {
     }
 });
 
+// GET /api/workflows/runs — recent runs across all workflows (for the
+// global Historial view). Defined BEFORE /:id/runs so Express doesn't try
+// to interpret "runs" as a workflow id.
+router.get('/runs', async (req, res) => {
+    try {
+        const take = Math.min(parseInt(String(req.query.take ?? '60'), 10) || 60, 200);
+        const runs = await prisma.workflowRun.findMany({
+            orderBy: { startedAt: 'desc' },
+            take,
+            include: {
+                workflow: {
+                    select: { id: true, name: true }
+                }
+            }
+        });
+        res.json(runs);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch workflow runs' });
+    }
+});
+
 // GET /api/workflows/:id/runs
 router.get('/:id/runs', async (req, res) => {
     try {

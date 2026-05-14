@@ -8,6 +8,10 @@ interface ImageSearchInput {
     title: string;
     content?: string;
     rewrittenTitle?: string;
+    // Optional queries produced by an upstream LLM pass that has more context
+    // than our regex extractors (and may have seen the reference image). These
+    // run BEFORE the regex fallbacks so the best queries land first.
+    smartQueries?: string[];
 }
 
 // Patterns in URLs that indicate non-content images (icons, UI elements, ads)
@@ -36,7 +40,12 @@ export class ImageService {
 
     public async searchImages(input: string | ImageSearchInput): Promise<string[]> {
         const searchInput = typeof input === 'string' ? { title: input } : input;
-        const queries = this.buildSearchQueries(searchInput);
+        const fallbackQueries = this.buildSearchQueries(searchInput);
+        const smart = (searchInput.smartQueries || []).map(q => q.trim()).filter(Boolean);
+        // Smart queries first so any garbage padding from Bing on the regex
+        // queries doesn't starve the better, LLM-curated ones (the per-query
+        // cap in the loop below ensures every query contributes).
+        const queries = this.uniqueStrings([...smart, ...fallbackQueries]).slice(0, 8);
         console.log(`[ImageService] Searching images with queries: ${queries.map(q => `"${q}"`).join(' | ')}`);
 
         let browser;

@@ -101,17 +101,93 @@ export class AIService {
         return isNaN(score) ? 5 : score;
     }
 
+    /**
+     * Generate Bing-friendly image search queries by giving gpt-4o the article
+     * context AND the original published image. The vision pass lets the model
+     * identify who/what is actually in the photo (often more specific than the
+     * title) and produce queries that target a DIFFERENT photo of the same
+     * subject — exactly what republishing requires.
+     */
+    async generateImageSearchQueries(input: {
+        title: string;
+        content: string;
+        rewrittenTitle?: string;
+        originalImageUrl?: string;
+    }): Promise<string[]> {
+        try {
+            const systemPrompt = `You generate image search queries for a Spanish-language news editor in Argentina.
+
+You receive:
+- An article TITLE and CONTENT EXCERPT.
+- Optionally, a REFERENCE IMAGE that the original publication used. Use it to confirm who or what the article is really about (a face, a logo, a location).
+
+Your output: 3 to 5 short Bing image-search queries, in Spanish, that would find PHOTOJOURNALISTIC images of the same protagonist/subject — but NOT the same photo as the reference (this is for republishing; reusing the source photo is forbidden).
+
+RULES:
+- Name the protagonist explicitly: full names of people, names of organizations, city/region for places, brand name for products.
+- Use noun phrases. No quotes, no boolean operators, no \`site:\` filters. 3-8 words each.
+- If the title is a pun, joke, or wordplay (e.g. "Soy urólogo, no ufólogo"), DO NOT search the pun. Search the program, host, channel, or event named in the body.
+- If the article is about a generic concept (e.g. honey exports), name the concrete actors (Mercosur, Unión Europea, exportadores apícolas) instead of just the concept.
+- Include at least one query that targets the most likely public-record photo (e.g. "Adorni Casa Rosada", "Tim Cook keynote 2024", "Vorterix Y qué Migue Granados").
+- Avoid generic stock-photo terms unless the article is genuinely abstract.
+
+Return strictly:
+{ "protagonist": string, "queries": [string, string, ...] }`;
+
+            const userContent: any[] = [
+                { type: "text", text: `Título: ${input.title}\n\nExtracto:\n${(input.content || '').substring(0, 1500)}\n${input.rewrittenTitle ? `\nTítulo reescrito: ${input.rewrittenTitle}` : ''}` }
+            ];
+
+            if (input.originalImageUrl) {
+                userContent.push(
+                    { type: "text", text: `\n--- Imagen de referencia de la publicación original (NO es candidata, sólo para reconocer al protagonista) ---` },
+                    { type: "image_url", image_url: { url: input.originalImageUrl, detail: "high" } }
+                );
+            }
+
+            const completion = await this.openai.chat.completions.create({
+                model: "gpt-4o",
+                response_format: { type: "json_object" },
+                max_tokens: 500,
+                messages: [
+                    { role: "system", content: systemPrompt },
+                    { role: "user", content: userContent }
+                ]
+            });
+
+            const result = JSON.parse(completion.choices[0].message.content || '{}');
+            const queries: string[] = Array.isArray(result.queries) ? result.queries : [];
+            const cleaned = queries
+                .filter((q: any) => typeof q === 'string')
+                .map(q => q.trim())
+                .filter(q => q.length >= 3 && q.length <= 120);
+
+            if (result.protagonist) {
+                console.log(`[AIService] 🎯 Smart query protagonist: ${result.protagonist}`);
+            }
+            if (cleaned.length > 0) {
+                console.log(`[AIService] Smart queries: ${cleaned.map(q => `"${q}"`).join(' | ')}`);
+            } else {
+                console.log(`[AIService] No smart queries returned, falling back to regex extraction.`);
+            }
+            return cleaned;
+        } catch (error) {
+            console.error('[AIService] Smart query generation failed, falling back:', error);
+            return [];
+        }
+    }
+
     async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[] }> {
         if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [] };
         // Single candidate still goes through AI — don't auto-approve without evaluation
 
         try {
             const config = await this.promptService.getPromptByType('IMAGE_SELECT');
-            let promptTemplate = config?.template || `You are a photo editor for a digital news agency.
+            let promptTemplate = config?.template || `You are a photo editor for a digital news agency, picking the lead image for a REPUBLICATION of someone else's article.
 
 You will receive:
 1. The article TITLE and a CONTENT EXCERPT — use these to identify the PROTAGONIST or SUBJECT of the story (a specific person, organization, location, event, or object).
-2. A REFERENCE IMAGE pulled from the original publication (when available). This image is NOT a candidate. Treat it as ground-truth for what the protagonist looks like (face, setting, object). Candidates that visually match the reference are almost always the right pick.
+2. A REFERENCE IMAGE pulled from the original publication (when available). This is the image the source already used. We CANNOT republish with the same photo — we need a DIFFERENT photo of the same subject. Treat the reference as ground-truth for what the protagonist looks like, NOT as a candidate or a target to match exactly.
 3. A list of CANDIDATE IMAGES indexed 0..N.
 
 YOUR JOB:
@@ -120,14 +196,15 @@ YOUR JOB:
 - Return the index of the single best image, or -1 if no candidate scores above the threshold.
 
 SCORING RUBRIC (anchor each candidate against this):
-- 9-10: Clean photojournalistic shot of the exact protagonist/subject (matches reference if provided). Could run on the front page.
-- 7-8: Same protagonist/subject but framing/quality is OK, not great. Or a clearly relevant scene from the event.
+- 9-10: Clean photojournalistic shot of the exact protagonist/subject, DIFFERENT photo from the reference (different framing, different moment, different angle). Could run on the front page.
+- 7-8: Same protagonist/subject (different photo), but framing/quality is OK, not great. Or a clearly relevant scene from the same event.
 - 5-6: Related subject matter (same field/topic) but not the specific protagonist. Generic but acceptable.
 - 3-4: Tangentially related — same general theme but clearly the wrong person/place/object.
-- 1-2: Wrong subject entirely, or has serious quality issues (text overlays, TV chyrons, watermarks, logos, low quality).
+- 1-2: Wrong subject entirely, OR same exact photograph as the reference (republished verbatim is not allowed), OR has serious quality issues (text overlays, TV chyrons, watermarks, logos, low quality).
 - 0: Completely unrelated (a surfer for a politics story, a city skyline for a tractor story, etc.) or unusable junk.
 
 HARD REJECTIONS (score 0-2 regardless of other qualities):
+- Visually identical to the reference image: same photograph, same crop, same moment — even if hosted on a different URL or at a different resolution. This is the most important rejection: we are republishing and cannot reuse the source's photo.
 - Visible text overlays, captions, lower-thirds, "zócalos"
 - TV screen captures with channel logos/chyrons
 - Newsroom branding (La Nación, TN, Clarín, C5N, NA, Noticias Argentinas, etc.)
@@ -135,7 +212,9 @@ HARD REJECTIONS (score 0-2 regardless of other qualities):
 - Other watermarks, low quality, blurriness, collages
 - Obvious AI-generated or stock illustrations not specific to the story
 
-CRITICAL: If a candidate clearly shows the wrong subject (e.g. a surfer when the story is about a farmer, a different person than the reference), it must score 0-2. Do not be polite — incorrect subject = unusable.
+CRITICAL:
+- If a candidate clearly shows the wrong subject (e.g. a surfer when the story is about a farmer, a different person than the reference), it must score 0-2. Do not be polite — incorrect subject = unusable.
+- If a candidate is the SAME photograph as the reference, score 1 and do not select it. Prefer a slightly weaker but visually distinct candidate over a perfect duplicate.
 
 Return a JSON object:
 {

@@ -90,17 +90,36 @@ export class ProcessorService {
         let imageScoresDict: Record<string, number> | undefined = undefined;
 
         const imageService = new ImageService();
+
+        // Smart query pass: gpt-4o sees article + original image and produces
+        // search queries that target the actual protagonist (especially useful
+        // for pun titles like "Soy urólogo, no ufólogo" where the regex extractor
+        // searches the joke instead of the show/host).
+        const smartQueries = await this.aiService.generateImageSearchQueries({
+            title: article.title,
+            content: article.content,
+            rewrittenTitle: rewritten.title,
+            originalImageUrl: article.imageUrl
+        });
+
         const searchResults = await imageService.searchImages({
             title: article.title,
             content: article.content,
-            rewrittenTitle: rewritten.title
+            rewrittenTitle: rewritten.title,
+            smartQueries
         });
 
         // Extract source domain to filter out images from the same publication
         const sourceDomain = this.extractDomain(article.url);
+        const normalizedOriginal = (article.imageUrl || '').trim();
 
-        // Build candidates from search results only (exclude same-domain branding)
+        // Build candidates from search results only — exclude:
+        //   1. Images from the same domain as the article (source branding/CDN)
+        //   2. Byte-for-byte duplicates of the original URL (republishing the
+        //      source's photo verbatim is forbidden; the AI scorer also rejects
+        //      visual duplicates as a second line of defense).
         const searchCandidates = searchResults.filter(url => {
+            if (normalizedOriginal && url.trim() === normalizedOriginal) return false;
             const imgDomain = this.extractDomain(url);
             return imgDomain !== sourceDomain;
         });

@@ -40,7 +40,11 @@ export class ConfigService {
     }
 
     async getImageMinScore(): Promise<number> {
-        return this.getIntSetting('image_min_score', 6);
+        // Default 4: candidates that show the right context but aren't the
+        // exact protagonist (5-6 in the scoring rubric) should make it through
+        // to the editor rather than triggering a DALL-E fallback. The editor
+        // can still override the pick from the candidate carousel.
+        return this.getIntSetting('image_min_score', 4);
     }
 
     private async getIntSetting(key: string, defaultValue: number): Promise<number> {

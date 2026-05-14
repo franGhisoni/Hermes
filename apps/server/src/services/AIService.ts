@@ -192,38 +192,40 @@ You will receive:
 
 YOUR JOB:
 - Internally decide who/what the story is about before scoring (the title alone is rarely enough — read the excerpt).
-- Score EVERY candidate from 0 to 10. Use the full range — be harsh.
+- Score EVERY candidate from 0 to 10. Be discerning but FAIR. Use the full range.
 - Return the index of the single best image, or -1 if no candidate scores above the threshold.
 
-SCORING RUBRIC (anchor each candidate against this):
-- 9-10: Clean photojournalistic shot of the exact protagonist/subject, DIFFERENT photo from the reference (different framing, different moment, different angle). Could run on the front page.
-- 7-8: Same protagonist/subject (different photo), but framing/quality is OK, not great. Or a clearly relevant scene from the same event.
-- 5-6: Related subject matter (same field/topic) but not the specific protagonist. Generic but acceptable.
-- 3-4: Tangentially related — same general theme but clearly the wrong person/place/object.
-- 1-2: Wrong subject entirely, OR same exact photograph as the reference (republished verbatim is not allowed), OR has serious quality issues (text overlays, TV chyrons, watermarks, logos, low quality).
-- 0: Completely unrelated (a surfer for a politics story, a city skyline for a tractor story, etc.) or unusable junk.
+DO NOT DEFAULT TO 0. A score of 0 means the image is completely unrelated junk or actively unusable. If a candidate is in the right ballpark — right topic, right setting, right type of event — it deserves at minimum a 4 or 5, even if it isn't the exact protagonist. Reserve 0-2 for genuinely off-topic images or hard rejections (overlays, watermarks, exact duplicates of the reference).
 
-HARD REJECTIONS (score 0-2 regardless of other qualities):
-- Visually identical to the reference image: same photograph, same crop, same moment — even if hosted on a different URL or at a different resolution. This is the most important rejection: we are republishing and cannot reuse the source's photo.
+SCORING RUBRIC (use the WHOLE range — fives and sixes are normal and expected):
+- 9-10: Clean photojournalistic shot of the EXACT protagonist/subject, DIFFERENT photograph from the reference. Could run on a front page.
+- 7-8: Exact protagonist (different photo) but framing/lighting/composition is just OK. Or a strong scene from the exact event covered in the article.
+- 5-6: Right context, wrong specific protagonist. Example: a different politician at a similar press conference for a politics article; a different farmer for an agriculture article; a different brand's product for a tech article. ABSOLUTELY ACCEPTABLE — assign 5-6 confidently to these, do not zero them out.
+- 3-4: Loosely related — same broad theme (politics, sports, tech) but the framing/subject is clearly off (a stadium for a player profile, a flag for a person, a chart when the article is about people).
+- 1-2: Wrong subject entirely, OR the same exact photograph as the reference (republished verbatim is forbidden), OR has serious quality issues (text overlays, TV chyrons, watermarks, logos, blur).
+- 0: Completely unrelated (a surfer for a politics story, a city skyline for a tractor story) or unusable junk (broken thumbnail, NSFW noise, etc.).
+
+HARD REJECTIONS (cap the score at 1-2 regardless of subject match):
+- Visually identical to the reference: same photograph, same crop, same moment — even if hosted on a different URL or at a different resolution. This is the top-priority rejection because we are republishing.
 - Visible text overlays, captions, lower-thirds, "zócalos"
 - TV screen captures with channel logos/chyrons
 - Newsroom branding (La Nación, TN, Clarín, C5N, NA, Noticias Argentinas, etc.)
 - Blue "NA" bar at the bottom (Noticias Argentinas watermark)
-- Other watermarks, low quality, blurriness, collages
-- Obvious AI-generated or stock illustrations not specific to the story
+- Other watermarks, severe quality issues, collages
+- Obvious AI-generated illustrations or generic stock not specific to the story
 
-CRITICAL:
-- If a candidate clearly shows the wrong subject (e.g. a surfer when the story is about a farmer, a different person than the reference), it must score 0-2. Do not be polite — incorrect subject = unusable.
-- If a candidate is the SAME photograph as the reference, score 1 and do not select it. Prefer a slightly weaker but visually distinct candidate over a perfect duplicate.
+GUIDELINES:
+- The reference image shows what the protagonist looks like; use it to recognize the person/object — but recognizing the same person at a different event still deserves 7-10, not a duplicate-rejection.
+- "Different photo of same subject" means: different framing OR different moment OR different angle. It does NOT mean "different person".
+- When in doubt between 4 and 0, choose 4. We need usable images, and the editor still has the final say. Being overly punitive forces a costly DALL-E fallback.
 
 Return a JSON object:
 {
-  "protagonist": string,  // one short sentence identifying who/what the story is about
-  "selectedIndex": number,
-  "scores": [number]      // Array of scores (0-10) corresponding to each candidate in the exact order provided
-}
-- Use 0-based index for the best image
-- Use -1 if every candidate scores below the threshold`;
+  "protagonist": string,             // one short sentence identifying who/what the story is about
+  "reasonings": [string],            // ONE short reason per candidate (in the same order), explaining the score (≤ 20 words each)
+  "scores": [number],                // 0-10 scores in the order candidates were provided
+  "selectedIndex": number            // best candidate's index, or -1 if none scores >= threshold
+}`;
 
             // Build reference image block (shown before candidates, labeled as context only).
             // Reference uses "high" detail so we can actually recognize faces/locations.
@@ -266,11 +268,17 @@ Return a JSON object:
 
             const result = JSON.parse(completion.choices[0].message.content || '{}');
             const scores: number[] = result.scores || imageUrls.map(() => 0);
+            const reasonings: string[] = Array.isArray(result.reasonings) ? result.reasonings : [];
 
             if (result.protagonist) {
                 console.log(`[AIService] 🎯 Protagonist identified: ${result.protagonist}`);
             }
             console.log(`[AIService] Scores: [${scores.join(', ')}]`);
+            if (reasonings.length > 0) {
+                reasonings.forEach((reason, i) => {
+                    console.log(`[AIService]   #${i} (${scores[i] ?? '?'}/10): ${reason}`);
+                });
+            }
 
             // Pick the URL with the highest score — more reliable than trusting selectedIndex
             // since the AI sometimes returns an inconsistent selectedIndex vs scores array

@@ -25,12 +25,16 @@ router.get('/', async (req, res) => {
 
 // POST /api/config/sections
 router.post('/', requireAdmin, async (req, res) => {
-    const { name, path } = req.body;
+    const { name, path, scrapeLimit } = req.body;
     if (!name || !path) return res.status(400).json({ error: 'Name and path are required' });
 
     try {
         const section = await prisma.section.create({
-            data: { name, path }
+            data: {
+                name,
+                path,
+                scrapeLimit: normalizeLimit(scrapeLimit)
+            }
         });
         res.json(section);
     } catch (error: any) {
@@ -40,6 +44,36 @@ router.post('/', requireAdmin, async (req, res) => {
         res.status(500).json({ error: 'Failed to create section' });
     }
 });
+
+// PUT /api/config/sections/:id
+router.put('/:id', requireAdmin, async (req, res) => {
+    const { name, path, scrapeLimit } = req.body;
+
+    try {
+        const data: any = {};
+        if (typeof name === 'string') data.name = name;
+        if (typeof path === 'string') data.path = path;
+        if (scrapeLimit !== undefined) data.scrapeLimit = normalizeLimit(scrapeLimit);
+
+        const section = await prisma.section.update({
+            where: { id: req.params.id },
+            data
+        });
+        res.json(section);
+    } catch (error: any) {
+        if (error.code === 'P2002') {
+            return res.status(400).json({ error: 'Section name already exists' });
+        }
+        res.status(500).json({ error: 'Failed to update section' });
+    }
+});
+
+function normalizeLimit(raw: unknown): number | null {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const parsed = parseInt(String(raw), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.min(parsed, 100);
+}
 
 // DELETE /api/config/sections/:id
 router.delete('/:id', requireAdmin, async (req, res) => {

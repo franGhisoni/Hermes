@@ -106,12 +106,16 @@ model ScrapeSchedule {
 }
 
 model Section {
-  id        String   @id @default(uuid())
-  name      String   
-  path      String   
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  
+  id          String   @id @default(uuid())
+  name        String
+  path        String
+  // Per-section override for the scrape limit. When null, the global
+  // scrape_limit setting applies. Useful when some sections (politics) need
+  // more articles per cycle than others (sports).
+  scrapeLimit Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   @@unique([name, path])
 }
 

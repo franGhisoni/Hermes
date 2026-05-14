@@ -163,14 +163,17 @@ export class SchedulerService {
         const task = cron.schedule(schedule.cron, async () => {
             console.log(`[CRON-SCRAPE] Scraping ${schedule.source}...`);
             try {
-                // Scrape all configured sections for this source
+                // Resolve the global scrape limit once per tick, then let each
+                // section override it via its own scrapeLimit field.
+                const defaultLimit = await this.configService.getScrapeLimit();
                 const sections = await prisma.section.findMany();
 
                 if (sections.length === 0) {
-                    await this.queueService.addScrapeJob(schedule.source, undefined, 3);
+                    await this.queueService.addScrapeJob(schedule.source, undefined, defaultLimit);
                 } else {
                     for (const section of sections) {
-                        await this.queueService.addScrapeJob(schedule.source, section.path, 3);
+                        const limit = section.scrapeLimit ?? defaultLimit;
+                        await this.queueService.addScrapeJob(schedule.source, section.path, limit);
                     }
                 }
             } catch (error) {

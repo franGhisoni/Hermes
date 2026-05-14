@@ -17,6 +17,7 @@ interface Section {
     id: string;
     name: string;
     path: string;
+    scrapeLimit: number | null;
 }
 
 interface ScrapeSchedule {
@@ -48,6 +49,7 @@ export default function Settings() {
     // Section Form State
     const [newSecName, setNewSecName] = useState('');
     const [newSecPath, setNewSecPath] = useState('');
+    const [newSecLimit, setNewSecLimit] = useState('');
 
     // Schedule Form State
     const [newSchedSource, setNewSchedSource] = useState(AVAILABLE_SOURCES[0]);
@@ -99,12 +101,29 @@ export default function Settings() {
     const handleCreateSection = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/api/config/sections', { name: newSecName, path: newSecPath });
+            const parsedLimit = newSecLimit.trim() === '' ? null : parseInt(newSecLimit, 10);
+            await api.post('/api/config/sections', {
+                name: newSecName,
+                path: newSecPath,
+                scrapeLimit: parsedLimit
+            });
             setNewSecName('');
             setNewSecPath('');
+            setNewSecLimit('');
             fetchData();
         } catch (error: any) {
             alert('Error: ' + (error.response?.data?.error || 'Failed to create section'));
+        }
+    };
+
+    const handleUpdateSectionLimit = async (sectionId: string, raw: string) => {
+        try {
+            const trimmed = raw.trim();
+            const parsedLimit = trimmed === '' ? null : parseInt(trimmed, 10);
+            await api.put(`/api/config/sections/${sectionId}`, { scrapeLimit: parsedLimit });
+            fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'Failed to update section'));
         }
     };
 
@@ -220,10 +239,21 @@ export default function Settings() {
 
                     <div className="bg-white border border-editorial-text/10 p-8 shadow-[4px_4px_0px_0px_rgba(12,7,53,0.1)] mb-8">
                         <h3 className="text-xl font-bold mb-4 font-sans uppercase tracking-widest text-sm">Añadir Nueva Sección</h3>
-                        <form onSubmit={handleCreateSection} className="grid grid-cols-1 md:grid-cols-4 gap-4 font-sans">
+                        <form onSubmit={handleCreateSection} className="grid grid-cols-1 md:grid-cols-5 gap-4 font-sans">
                             <input type="text" placeholder="Nombre (ej. Política)" value={newSecName} onChange={e => setNewSecName(e.target.value)} required className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent md:col-span-2" />
                             <input type="text" placeholder="Ruta Global (ej. /politica)" value={newSecPath} onChange={e => setNewSecPath(e.target.value)} required className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent md:col-span-2" />
-                            <div className="md:col-span-4 flex justify-end mt-2">
+                            <input
+                                type="number"
+                                min="1"
+                                max="100"
+                                placeholder={`Límite (def. ${scrapeLimit})`}
+                                value={newSecLimit}
+                                onChange={e => setNewSecLimit(e.target.value)}
+                                className="border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent md:col-span-1"
+                                title="Cuántas notas levantar por scrapeo en esta sección. Si está vacío usa el límite general."
+                            />
+                            <div className="md:col-span-5 flex items-center justify-between mt-2">
+                                <span className="text-[11px] opacity-50 italic">Vacío = usa el límite general ({scrapeLimit}).</span>
                                 <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors text-xs">Añadir</button>
                             </div>
                         </form>
@@ -233,12 +263,35 @@ export default function Settings() {
                         <div className="border border-editorial-text/20 p-4 bg-white/50 col-span-1 md:col-span-2 lg:col-span-3">
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {sections.map(sec => (
-                                    <div key={sec.id} className="flex justify-between items-center group border-b border-editorial-text/10 pb-2">
-                                        <div className="flex flex-col">
+                                    <div key={sec.id} className="flex justify-between items-start group border-b border-editorial-text/10 pb-2 gap-2">
+                                        <div className="flex flex-col flex-1 min-w-0">
                                             <span className="font-sans font-bold text-sm">{sec.name}</span>
-                                            <span className="font-sans text-xs text-editorial-text/60 font-mono bg-black/5 px-2 py-1 mt-1 rounded w-fit">{sec.path}</span>
+                                            <span className="font-sans text-xs text-editorial-text/60 font-mono bg-black/5 px-2 py-1 mt-1 rounded w-fit truncate max-w-full">{sec.path}</span>
+                                            <div className="flex items-center gap-2 mt-2">
+                                                <label className="text-[10px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max="100"
+                                                    defaultValue={sec.scrapeLimit ?? ''}
+                                                    placeholder={String(scrapeLimit)}
+                                                    onBlur={e => {
+                                                        const raw = e.target.value;
+                                                        const current = sec.scrapeLimit;
+                                                        const next = raw.trim() === '' ? null : parseInt(raw, 10);
+                                                        if (next !== current) {
+                                                            handleUpdateSectionLimit(sec.id, raw);
+                                                        }
+                                                    }}
+                                                    className="w-16 border border-editorial-text/20 px-2 py-1 text-xs font-mono focus:outline-none focus:border-editorial-text bg-white"
+                                                    title="Cuántas notas levantar por scrapeo. Vacío = usar el límite general."
+                                                />
+                                                {sec.scrapeLimit == null && (
+                                                    <span className="text-[10px] font-sans italic opacity-50">(global)</span>
+                                                )}
+                                            </div>
                                         </div>
-                                        <button onClick={() => handleDeleteSection(sec.id)} className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all"><Trash2 size={16} /></button>
+                                        <button onClick={() => handleDeleteSection(sec.id)} className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all mt-1"><Trash2 size={16} /></button>
                                     </div>
                                 ))}
                                 {sections.length === 0 && <div className="text-sm opacity-50 col-span-3">No hay secciones globales configuradas.</div>}

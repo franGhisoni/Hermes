@@ -186,12 +186,14 @@ app.post('/api/scrape', async (req, res) => {
             return res.json({ message: 'Scrape job started (no sections configured)', source, jobs: 1 });
         }
 
-        // Queue a scrape job for each section
+        // Queue a scrape job for each section, honoring its per-section limit
+        // override when set; fall back to the workflow-wide effectiveLimit.
         for (const section of sections) {
-            await queueService.addScrapeJob(source, section.path, effectiveLimit);
+            const sectionLimit = section.scrapeLimit ?? effectiveLimit;
+            await queueService.addScrapeJob(source, section.path, sectionLimit);
         }
 
-        res.json({ message: `Scrape jobs started for ${sections.length} sections`, source, jobs: sections.length, limit: effectiveLimit });
+        res.json({ message: `Scrape jobs started for ${sections.length} sections`, source, jobs: sections.length, defaultLimit: effectiveLimit });
     } catch (error) {
         console.error('Error starting scrape:', error);
         res.status(500).json({ error: 'Failed to start job' });

@@ -131,7 +131,7 @@ RULES:
 - Include at least one query that targets the most likely public-record photo (e.g. "Adorni Casa Rosada", "Tim Cook keynote 2024", "Vorterix Y qué Migue Granados").
 - Avoid generic stock-photo terms unless the article is genuinely abstract.
 
-Return strictly:
+Return strictly a JSON object with this shape:
 { "protagonist": string, "queries": [string, string, ...] }`;
 
             const userContent: any[] = [

@@ -232,9 +232,9 @@ Return a JSON object:
             const referenceBlock: any[] = originalImageUrl ? [
                 { type: "text", text: `--- REFERENCE IMAGE (ground truth for protagonist; NOT a candidate, do not select or score it) ---` },
                 { type: "image_url", image_url: { url: originalImageUrl, detail: "high" } },
-                { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${Math.min(imageUrls.length, 5)} candidates. Identify the protagonist first, then score each one against the protagonist and the reference.` }
+                { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${Math.min(imageUrls.length, 30)} candidates. Identify the protagonist first, then score each one against the protagonist and the reference.` }
             ] : [
-                { type: "text", text: `No reference image available. Identify the protagonist from the title and excerpt, then score the following ${Math.min(imageUrls.length, 5)} candidates against it.` }
+                { type: "text", text: `No reference image available. Identify the protagonist from the title and excerpt, then score the following ${Math.min(imageUrls.length, 30)} candidates against it.` }
             ];
 
             const messages: any[] = [
@@ -247,7 +247,7 @@ Return a JSON object:
                     content: [
                         { type: "text", text: `Article Title: ${title}\n\nContent Excerpt:\n${content.substring(0, 1200)}\n` },
                         ...referenceBlock,
-                        ...imageUrls.slice(0, 5).flatMap((url, i) => ([
+                        ...imageUrls.slice(0, 30).flatMap((url, i) => ([
                             { type: "text", text: `--- Candidate Index: ${i} ---` },
                             { type: "image_url", image_url: { url: url, detail: "low" } }
                         ]))
@@ -263,7 +263,10 @@ Return a JSON object:
                 model: "gpt-4o",
                 messages: messages,
                 response_format: { type: "json_object" },
-                max_tokens: 1000
+                // Up to 30 reasonings + scores + protagonist. ~30 reasonings *
+                // ~25 tokens each = 750, plus the scores array and protagonist
+                // line, comfortably within 2000.
+                max_tokens: 2000
             });
 
             const result = JSON.parse(completion.choices[0].message.content || '{}');

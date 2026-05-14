@@ -130,27 +130,32 @@ export class ProcessorService {
             console.log(`[Processor] AI Selecting best image from ${searchCandidates.length} search candidates (min score: ${imageMinScore})...`);
             const bestImageResult = await this.aiService.selectBestImage(article.title, article.content, searchCandidates, article.imageUrl, imageMinScore);
 
-            if (bestImageResult.url) {
-                featureImageUrl = bestImageResult.url;
-                console.log(`[Processor] AI selected: ${featureImageUrl}`);
-            } else {
-                // AI rejected all search candidates → try DALL-E
-                console.log(`[Processor] AI rejected all search candidates. Falling back to DALL-E...`);
-                const generated = await imageService.generateImage(article.title);
-                if (generated) {
-                    featureImageUrl = generated;
-                    searchCandidates.push(generated);
-                    bestImageResult.scores.push(10);
-                }
-            }
-
+            // Map every scored search candidate to its score BEFORE we touch
+            // the array. The AI only evaluates the first N (see selectBestImage),
+            // so positions beyond scores.length get 0.
             imageCandidates = [...searchCandidates];
-
-            // Build scores dict for search candidates
             imageScoresDict = {};
             searchCandidates.forEach((url, i) => {
                 imageScoresDict![url] = bestImageResult.scores[i] ?? 0;
             });
+
+            if (bestImageResult.url) {
+                featureImageUrl = bestImageResult.url;
+                console.log(`[Processor] AI selected: ${featureImageUrl}`);
+            } else {
+                // AI rejected all search candidates → try DALL-E. Push the
+                // generated URL into the candidate list AND its score dict
+                // explicitly (the old code pushed onto scores[] which mis-aligned
+                // it against searchCandidates, giving a random search result
+                // the 10/10 and leaving the generated image at 0/10).
+                console.log(`[Processor] AI rejected all search candidates. Falling back to DALL-E...`);
+                const generated = await imageService.generateImage(article.title);
+                if (generated) {
+                    featureImageUrl = generated;
+                    imageCandidates.push(generated);
+                    imageScoresDict[generated] = 10;
+                }
+            }
 
         } else {
             // No search results → try DALL-E directly

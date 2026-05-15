@@ -1,17 +1,26 @@
 import { Resend } from 'resend';
 import { Article, PrismaClient } from '@prisma/client';
+import { ConfigService } from './ConfigService';
 
 const prisma = new PrismaClient();
 
 export class MailService {
     private resend: Resend;
     private fromEmail: string;
+    private configService: ConfigService;
 
     constructor() {
-        // Usa tu API key de Resend. Si no existe, usamos una de prueba local que fallará amablemente.
-        this.resend = new Resend(process.env.RESEND_API_KEY || 're_test_123');
-        // Resend requiere enviar desde un dominio verificado o usar onboarding@resend.dev para testing
-        this.fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+        const apiKey = process.env.RESEND_API_KEY;
+        if (!apiKey) {
+            throw new Error('RESEND_API_KEY env var is required');
+        }
+        const fromEmail = process.env.RESEND_FROM_EMAIL;
+        if (!fromEmail) {
+            throw new Error('RESEND_FROM_EMAIL env var is required');
+        }
+        this.resend = new Resend(apiKey);
+        this.fromEmail = fromEmail;
+        this.configService = new ConfigService();
     }
 
     public async sendArticleToTarget(targetEmail: string, article: Article, category?: string) {
@@ -54,8 +63,9 @@ export class MailService {
                     // External URL — fetch the image. Many CDNs (Bing thumbs,
                     // Getty, big newsrooms) block bare Node fetches and return
                     // 403 silently, so we send a real browser UA + Accept.
+                    const fetchTimeoutMs = await this.configService.getImageFetchTimeoutMs();
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 10000);
+                    const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
                     let response: Response;
                     try {
                         response = await fetch(imageUrl, {

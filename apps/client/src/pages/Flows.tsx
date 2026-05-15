@@ -40,6 +40,7 @@ interface Workflow {
     cron: string;
     isActive: boolean;
     allowRepublish?: boolean;
+    articleWindowHours?: number | null;
     targets?: Target[];
     runs?: WorkflowRun[];
 }
@@ -65,6 +66,7 @@ export default function Flows() {
     const [wfCron, setWfCron] = useState('0 8 * * *');
     const [wfTargetIds, setWfTargetIds] = useState<string[]>([]);
     const [wfAllowRepublish, setWfAllowRepublish] = useState(false);
+    const [wfArticleWindowHours, setWfArticleWindowHours] = useState<string>('');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [formOpen, setFormOpen] = useState(false);
     const formRef = useRef<HTMLDivElement | null>(null);
@@ -138,6 +140,7 @@ export default function Flows() {
         setWfCron('0 8 * * *');
         setWfTargetIds(targets.length > 0 ? [targets[0].id] : []);
         setWfAllowRepublish(false);
+        setWfArticleWindowHours('');
     };
 
     const openCreateForm = () => {
@@ -157,6 +160,7 @@ export default function Flows() {
         setWfCron(wf.cron);
         setWfTargetIds(wf.targets?.map(t => t.id) || []);
         setWfAllowRepublish(Boolean(wf.allowRepublish));
+        setWfArticleWindowHours(wf.articleWindowHours != null ? String(wf.articleWindowHours) : '');
         setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
     };
 
@@ -167,7 +171,7 @@ export default function Flows() {
 
     const handleSubmitWorkflow = async (e: React.FormEvent) => {
         e.preventDefault();
-        const payload = {
+        const payload: any = {
             name: wfName,
             section: wfSection || undefined,
             sources: wfSources,
@@ -175,7 +179,8 @@ export default function Flows() {
             targetCategory: wfTargetCategory || undefined,
             cron: wfCron,
             targetIds: wfTargetIds,
-            allowRepublish: wfAllowRepublish
+            allowRepublish: wfAllowRepublish,
+            articleWindowHours: wfArticleWindowHours.trim() === '' ? null : parseInt(wfArticleWindowHours, 10)
         };
         try {
             if (editingId) {
@@ -328,6 +333,19 @@ export default function Flows() {
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Categoría WP <span className="opacity-40">(opcional)</span></label>
                             <input type="text" value={wfTargetCategory} onChange={e => setWfTargetCategory(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Política Nacional" />
+                        </div>
+
+                        <div>
+                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Ventana de notas (hs) <span className="opacity-40">(opcional)</span></label>
+                            <input
+                                type="number"
+                                min="1"
+                                value={wfArticleWindowHours}
+                                onChange={e => setWfArticleWindowHours(e.target.value)}
+                                className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm"
+                                placeholder="Default del sistema"
+                            />
+                            <p className="text-[10px] opacity-50 mt-1 leading-snug">Cuán recientes deben ser las notas PENDING para entrar al pool. Vacío = usar default global.</p>
                         </div>
 
                         <div className="md:col-span-2">

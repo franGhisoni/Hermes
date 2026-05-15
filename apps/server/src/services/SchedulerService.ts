@@ -259,9 +259,11 @@ export class SchedulerService {
         }
 
         try {
+            const windowHours = fresh.articleWindowHours
+                ?? await this.configService.getDefaultArticleWindowHours();
             const where: any = {
                 status: 'PENDING',
-                createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+                createdAt: { gte: new Date(Date.now() - windowHours * 60 * 60 * 1000) }
             };
             if (fresh.section) where.section = fresh.section;
             if (fresh.sources?.length > 0) where.source = { name: { in: fresh.sources } };
@@ -269,15 +271,12 @@ export class SchedulerService {
                 where.interestScore = { gte: fresh.minScore };
             }
 
-            // Cap the unique-article pool at min(maxArticles, targets.length).
-            // We never need more unique articles than there are destinations: any
-            // extras would either be unused (refill off) or replaced by refills
-            // of the same pool (refill on).
-            const poolCap = Math.min(fresh.maxArticles || 3, targets.length);
+            // Pool size equals the number of destinations: we never need more
+            // unique articles than targets, and we don't want fewer either.
             const articles = await prisma.article.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
-                take: poolCap
+                take: targets.length
             });
 
             if (articles.length === 0) {

@@ -23,7 +23,6 @@ import userRouter from './routes/UserRouter';
 import sectionRouter from './routes/SectionRouter';
 import targetRouter from './routes/TargetRouter';
 import { requireAuth, requireAdmin } from './middlewares/auth';
-import bcrypt from 'bcrypt';
 
 import { SchedulerService } from './services/SchedulerService';
 import cron from 'node-cron';
@@ -33,23 +32,6 @@ const articleService = new ArticleService();
 export const schedulerService = new SchedulerService(queueService, articleService);
 
 schedulerService.initialize();
-
-// Init default admin user on boot
-async function initAdmin() {
-    try {
-        const adminExists = await prisma.user.findFirst();
-        if (!adminExists) {
-            const passwordHash = await bcrypt.hash('admin', 10);
-            await prisma.user.create({
-                data: { username: 'admin', passwordHash, role: 'ADMIN' }
-            });
-            console.log('Default admin user created (admin/admin).');
-        }
-    } catch (e) {
-        console.error('Failed to init admin user:', e);
-    }
-}
-initAdmin();
 
 async function initSections() {
     try {
@@ -204,67 +186,196 @@ app.post('/api/scrape', async (req, res) => {
     }
 });
 
+// Map between the camelCase API surface and the underlying setting keys. The
+// keys belong to ConfigService (snake_case in the DB); the API contracts use
+// camelCase for the UI.
+type SettingDef =
+    | { api: string; key: string; kind: 'int'; min?: number; max?: number }
+    | { api: string; key: string; kind: 'float'; min?: number; max?: number }
+    | { api: string; key: string; kind: 'string'; validate?: (v: string) => string | null }
+    | { api: string; key: string; kind: 'cron' };
+
+const SETTINGS: SettingDef[] = [
+    { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
+    { api: 'articleRetentionHours', key: 'article_retention_hours', kind: 'int', min: 1 },
+    { api: 'articleCleanupCron', key: 'article_cleanup_cron', kind: 'cron' },
+    {
+        api: 'imageSearchQueryTemplate', key: 'image_search_query_template', kind: 'string',
+        validate: (v) => v.includes('{{query}}') ? null : 'imageSearchQueryTemplate must contain {{query}}'
+    },
+    {
+        api: 'imageSearchUrlTemplate', key: 'image_search_url_template', kind: 'string',
+        validate: (v) => (v.startsWith('http') && (v.includes('{{q}}') || v.includes('{{query}}')))
+            ? null : 'imageSearchUrlTemplate must be a URL containing {{q}} or {{query}}'
+    },
+    { api: 'imageMinScore', key: 'image_min_score', kind: 'int', min: 1, max: 10 },
+    { api: 'imagePoolSize', key: 'image_pool_size', kind: 'int', min: 1, max: 100 },
+    { api: 'imageScoringMaxRetries', key: 'image_scoring_max_retries', kind: 'int', min: 0, max: 20 },
+    { api: 'imagePerQueryCap', key: 'image_per_query_cap', kind: 'int', min: 1, max: 20 },
+    { api: 'imageMinWidth', key: 'image_min_width', kind: 'int', min: 1 },
+    { api: 'imageMinHeight', key: 'image_min_height', kind: 'int', min: 1 },
+    { api: 'imageQueryContentChars', key: 'image_query_content_chars', kind: 'int', min: 1 },
+    { api: 'imageQueryMinLength', key: 'image_query_min_length', kind: 'int', min: 1 },
+    { api: 'imageQueryMaxCount', key: 'image_query_max_count', kind: 'int', min: 1, max: 50 },
+    { api: 'imageLeadMinChars', key: 'image_lead_min_chars', kind: 'int', min: 1 },
+    { api: 'imageLeadMaxChars', key: 'image_lead_max_chars', kind: 'int', min: 1 },
+    { api: 'imageLeadMaxWords', key: 'image_lead_max_words', kind: 'int', min: 1 },
+    { api: 'imageSearchPageTimeoutMs', key: 'image_search_page_timeout_ms', kind: 'int', min: 1000 },
+    { api: 'imageSearchSelectorTimeoutMs', key: 'image_search_selector_timeout_ms', kind: 'int', min: 100 },
+    { api: 'imageFetchTimeoutMs', key: 'image_fetch_timeout_ms', kind: 'int', min: 100 },
+    { api: 'modelEmbedding', key: 'model_embedding', kind: 'string' },
+    { api: 'modelRewrite', key: 'model_rewrite', kind: 'string' },
+    { api: 'modelInterest', key: 'model_interest', kind: 'string' },
+    { api: 'modelImageQuery', key: 'model_image_query', kind: 'string' },
+    { api: 'modelImageScoring', key: 'model_image_scoring', kind: 'string' },
+    { api: 'modelImageGeneration', key: 'model_image_generation', kind: 'string' },
+    { api: 'aiRewriteMaxTokens', key: 'ai_rewrite_max_tokens', kind: 'int', min: 1 },
+    { api: 'aiRewriteContentChars', key: 'ai_rewrite_content_chars', kind: 'int', min: 1 },
+    { api: 'aiInterestMaxTokens', key: 'ai_interest_max_tokens', kind: 'int', min: 1 },
+    { api: 'aiInterestContentChars', key: 'ai_interest_content_chars', kind: 'int', min: 1 },
+    { api: 'aiImageQueryMaxTokens', key: 'ai_image_query_max_tokens', kind: 'int', min: 1 },
+    { api: 'aiImageQueryContentChars', key: 'ai_image_query_content_chars', kind: 'int', min: 1 },
+    { api: 'aiImageScoringMaxTokens', key: 'ai_image_scoring_max_tokens', kind: 'int', min: 1 },
+    { api: 'aiImageScoringContentChars', key: 'ai_image_scoring_content_chars', kind: 'int', min: 1 },
+    { api: 'dedupThreshold', key: 'dedup_threshold', kind: 'float', min: 0, max: 1 },
+    { api: 'embeddingTextChars', key: 'embedding_text_chars', kind: 'int', min: 1 },
+    { api: 'workflowDefaultWindowHours', key: 'workflow_default_window_hours', kind: 'int', min: 1 }
+];
+
 app.get('/api/config/settings', async (req, res) => {
-    const limit = await configService.getScrapeLimit();
-    const articleRetentionHours = await configService.getArticleRetentionHours();
-    const articleCleanupCron = await configService.getArticleCleanupCron();
-    const imageSearchQueryTemplate = await configService.getImageSearchQueryTemplate();
-    const imageSearchUrlTemplate = await configService.getImageSearchUrlTemplate();
-    const imageMinScore = await configService.getImageMinScore();
-    res.json({
-        scrapeLimit: limit,
-        articleRetentionHours,
-        articleCleanupCron,
-        imageSearchQueryTemplate,
-        imageSearchUrlTemplate,
-        imageMinScore
-    });
+    const result: Record<string, any> = {};
+    for (const def of SETTINGS) {
+        const raw = await configService.getSetting(def.key, '');
+        if (raw === '') {
+            // Resolve to the typed default by reading through ConfigService's
+            // typed getters where available, so the UI sees consistent defaults
+            // instead of empty strings.
+            result[def.api] = await resolveDefault(def);
+        } else if (def.kind === 'int') {
+            result[def.api] = parseInt(raw, 10);
+        } else if (def.kind === 'float') {
+            result[def.api] = parseFloat(raw);
+        } else {
+            result[def.api] = raw;
+        }
+    }
+    res.json(result);
 });
 
+async function resolveDefault(def: SettingDef): Promise<any> {
+    // Single source of truth for defaults lives in ConfigService. We reflect
+    // through the typed getters so they stay in sync.
+    const map: Record<string, () => Promise<any>> = {
+        scrapeLimit: () => configService.getScrapeLimit(),
+        articleRetentionHours: () => configService.getArticleRetentionHours(),
+        articleCleanupCron: () => configService.getArticleCleanupCron(),
+        imageSearchQueryTemplate: () => configService.getImageSearchQueryTemplate(),
+        imageSearchUrlTemplate: () => configService.getImageSearchUrlTemplate(),
+        imageMinScore: () => configService.getImageMinScore(),
+        imagePoolSize: () => configService.getImagePoolSize(),
+        imageScoringMaxRetries: () => configService.getImageScoringMaxRetries(),
+        imagePerQueryCap: () => configService.getImagePerQueryCap(),
+        imageMinWidth: () => configService.getImageMinWidth(),
+        imageMinHeight: () => configService.getImageMinHeight(),
+        imageQueryContentChars: () => configService.getImageQueryContentChars(),
+        imageQueryMinLength: () => configService.getImageQueryMinLength(),
+        imageQueryMaxCount: () => configService.getImageQueryMaxCount(),
+        imageLeadMinChars: () => configService.getImageLeadMinChars(),
+        imageLeadMaxChars: () => configService.getImageLeadMaxChars(),
+        imageLeadMaxWords: () => configService.getImageLeadMaxWords(),
+        imageSearchPageTimeoutMs: () => configService.getImageSearchPageTimeoutMs(),
+        imageSearchSelectorTimeoutMs: () => configService.getImageSearchSelectorTimeoutMs(),
+        imageFetchTimeoutMs: () => configService.getImageFetchTimeoutMs(),
+        modelEmbedding: () => configService.getEmbeddingModel(),
+        modelRewrite: () => configService.getRewriteModel(),
+        modelInterest: () => configService.getInterestModel(),
+        modelImageQuery: () => configService.getImageQueryModel(),
+        modelImageScoring: () => configService.getImageScoringModel(),
+        modelImageGeneration: () => configService.getImageGenerationModel(),
+        aiRewriteMaxTokens: () => configService.getRewriteMaxTokens(),
+        aiRewriteContentChars: () => configService.getRewriteContentChars(),
+        aiInterestMaxTokens: () => configService.getInterestMaxTokens(),
+        aiInterestContentChars: () => configService.getInterestContentChars(),
+        aiImageQueryMaxTokens: () => configService.getImageQueryMaxTokens(),
+        aiImageQueryContentChars: () => configService.getImageQueryGenContentChars(),
+        aiImageScoringMaxTokens: () => configService.getImageScoringMaxTokens(),
+        aiImageScoringContentChars: () => configService.getImageScoringContentChars(),
+        dedupThreshold: () => configService.getDedupThreshold(),
+        embeddingTextChars: () => configService.getEmbeddingTextChars(),
+        workflowDefaultWindowHours: () => configService.getDefaultArticleWindowHours()
+    };
+    const fn = map[def.api];
+    return fn ? fn() : undefined;
+}
+
 app.post('/api/config/settings', async (req, res) => {
-    const {
-        scrapeLimit,
-        articleRetentionHours,
-        articleCleanupCron,
-        imageSearchQueryTemplate,
-        imageSearchUrlTemplate,
-        imageMinScore
-    } = req.body;
-    if (scrapeLimit !== undefined && scrapeLimit !== null) {
-        await configService.setSetting('scrape_limit', Math.max(1, parseInt(scrapeLimit.toString(), 10)).toString());
-    }
-    if (articleRetentionHours !== undefined && articleRetentionHours !== null) {
-        await configService.setSetting('article_retention_hours', Math.max(1, parseInt(articleRetentionHours.toString(), 10)).toString());
-    }
-    if (articleCleanupCron !== undefined && articleCleanupCron !== null) {
-        const normalizedCron = articleCleanupCron.toString().trim();
-        if (!cron.validate(normalizedCron)) {
-            return res.status(400).json({ error: 'Invalid articleCleanupCron' });
+    const body = req.body || {};
+    let articleCleanupChanged = false;
+
+    for (const def of SETTINGS) {
+        const incoming = body[def.api];
+        if (incoming === undefined || incoming === null) continue;
+
+        if (def.kind === 'cron') {
+            const value = incoming.toString().trim();
+            if (!cron.validate(value)) {
+                return res.status(400).json({ error: `Invalid ${def.api}` });
+            }
+            await configService.setSetting(def.key, value);
+            if (def.api === 'articleCleanupCron') articleCleanupChanged = true;
+            continue;
         }
-        await configService.setSetting('article_cleanup_cron', normalizedCron);
+
+        if (def.kind === 'string') {
+            const value = incoming.toString().trim();
+            if (def.validate) {
+                const err = def.validate(value);
+                if (err) return res.status(400).json({ error: err });
+            }
+            if (value.length === 0) {
+                return res.status(400).json({ error: `${def.api} cannot be empty` });
+            }
+            await configService.setSetting(def.key, value);
+            continue;
+        }
+
+        if (def.kind === 'int') {
+            const parsed = parseInt(incoming.toString(), 10);
+            if (!Number.isFinite(parsed)) {
+                return res.status(400).json({ error: `${def.api} must be an integer` });
+            }
+            const min = def.min ?? 1;
+            if (parsed < min) {
+                return res.status(400).json({ error: `${def.api} must be >= ${min}` });
+            }
+            if (def.max != null && parsed > def.max) {
+                return res.status(400).json({ error: `${def.api} must be <= ${def.max}` });
+            }
+            await configService.setSetting(def.key, parsed.toString());
+            continue;
+        }
+
+        if (def.kind === 'float') {
+            const parsed = parseFloat(incoming.toString());
+            if (!Number.isFinite(parsed)) {
+                return res.status(400).json({ error: `${def.api} must be a number` });
+            }
+            const min = def.min ?? 0;
+            if (parsed < min) {
+                return res.status(400).json({ error: `${def.api} must be >= ${min}` });
+            }
+            if (def.max != null && parsed > def.max) {
+                return res.status(400).json({ error: `${def.api} must be <= ${def.max}` });
+            }
+            await configService.setSetting(def.key, parsed.toString());
+            continue;
+        }
+    }
+
+    if (articleCleanupChanged) {
         await schedulerService.scheduleArticleCleanup();
     }
-    if (imageSearchQueryTemplate !== undefined && imageSearchQueryTemplate !== null) {
-        const value = imageSearchQueryTemplate.toString().trim();
-        if (!value.includes('{{query}}')) {
-            return res.status(400).json({ error: 'imageSearchQueryTemplate must contain {{query}}' });
-        }
-        await configService.setSetting('image_search_query_template', value);
-    }
-    if (imageSearchUrlTemplate !== undefined && imageSearchUrlTemplate !== null) {
-        const value = imageSearchUrlTemplate.toString().trim();
-        if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
-            return res.status(400).json({ error: 'imageSearchUrlTemplate must be a URL containing {{q}} or {{query}}' });
-        }
-        await configService.setSetting('image_search_url_template', value);
-    }
-    if (imageMinScore !== undefined && imageMinScore !== null) {
-        const parsed = parseInt(imageMinScore.toString(), 10);
-        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 10) {
-            return res.status(400).json({ error: 'imageMinScore must be an integer between 1 and 10' });
-        }
-        await configService.setSetting('image_min_score', parsed.toString());
-    }
+
     res.json({ success: true });
 });
 

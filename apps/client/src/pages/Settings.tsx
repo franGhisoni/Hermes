@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 
@@ -39,13 +39,48 @@ const CRON_PRESETS = [
     { label: 'Dos veces al día (8AM y 6PM)', value: '0 8,18 * * *' },
 ];
 
-type TabKey = 'prompts' | 'fuentes' | 'sistema';
+type TabKey = 'prompts' | 'fuentes' | 'sistema' | 'imagenes';
 
 const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'prompts', label: 'Prompts IA', icon: Sparkles },
     { key: 'fuentes', label: 'Fuentes', icon: Layers },
+    { key: 'imagenes', label: 'Imágenes', icon: ImageIcon },
     { key: 'sistema', label: 'Sistema', icon: SlidersHorizontal }
 ];
+
+interface ExtendedSettings {
+    imagePoolSize: number;
+    imageScoringMaxRetries: number;
+    imagePerQueryCap: number;
+    imageMinWidth: number;
+    imageMinHeight: number;
+    imageQueryContentChars: number;
+    imageQueryMinLength: number;
+    imageQueryMaxCount: number;
+    imageLeadMinChars: number;
+    imageLeadMaxChars: number;
+    imageLeadMaxWords: number;
+    imageSearchPageTimeoutMs: number;
+    imageSearchSelectorTimeoutMs: number;
+    imageFetchTimeoutMs: number;
+    modelEmbedding: string;
+    modelRewrite: string;
+    modelInterest: string;
+    modelImageQuery: string;
+    modelImageScoring: string;
+    modelImageGeneration: string;
+    aiRewriteMaxTokens: number;
+    aiRewriteContentChars: number;
+    aiInterestMaxTokens: number;
+    aiInterestContentChars: number;
+    aiImageQueryMaxTokens: number;
+    aiImageQueryContentChars: number;
+    aiImageScoringMaxTokens: number;
+    aiImageScoringContentChars: number;
+    dedupThreshold: number;
+    embeddingTextChars: number;
+    workflowDefaultWindowHours: number;
+}
 
 export default function Settings() {
     const { user, logout } = useAuth();
@@ -69,6 +104,7 @@ export default function Settings() {
     const [imageSearchQueryTemplate, setImageSearchQueryTemplate] = useState('{{query}} foto noticia');
     const [imageSearchUrlTemplate, setImageSearchUrlTemplate] = useState('https://www.bing.com/images/search?q={{q}}&qft=%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide');
     const [imageMinScore, setImageMinScore] = useState(6);
+    const [extended, setExtended] = useState<ExtendedSettings | null>(null);
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
@@ -98,14 +134,58 @@ export default function Settings() {
     useEffect(() => {
         api.get('/api/config/settings')
             .then(res => {
-                setScrapeLimit(res.data.scrapeLimit ?? 3);
-                setArticleRetentionHours(res.data.articleRetentionHours ?? 48);
-                setArticleCleanupCron(res.data.articleCleanupCron ?? '0 * * * *');
-                if (res.data.imageSearchQueryTemplate) setImageSearchQueryTemplate(res.data.imageSearchQueryTemplate);
-                if (res.data.imageSearchUrlTemplate) setImageSearchUrlTemplate(res.data.imageSearchUrlTemplate);
-                if (res.data.imageMinScore) setImageMinScore(res.data.imageMinScore);
+                const d = res.data;
+                setScrapeLimit(d.scrapeLimit ?? 3);
+                setArticleRetentionHours(d.articleRetentionHours ?? 48);
+                setArticleCleanupCron(d.articleCleanupCron ?? '0 * * * *');
+                if (d.imageSearchQueryTemplate) setImageSearchQueryTemplate(d.imageSearchQueryTemplate);
+                if (d.imageSearchUrlTemplate) setImageSearchUrlTemplate(d.imageSearchUrlTemplate);
+                if (d.imageMinScore) setImageMinScore(d.imageMinScore);
+                setExtended({
+                    imagePoolSize: d.imagePoolSize,
+                    imageScoringMaxRetries: d.imageScoringMaxRetries,
+                    imagePerQueryCap: d.imagePerQueryCap,
+                    imageMinWidth: d.imageMinWidth,
+                    imageMinHeight: d.imageMinHeight,
+                    imageQueryContentChars: d.imageQueryContentChars,
+                    imageQueryMinLength: d.imageQueryMinLength,
+                    imageQueryMaxCount: d.imageQueryMaxCount,
+                    imageLeadMinChars: d.imageLeadMinChars,
+                    imageLeadMaxChars: d.imageLeadMaxChars,
+                    imageLeadMaxWords: d.imageLeadMaxWords,
+                    imageSearchPageTimeoutMs: d.imageSearchPageTimeoutMs,
+                    imageSearchSelectorTimeoutMs: d.imageSearchSelectorTimeoutMs,
+                    imageFetchTimeoutMs: d.imageFetchTimeoutMs,
+                    modelEmbedding: d.modelEmbedding,
+                    modelRewrite: d.modelRewrite,
+                    modelInterest: d.modelInterest,
+                    modelImageQuery: d.modelImageQuery,
+                    modelImageScoring: d.modelImageScoring,
+                    modelImageGeneration: d.modelImageGeneration,
+                    aiRewriteMaxTokens: d.aiRewriteMaxTokens,
+                    aiRewriteContentChars: d.aiRewriteContentChars,
+                    aiInterestMaxTokens: d.aiInterestMaxTokens,
+                    aiInterestContentChars: d.aiInterestContentChars,
+                    aiImageQueryMaxTokens: d.aiImageQueryMaxTokens,
+                    aiImageQueryContentChars: d.aiImageQueryContentChars,
+                    aiImageScoringMaxTokens: d.aiImageScoringMaxTokens,
+                    aiImageScoringContentChars: d.aiImageScoringContentChars,
+                    dedupThreshold: d.dedupThreshold,
+                    embeddingTextChars: d.embeddingTextChars,
+                    workflowDefaultWindowHours: d.workflowDefaultWindowHours
+                });
             });
     }, []);
+
+    const updateExtended = async <K extends keyof ExtendedSettings>(key: K, value: ExtendedSettings[K]) => {
+        if (!extended) return;
+        setExtended({ ...extended, [key]: value });
+        try {
+            await api.post('/api/config/settings', { [key]: value });
+        } catch (err: any) {
+            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+        }
+    };
 
     const handleCreateSection = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -273,6 +353,19 @@ export default function Settings() {
                         />
                     )}
 
+                    {activeTab === 'imagenes' && extended && (
+                        <ImagenesTab
+                            imageSearchQueryTemplate={imageSearchQueryTemplate}
+                            setImageSearchQueryTemplate={setImageSearchQueryTemplate}
+                            imageSearchUrlTemplate={imageSearchUrlTemplate}
+                            setImageSearchUrlTemplate={setImageSearchUrlTemplate}
+                            imageMinScore={imageMinScore}
+                            setImageMinScore={setImageMinScore}
+                            extended={extended}
+                            updateExtended={updateExtended}
+                        />
+                    )}
+
                     {activeTab === 'sistema' && (
                         <SistemaTab
                             scrapeLimit={scrapeLimit}
@@ -281,12 +374,8 @@ export default function Settings() {
                             setArticleRetentionHours={setArticleRetentionHours}
                             articleCleanupCron={articleCleanupCron}
                             setArticleCleanupCron={setArticleCleanupCron}
-                            imageSearchQueryTemplate={imageSearchQueryTemplate}
-                            setImageSearchQueryTemplate={setImageSearchQueryTemplate}
-                            imageSearchUrlTemplate={imageSearchUrlTemplate}
-                            setImageSearchUrlTemplate={setImageSearchUrlTemplate}
-                            imageMinScore={imageMinScore}
-                            setImageMinScore={setImageMinScore}
+                            extended={extended}
+                            updateExtended={updateExtended}
                         />
                     )}
                 </main>
@@ -544,12 +633,8 @@ interface SistemaTabProps {
     setArticleRetentionHours: (n: number) => void;
     articleCleanupCron: string;
     setArticleCleanupCron: (v: string) => void;
-    imageSearchQueryTemplate: string;
-    setImageSearchQueryTemplate: (v: string) => void;
-    imageSearchUrlTemplate: string;
-    setImageSearchUrlTemplate: (v: string) => void;
-    imageMinScore: number;
-    setImageMinScore: (n: number) => void;
+    extended: ExtendedSettings | null;
+    updateExtended: <K extends keyof ExtendedSettings>(key: K, value: ExtendedSettings[K]) => Promise<void>;
 }
 
 function SistemaTab(props: SistemaTabProps) {
@@ -557,136 +642,316 @@ function SistemaTab(props: SistemaTabProps) {
         scrapeLimit, setScrapeLimit,
         articleRetentionHours, setArticleRetentionHours,
         articleCleanupCron, setArticleCleanupCron,
-        imageSearchQueryTemplate, setImageSearchQueryTemplate,
-        imageSearchUrlTemplate, setImageSearchUrlTemplate,
-        imageMinScore, setImageMinScore
+        extended, updateExtended
     } = props;
 
     return (
-        <section>
-            <Header
-                title="Sistema & Imágenes"
-                subtitle="Parámetros globales: volumen, retención de datos, y configuración de búsqueda de imágenes."
-            />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <NumericCard
-                    title="Límite global de scrapeo"
-                    description="Notas por sección. Cada sección puede tener su propio override."
-                    value={scrapeLimit}
-                    unit=""
-                    min={1}
-                    onCommit={async (value) => {
-                        setScrapeLimit(value);
-                        await api.post('/api/config/settings', { scrapeLimit: value });
-                    }}
+        <section className="space-y-10">
+            <div>
+                <Header
+                    title="Operación"
+                    subtitle="Volumen de scrapeo, retención de datos y limpieza periódica."
                 />
-
-                <NumericCard
-                    title="Retención de noticias"
-                    description="Noticias más viejas que este valor se borran junto con sus imágenes huérfanas."
-                    value={articleRetentionHours}
-                    unit="horas"
-                    min={1}
-                    onCommit={async (value) => {
-                        setArticleRetentionHours(value);
-                        await api.post('/api/config/settings', { articleRetentionHours: value });
-                    }}
-                />
-
-                <NumericCard
-                    title="Puntaje mínimo de imagen"
-                    description="Si ninguna candidata web supera este puntaje, Hermes genera la imagen con IA."
-                    value={imageMinScore}
-                    unit="/ 10"
-                    min={1}
-                    max={10}
-                    onCommit={async (value) => {
-                        setImageMinScore(value);
-                        try {
-                            await api.post('/api/config/settings', { imageMinScore: value });
-                        } catch (err: any) {
-                            alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                        }
-                    }}
-                />
-
-                <Card>
-                    <CardHeading
-                        title="Cron de limpieza"
-                        description="Cada cuánto el sistema revisa si hay noticias vencidas."
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <NumericCard
+                        title="Límite global de scrapeo"
+                        description="Notas por sección. Cada sección puede tener su propio override."
+                        value={scrapeLimit}
+                        unit=""
+                        min={1}
+                        onCommit={async (value) => {
+                            setScrapeLimit(value);
+                            await api.post('/api/config/settings', { scrapeLimit: value });
+                        }}
                     />
-                    <CronBuilder
-                        value={articleCleanupCron}
-                        onChange={setArticleCleanupCron}
-                        presets={[...CRON_PRESETS, { label: 'Cada 1 hora exacta', value: '0 * * * *' }]}
-                        helperText="Si no trabajan fines de semana, podés usar días hábiles."
+
+                    <NumericCard
+                        title="Retención de noticias"
+                        description="Noticias más viejas que este valor se borran junto con sus imágenes huérfanas."
+                        value={articleRetentionHours}
+                        unit="horas"
+                        min={1}
+                        onCommit={async (value) => {
+                            setArticleRetentionHours(value);
+                            await api.post('/api/config/settings', { articleRetentionHours: value });
+                        }}
                     />
-                    <div className="flex justify-end mt-3">
-                        <button
-                            type="button"
-                            onClick={async () => {
-                                const value = articleCleanupCron.trim();
-                                setArticleCleanupCron(value);
-                                await api.post('/api/config/settings', { articleCleanupCron: value });
-                            }}
-                            className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]"
-                        >
-                            Guardar
-                        </button>
+
+                    {extended && (
+                        <NumericCard
+                            title="Ventana global de notas para flujos"
+                            description="Default cuando un flujo no define su propia ventana. Aplica al pool de PENDING al ejecutar cada cron."
+                            value={extended.workflowDefaultWindowHours}
+                            unit="horas"
+                            min={1}
+                            onCommit={(v) => updateExtended('workflowDefaultWindowHours', v)}
+                        />
+                    )}
+
+                    <Card>
+                        <CardHeading
+                            title="Cron de limpieza"
+                            description="Cada cuánto el sistema revisa si hay noticias vencidas."
+                        />
+                        <CronBuilder
+                            value={articleCleanupCron}
+                            onChange={setArticleCleanupCron}
+                            presets={[...CRON_PRESETS, { label: 'Cada 1 hora exacta', value: '0 * * * *' }]}
+                            helperText="Si no trabajan fines de semana, podés usar días hábiles."
+                        />
+                        <div className="flex justify-end mt-3">
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    const value = articleCleanupCron.trim();
+                                    setArticleCleanupCron(value);
+                                    await api.post('/api/config/settings', { articleCleanupCron: value });
+                                }}
+                                className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]"
+                            >
+                                Guardar
+                            </button>
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            {extended && (
+                <div>
+                    <Header
+                        title="Modelos de IA"
+                        subtitle="Modelos OpenAI usados en cada paso. Tocá un valor para cambiarlo (ej. 'gpt-4o-mini', 'gpt-4o', 'text-embedding-3-small')."
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <StringCard label="Embeddings (dedupe)" value={extended.modelEmbedding}
+                            onCommit={(v) => updateExtended('modelEmbedding', v)} />
+                        <StringCard label="Reescritura de notas" value={extended.modelRewrite}
+                            onCommit={(v) => updateExtended('modelRewrite', v)} />
+                        <StringCard label="Score de interés" value={extended.modelInterest}
+                            onCommit={(v) => updateExtended('modelInterest', v)} />
+                        <StringCard label="Smart queries de imagen" value={extended.modelImageQuery}
+                            onCommit={(v) => updateExtended('modelImageQuery', v)} />
+                        <StringCard label="Scoring de imagen (vision)" value={extended.modelImageScoring}
+                            onCommit={(v) => updateExtended('modelImageScoring', v)} />
+                        <StringCard label="Generación de imagen (fallback)" value={extended.modelImageGeneration}
+                            onCommit={(v) => updateExtended('modelImageGeneration', v)} />
                     </div>
-                </Card>
+                </div>
+            )}
 
-                <Card>
-                    <CardHeading
-                        title="Plantilla de búsqueda"
-                        description={<>Texto enviado al buscador. Usá <code className="bg-editorial-text/5 px-1">{`{{query}}`}</code> como placeholder.</>}
+            {extended && (
+                <div>
+                    <Header
+                        title="Tuning de IA"
+                        subtitle="Cuánto contexto entra a cada llamada y cuántos tokens puede generar el modelo."
                     />
-                    <input
-                        type="text"
-                        value={imageSearchQueryTemplate}
-                        onChange={e => setImageSearchQueryTemplate(e.target.value)}
-                        onBlur={async (e) => {
-                            const value = e.target.value.trim();
-                            if (!value.includes('{{query}}')) {
-                                alert('La plantilla debe contener {{query}}');
-                                return;
-                            }
-                            setImageSearchQueryTemplate(value);
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <NumericCard title="Rewrite – contexto (chars)" description="Cantidad de texto del artículo enviado al rewriter."
+                            value={extended.aiRewriteContentChars} unit="chars" min={1}
+                            onCommit={(v) => updateExtended('aiRewriteContentChars', v)} />
+                        <NumericCard title="Rewrite – max tokens" description="Techo de tokens generados al reescribir."
+                            value={extended.aiRewriteMaxTokens} unit="tokens" min={1}
+                            onCommit={(v) => updateExtended('aiRewriteMaxTokens', v)} />
+                        <NumericCard title="Interés – contexto (chars)" description="Texto enviado para calcular el score 1-10."
+                            value={extended.aiInterestContentChars} unit="chars" min={1}
+                            onCommit={(v) => updateExtended('aiInterestContentChars', v)} />
+                        <NumericCard title="Interés – max tokens" description="3 alcanza para un número. No subas si no cambiás el prompt."
+                            value={extended.aiInterestMaxTokens} unit="tokens" min={1}
+                            onCommit={(v) => updateExtended('aiInterestMaxTokens', v)} />
+                        <NumericCard title="Smart query – contexto (chars)" description="Texto enviado para generar queries de búsqueda."
+                            value={extended.aiImageQueryContentChars} unit="chars" min={1}
+                            onCommit={(v) => updateExtended('aiImageQueryContentChars', v)} />
+                        <NumericCard title="Smart query – max tokens" description="Output JSON con queries y protagonista."
+                            value={extended.aiImageQueryMaxTokens} unit="tokens" min={1}
+                            onCommit={(v) => updateExtended('aiImageQueryMaxTokens', v)} />
+                        <NumericCard title="Scoring – contexto (chars)" description="Texto + ranking del artículo en el batch de scoring."
+                            value={extended.aiImageScoringContentChars} unit="chars" min={1}
+                            onCommit={(v) => updateExtended('aiImageScoringContentChars', v)} />
+                        <NumericCard title="Scoring – max tokens" description="Reasonings + scores de hasta N candidatos."
+                            value={extended.aiImageScoringMaxTokens} unit="tokens" min={1}
+                            onCommit={(v) => updateExtended('aiImageScoringMaxTokens', v)} />
+                    </div>
+                </div>
+            )}
+
+            {extended && (
+                <div>
+                    <Header
+                        title="Procesamiento de notas"
+                        subtitle="Cómo se generan embeddings y se detectan duplicados."
+                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <NumericCard title="Texto a embeber (chars)" description="Cuánto texto se usa para el embedding de dedup."
+                            value={extended.embeddingTextChars} unit="chars" min={1}
+                            onCommit={(v) => updateExtended('embeddingTextChars', v)} />
+                        <FloatCard title="Umbral de dedup" description="Distancia coseno: más bajo = más estricto. 0.15 = ~85% similitud."
+                            value={extended.dedupThreshold} unit="" min={0} max={1} step={0.01}
+                            onCommit={(v) => updateExtended('dedupThreshold', v)} />
+                    </div>
+                </div>
+            )}
+        </section>
+    );
+}
+
+// ---------- Imagenes Tab ----------
+
+interface ImagenesTabProps {
+    imageSearchQueryTemplate: string;
+    setImageSearchQueryTemplate: (v: string) => void;
+    imageSearchUrlTemplate: string;
+    setImageSearchUrlTemplate: (v: string) => void;
+    imageMinScore: number;
+    setImageMinScore: (n: number) => void;
+    extended: ExtendedSettings;
+    updateExtended: <K extends keyof ExtendedSettings>(key: K, value: ExtendedSettings[K]) => Promise<void>;
+}
+
+function ImagenesTab(props: ImagenesTabProps) {
+    const {
+        imageSearchQueryTemplate, setImageSearchQueryTemplate,
+        imageSearchUrlTemplate, setImageSearchUrlTemplate,
+        imageMinScore, setImageMinScore,
+        extended, updateExtended
+    } = props;
+
+    return (
+        <section className="space-y-10">
+            <div>
+                <Header
+                    title="Búsqueda"
+                    subtitle="Cómo Hermes pide imágenes a Google/Bing y cuáles acepta."
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card>
+                        <CardHeading
+                            title="Plantilla de búsqueda"
+                            description={<>Texto enviado al buscador. Usá <code className="bg-editorial-text/5 px-1">{`{{query}}`}</code> como placeholder.</>}
+                        />
+                        <input
+                            type="text"
+                            value={imageSearchQueryTemplate}
+                            onChange={e => setImageSearchQueryTemplate(e.target.value)}
+                            onBlur={async (e) => {
+                                const value = e.target.value.trim();
+                                if (!value.includes('{{query}}')) {
+                                    alert('La plantilla debe contener {{query}}');
+                                    return;
+                                }
+                                setImageSearchQueryTemplate(value);
+                                try {
+                                    await api.post('/api/config/settings', { imageSearchQueryTemplate: value });
+                                } catch (err: any) {
+                                    alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                                }
+                            }}
+                            placeholder="{{query}} foto noticia"
+                            className="w-full p-2 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
+                        />
+                    </Card>
+
+                    <Card>
+                        <CardHeading
+                            title="URL del buscador (Bing fallback)"
+                            description={<>URL completa. Usá <code className="bg-editorial-text/5 px-1">{`{{q}}`}</code> donde va la consulta URL-encoded.</>}
+                        />
+                        <textarea
+                            value={imageSearchUrlTemplate}
+                            onChange={e => setImageSearchUrlTemplate(e.target.value)}
+                            onBlur={async (e) => {
+                                const value = e.target.value.trim();
+                                if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
+                                    alert('La URL debe empezar con http y contener {{q}} o {{query}}');
+                                    return;
+                                }
+                                setImageSearchUrlTemplate(value);
+                                try {
+                                    await api.post('/api/config/settings', { imageSearchUrlTemplate: value });
+                                } catch (err: any) {
+                                    alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
+                                }
+                            }}
+                            className="w-full h-20 p-2 font-mono text-[11px] bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none"
+                        />
+                    </Card>
+
+                    <NumericCard title="Resultados por query" description="Cuántas imágenes tomamos de cada búsqueda antes del scoring."
+                        value={extended.imagePerQueryCap} unit="" min={1} max={20}
+                        onCommit={(v) => updateExtended('imagePerQueryCap', v)} />
+                    <NumericCard title="Máx. queries por nota" description="Cuántas búsquedas distintas armamos a partir del título/contenido."
+                        value={extended.imageQueryMaxCount} unit="" min={1} max={50}
+                        onCommit={(v) => updateExtended('imageQueryMaxCount', v)} />
+                    <NumericCard title="Largo mínimo de query" description="Queries más cortas se descartan."
+                        value={extended.imageQueryMinLength} unit="chars" min={1}
+                        onCommit={(v) => updateExtended('imageQueryMinLength', v)} />
+                    <NumericCard title="Ancho mínimo aceptado" description="Imágenes más chicas se descartan (Bing)."
+                        value={extended.imageMinWidth} unit="px" min={1}
+                        onCommit={(v) => updateExtended('imageMinWidth', v)} />
+                    <NumericCard title="Alto mínimo aceptado" description="Imágenes más chicas se descartan (Bing)."
+                        value={extended.imageMinHeight} unit="px" min={1}
+                        onCommit={(v) => updateExtended('imageMinHeight', v)} />
+                    <NumericCard title="Timeout de carga de página" description="Cuánto esperar a que cargue la página de resultados."
+                        value={extended.imageSearchPageTimeoutMs} unit="ms" min={1000}
+                        onCommit={(v) => updateExtended('imageSearchPageTimeoutMs', v)} />
+                    <NumericCard title="Timeout de selector" description="Cuánto esperar a que aparezcan los thumbnails."
+                        value={extended.imageSearchSelectorTimeoutMs} unit="ms" min={100}
+                        onCommit={(v) => updateExtended('imageSearchSelectorTimeoutMs', v)} />
+                    <NumericCard title="Timeout de descarga" description="Para attachear imágenes externas al mail."
+                        value={extended.imageFetchTimeoutMs} unit="ms" min={100}
+                        onCommit={(v) => updateExtended('imageFetchTimeoutMs', v)} />
+                </div>
+            </div>
+
+            <div>
+                <Header
+                    title="Scoring"
+                    subtitle="Cómo gpt-4o elige la mejor imagen para cada nota."
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <NumericCard
+                        title="Puntaje mínimo"
+                        description="Si ninguna candidata supera este puntaje, Hermes genera la imagen con IA."
+                        value={imageMinScore}
+                        unit="/ 10"
+                        min={1}
+                        max={10}
+                        onCommit={async (value) => {
+                            setImageMinScore(value);
                             try {
-                                await api.post('/api/config/settings', { imageSearchQueryTemplate: value });
+                                await api.post('/api/config/settings', { imageMinScore: value });
                             } catch (err: any) {
                                 alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
                             }
                         }}
-                        placeholder="{{query}} foto noticia"
-                        className="w-full p-2 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
                     />
-                </Card>
+                    <NumericCard title="Tamaño del pool" description="Candidatas máximas que entran al scoring por nota."
+                        value={extended.imagePoolSize} unit="" min={1} max={100}
+                        onCommit={(v) => updateExtended('imagePoolSize', v)} />
+                    <NumericCard title="Reintentos de scoring" description="Si OpenAI no puede descargar una imagen, descartamos y reintentamos."
+                        value={extended.imageScoringMaxRetries} unit="" min={0} max={20}
+                        onCommit={(v) => updateExtended('imageScoringMaxRetries', v)} />
+                </div>
+            </div>
 
-                <Card className="md:col-span-2">
-                    <CardHeading
-                        title="URL del buscador"
-                        description={<>URL completa del motor de búsqueda. Usá <code className="bg-editorial-text/5 px-1">{`{{q}}`}</code> donde va la consulta URL-encoded.</>}
-                    />
-                    <textarea
-                        value={imageSearchUrlTemplate}
-                        onChange={e => setImageSearchUrlTemplate(e.target.value)}
-                        onBlur={async (e) => {
-                            const value = e.target.value.trim();
-                            if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
-                                alert('La URL debe empezar con http y contener {{q}} o {{query}}');
-                                return;
-                            }
-                            setImageSearchUrlTemplate(value);
-                            try {
-                                await api.post('/api/config/settings', { imageSearchUrlTemplate: value });
-                            } catch (err: any) {
-                                alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                            }
-                        }}
-                        className="w-full h-20 p-2 font-mono text-[11px] bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none"
-                    />
-                </Card>
+            <div>
+                <Header
+                    title="Extracción de queries"
+                    subtitle="Heurísticas internas para armar queries a partir del cuerpo del artículo."
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <NumericCard title="Contenido analizado" description="Cuánto cuerpo se analiza para extraer entidades/queries."
+                        value={extended.imageQueryContentChars} unit="chars" min={1}
+                        onCommit={(v) => updateExtended('imageQueryContentChars', v)} />
+                    <NumericCard title="Mínimo de la primera oración" description="Longitud mínima de la frase del lead que se busca."
+                        value={extended.imageLeadMinChars} unit="chars" min={1}
+                        onCommit={(v) => updateExtended('imageLeadMinChars', v)} />
+                    <NumericCard title="Máximo de la primera oración" description="Longitud máxima del lead que se busca."
+                        value={extended.imageLeadMaxChars} unit="chars" min={1}
+                        onCommit={(v) => updateExtended('imageLeadMaxChars', v)} />
+                    <NumericCard title="Palabras del lead a usar" description="Cuántas palabras del lead se envían como query."
+                        value={extended.imageLeadMaxWords} unit="" min={1}
+                        onCommit={(v) => updateExtended('imageLeadMaxWords', v)} />
+                </div>
             </div>
         </section>
     );
@@ -762,6 +1027,74 @@ function NumericCard({ title, description, value, unit, min, max, onCommit }: Nu
                     {unit && <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-editorial-text/50">{unit}</span>}
                 </div>
             </div>
+        </Card>
+    );
+}
+
+interface FloatCardProps {
+    title: string;
+    description: string;
+    value: number;
+    unit: string;
+    min: number;
+    max?: number;
+    step?: number;
+    onCommit: (value: number) => Promise<void>;
+}
+
+function FloatCard({ title, description, value, unit, min, max, step = 0.01, onCommit }: FloatCardProps) {
+    return (
+        <Card>
+            <div className="flex justify-between items-start gap-3">
+                <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold">{title}</h3>
+                    <p className="font-sans text-[11px] text-editorial-text/60 leading-snug mt-0.5">{description}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                    <input
+                        key={value}
+                        type="number"
+                        step={step}
+                        min={min}
+                        max={max}
+                        defaultValue={value}
+                        className="w-24 p-1.5 font-bold text-lg border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-center"
+                        onBlur={async (e) => {
+                            const raw = parseFloat(e.target.value || String(min));
+                            if (!Number.isFinite(raw)) return;
+                            const clamped = max != null
+                                ? Math.min(max, Math.max(min, raw))
+                                : Math.max(min, raw);
+                            if (clamped !== value) await onCommit(clamped);
+                        }}
+                    />
+                    {unit && <span className="font-sans text-[10px] font-bold uppercase tracking-widest text-editorial-text/50">{unit}</span>}
+                </div>
+            </div>
+        </Card>
+    );
+}
+
+interface StringCardProps {
+    label: string;
+    value: string;
+    onCommit: (value: string) => Promise<void>;
+}
+
+function StringCard({ label, value, onCommit }: StringCardProps) {
+    return (
+        <Card>
+            <h3 className="text-xs font-bold uppercase tracking-widest opacity-60 mb-2">{label}</h3>
+            <input
+                key={value}
+                type="text"
+                defaultValue={value}
+                className="w-full p-2 font-mono text-sm bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
+                onBlur={async (e) => {
+                    const v = e.target.value.trim();
+                    if (v && v !== value) await onCommit(v);
+                }}
+            />
         </Card>
     );
 }

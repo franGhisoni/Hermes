@@ -7,6 +7,19 @@ const prisma = new PrismaClient();
 
 router.use(requireAuth, requireAdmin);
 
+// Returns:
+//   - undefined if the client did not include the field (don't touch DB)
+//   - null     if the client explicitly cleared it (use system default)
+//   - number   if a valid positive integer was provided
+//   - 'invalid' on parse failure (router responds 400)
+function parseArticleWindow(value: unknown): number | null | undefined | 'invalid' {
+    if (value === undefined) return undefined;
+    if (value === null || value === '') return null;
+    const parsed = parseInt(String(value), 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 'invalid';
+    return parsed;
+}
+
 // GET /api/workflows
 router.get('/', async (req, res) => {
     try {
@@ -63,9 +76,14 @@ import { schedulerService } from '../index';
 
 // POST /api/workflows
 router.post('/', async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, maxArticles, allowRepublish } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, allowRepublish, articleWindowHours } = req.body;
     if (!name || !cron || !targetIds || !Array.isArray(targetIds) || targetIds.length === 0) {
         return res.status(400).json({ error: 'name, cron, and at least one targetId are required' });
+    }
+
+    const parsedWindow = parseArticleWindow(articleWindowHours);
+    if (parsedWindow === 'invalid') {
+        return res.status(400).json({ error: 'articleWindowHours must be a positive integer' });
     }
 
     try {
@@ -77,7 +95,7 @@ router.post('/', async (req, res) => {
                 minScore: minScore ? parseInt(minScore) : null,
                 targetCategory: targetCategory || null,
                 cron,
-                maxArticles: maxArticles ? parseInt(maxArticles) : 3,
+                articleWindowHours: parsedWindow,
                 allowRepublish: Boolean(allowRepublish),
                 targets: { connect: targetIds.map((id: string) => ({ id })) },
                 isActive: true
@@ -93,10 +111,15 @@ router.post('/', async (req, res) => {
 
 // PUT /api/workflows/:id
 router.put('/:id', async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, maxArticles, allowRepublish } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, allowRepublish, articleWindowHours } = req.body;
 
     if (targetIds && (!Array.isArray(targetIds) || targetIds.length === 0)) {
         return res.status(400).json({ error: 'targetIds must be a non-empty array' });
+    }
+
+    const parsedWindow = parseArticleWindow(articleWindowHours);
+    if (parsedWindow === 'invalid') {
+        return res.status(400).json({ error: 'articleWindowHours must be a positive integer' });
     }
 
     try {
@@ -107,9 +130,12 @@ router.put('/:id', async (req, res) => {
             minScore: minScore ? parseInt(minScore) : null,
             targetCategory: targetCategory || null,
             cron,
-            maxArticles: maxArticles ? parseInt(maxArticles) : undefined,
             isActive
         };
+
+        if (articleWindowHours !== undefined) {
+            data.articleWindowHours = parsedWindow;
+        }
 
         if (typeof allowRepublish === 'boolean') {
             data.allowRepublish = allowRepublish;

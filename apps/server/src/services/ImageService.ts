@@ -32,17 +32,21 @@ export class ImageService {
     private configService: ConfigService;
 
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            throw new Error('OPENAI_API_KEY env var is required');
+        }
+        this.openai = new OpenAI({ apiKey });
         this.configService = new ConfigService();
     }
 
     public async searchImages(input: string | ImageSearchInput): Promise<string[]> {
         const searchInput = typeof input === 'string' ? { title: input } : input;
-        const fallbackQueries = this.buildSearchQueries(searchInput);
+        const fallbackQueries = await this.buildSearchQueries(searchInput);
         const smart = (searchInput.smartQueries || []).map(q => q.trim()).filter(Boolean);
-        const queries = this.uniqueStrings([...smart, ...fallbackQueries]).slice(0, 8);
+        // Cap the total queries at imageQueryMaxCount + smart ones (smart take priority).
+        const queryCap = (await this.configService.getImageQueryMaxCount()) + smart.length;
+        const queries = this.uniqueStrings([...smart, ...fallbackQueries]).slice(0, queryCap);
         console.log(`[ImageService] Searching images with queries: ${queries.map(q => `"${q}"`).join(' | ')}`);
 
         let browser;
@@ -64,23 +68,44 @@ export class ImageService {
                 'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8'
             });
 
-            // Try Google Images first per query, fall back to Bing for that
-            // specific query if Google returns empty (CAPTCHA, blocked,
-            // genuinely no results). Both engines are scraped — no paid APIs.
-            const PER_QUERY_CAP = 3;
+            // For every query, hit BOTH Google AND Bing and merge the top
+            // results from each. Previously we only fell back to Bing when
+            // Google returned 0 — meaning if Google returned 3 bad results,
+            // Bing's good results were never seen. Now both engines always
+            // contribute; the AI scorer ranks them all afterwards.
+            // (Skip Google after 2 consecutive blocks per pipeline to avoid
+            // burning time on a captcha wall.)
+            const perQueryCap = await this.configService.getImagePerQueryCap();
             const images: string[] = [];
             let googleFailures = 0;
+            let googleBlocked = false;
             for (const query of queries) {
-                let results = await this.fetchGoogleResults(page, query);
-                if (results.length === 0) {
+                const tasks: Promise<string[]>[] = [];
+
+                if (!googleBlocked) {
+                    tasks.push(this.fetchGoogleResults(page, query));
+                } else {
+                    tasks.push(Promise.resolve([]));
+                }
+                // Bing is the same page object so we can't truly parallelize.
+                // We do them sequentially but always do both.
+                const googleResults = await tasks[0];
+                if (googleResults.length === 0 && !googleBlocked) {
                     googleFailures++;
-                    if (googleFailures <= 2) {
-                        // Two strikes per pipeline: if Google keeps coming up
-                        // empty we assume we're throttled and stop hammering.
-                        results = await this.fetchBingResults(page, query);
+                    if (googleFailures >= 2) {
+                        console.warn('[ImageService] Google blocked twice in a row, skipping it for the rest of the pipeline.');
+                        googleBlocked = true;
                     }
                 }
-                for (const imageUrl of results.slice(0, PER_QUERY_CAP)) {
+
+                const bingResults = await this.fetchBingResults(page, query);
+
+                // Take top N from each engine, then dedupe across them.
+                const combined = [
+                    ...googleResults.slice(0, perQueryCap),
+                    ...bingResults.slice(0, perQueryCap)
+                ];
+                for (const imageUrl of combined) {
                     if (!images.includes(imageUrl)) images.push(imageUrl);
                 }
             }
@@ -114,10 +139,10 @@ export class ImageService {
      */
     private async fetchGoogleResults(page: any, query: string): Promise<string[]> {
         const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&udm=2&safe=off&hl=es`;
+        const pageTimeout = await this.configService.getImageSearchPageTimeoutMs();
+        const selectorTimeout = await this.configService.getImageSearchSelectorTimeoutMs();
         try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-            // Detect captcha/consent walls early so we don't waste a 10s
-            // waitForSelector on a page that will never have results.
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout });
             const captcha = await page.evaluate(() => {
                 const t = (document.body.textContent || '').toLowerCase();
                 return t.includes('unusual traffic') || t.includes('captcha') || t.includes('antes de continuar a google');
@@ -127,7 +152,7 @@ export class ImageService {
                 return [];
             }
 
-            await page.waitForSelector('img', { timeout: 8000 }).catch(() => null);
+            await page.waitForSelector('img', { timeout: selectorTimeout }).catch(() => null);
             // Give the JS layout a moment to populate <img src> attributes.
             await new Promise(resolve => setTimeout(resolve, 1200));
 
@@ -159,12 +184,17 @@ export class ImageService {
             .replace(/\{\{q\}\}/g, encodeURIComponent(enrichedQuery))
             .replace(/\{\{query\}\}/g, encodeURIComponent(enrichedQuery));
 
+        const pageTimeout = await this.configService.getImageSearchPageTimeoutMs();
+        const selectorTimeout = await this.configService.getImageSearchSelectorTimeoutMs();
+        const minWidth = await this.configService.getImageMinWidth();
+        const minHeight = await this.configService.getImageMinHeight();
+
         try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-            await page.waitForSelector('a.iusc', { timeout: 8000 }).catch(() => null);
+            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout });
+            await page.waitForSelector('a.iusc', { timeout: selectorTimeout }).catch(() => null);
             console.log(`[ImageService] Bing fallback: "${enrichedQuery}"`);
 
-            return page.evaluate(() => {
+            return page.evaluate((minW: number, minH: number) => {
                 const results: string[] = [];
                 const anchors = document.querySelectorAll('a.iusc');
                 anchors.forEach((a: any) => {
@@ -176,25 +206,29 @@ export class ImageService {
                         const width = Number(parsed.w || 0);
                         const height = Number(parsed.h || 0);
                         if (!imageUrl || !imageUrl.startsWith('http')) return;
-                        if (width > 0 && width < 400) return;
-                        if (height > 0 && height < 300) return;
+                        if (width > 0 && width < minW) return;
+                        if (height > 0 && height < minH) return;
                         results.push(imageUrl);
                     } catch {
                         // ignore parse errors
                     }
                 });
                 return [...new Set(results)];
-            });
+            }, minWidth, minHeight);
         } catch (error) {
             console.error(`[ImageService] Bing scrape failed for "${enrichedQuery}":`, error);
             return [];
         }
     }
 
-    private buildSearchQueries(input: ImageSearchInput): string[] {
+    private async buildSearchQueries(input: ImageSearchInput): Promise<string[]> {
+        const contentChars = await this.configService.getImageQueryContentChars();
+        const minLength = await this.configService.getImageQueryMinLength();
+        const maxCount = await this.configService.getImageQueryMaxCount();
+
         const title = this.normalizeText(input.title);
         const rewrittenTitle = this.normalizeText(input.rewrittenTitle || '');
-        const content = this.normalizeText((input.content || '').slice(0, 900));
+        const content = this.normalizeText((input.content || '').slice(0, contentChars));
         const cleanedTitle = this.cleanTitleForSearch(title);
         const cleanedRewrittenTitle = this.cleanTitleForSearch(rewrittenTitle);
 
@@ -239,21 +273,26 @@ export class ImageService {
 
         // Lead-based query: first sentence of body, often introduces the actual
         // protagonist when the title is metaphorical or trait-driven.
-        const leadQuery = this.buildLeadQuery(content);
+        const leadQuery = await this.buildLeadQuery(content);
         if (leadQuery) {
             queries.push(leadQuery);
         }
 
         return this.uniqueStrings(queries)
-            .filter(query => query.length >= 4)
-            .slice(0, 6);
+            .filter(query => query.length >= minLength)
+            .slice(0, maxCount);
     }
 
-    private buildLeadQuery(content: string): string {
+    private async buildLeadQuery(content: string): Promise<string> {
         if (!content) return '';
 
-        const firstSentenceMatch = content.match(/^[^.!?\n]{20,300}[.!?\n]/);
-        const lead = firstSentenceMatch ? firstSentenceMatch[0] : content.substring(0, 220);
+        const minChars = await this.configService.getImageLeadMinChars();
+        const maxChars = await this.configService.getImageLeadMaxChars();
+        const maxWords = await this.configService.getImageLeadMaxWords();
+
+        const leadRegex = new RegExp(`^[^.!?\\n]{${minChars},${maxChars}}[.!?\\n]`);
+        const firstSentenceMatch = content.match(leadRegex);
+        const lead = firstSentenceMatch ? firstSentenceMatch[0] : content.substring(0, maxChars);
 
         const cleaned = lead
             .replace(/[^\w\sÁÉÍÓÚÜÑáéíóúüñ-]/g, ' ')
@@ -274,7 +313,7 @@ export class ImageService {
             .split(' ')
             .filter(w => w.length > 2 && !stopwords.has(w.toLowerCase()));
 
-        return words.slice(0, 8).join(' ');
+        return words.slice(0, maxWords).join(' ');
     }
 
     private cleanTitleForSearch(title: string): string {
@@ -389,8 +428,9 @@ export class ImageService {
 
     public async generateImage(prompt: string): Promise<string | null> {
         try {
+            const model = await this.configService.getImageGenerationModel();
             const response = await this.openai.images.generate({
-                model: "gpt-image-2",
+                model,
                 prompt: `Editorial news photograph for article: "${prompt}". Photorealistic, high quality, no text overlays, no watermarks, no logos.`,
                 n: 1,
                 size: "1024x1024",

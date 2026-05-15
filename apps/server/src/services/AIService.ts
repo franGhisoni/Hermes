@@ -1,20 +1,26 @@
 import OpenAI from 'openai';
 import { PromptService } from './PromptService';
+import { ConfigService } from './ConfigService';
 
 export class AIService {
     private openai: OpenAI;
     private promptService: PromptService;
+    private configService: ConfigService;
 
     constructor() {
-        this.openai = new OpenAI({
-            apiKey: process.env.OPENAI_API_KEY,
-        });
+        const apiKey = process.env.OPENAI_API_KEY;
+        if (!apiKey) {
+            throw new Error('OPENAI_API_KEY env var is required');
+        }
+        this.openai = new OpenAI({ apiKey });
         this.promptService = new PromptService();
+        this.configService = new ConfigService();
     }
 
     async generateEmbedding(text: string): Promise<number[]> {
+        const model = await this.configService.getEmbeddingModel();
         const response = await this.openai.embeddings.create({
-            model: "text-embedding-3-small",
+            model,
             input: text,
             encoding_format: "float",
         });
@@ -31,18 +37,22 @@ export class AIService {
         Return the response in JSON format: { "title": "New Title", "content": "New Content" }
         `;
 
+        const contentChars = await this.configService.getRewriteContentChars();
+        const model = await this.configService.getRewriteModel();
+        const maxTokens = await this.configService.getRewriteMaxTokens();
+
         const prompt = promptTemplate
             .replace('{{style}}', style)
             .replace('{{title}}', title)
-            .replace('{{content}}', content.substring(0, 3000));
+            .replace('{{content}}', content.substring(0, contentChars));
 
         let completion;
         try {
             completion = await this.openai.chat.completions.create({
                 messages: [{ role: "user", content: prompt }],
-                model: "gpt-4o-mini",
+                model,
                 response_format: { type: "json_object" },
-                max_tokens: 1500,
+                max_tokens: maxTokens,
             });
         } catch (error) {
             console.error('[AIService] API error during rewriteContent:', error);
@@ -81,16 +91,20 @@ export class AIService {
         Return ONLY the number.
         `;
 
+        const contentChars = await this.configService.getInterestContentChars();
+        const model = await this.configService.getInterestModel();
+        const maxTokens = await this.configService.getInterestMaxTokens();
+
         const prompt = promptTemplate
             .replace('{{title}}', title)
-            .replace('{{content}}', content.substring(0, 500));
+            .replace('{{content}}', content.substring(0, contentChars));
 
         let completion;
         try {
             completion = await this.openai.chat.completions.create({
                 messages: [{ role: "user", content: prompt }],
-                model: "gpt-4o-mini",
-                max_tokens: 3,
+                model,
+                max_tokens: maxTokens,
             });
         } catch (error) {
             console.error('[AIService] API error during calculateInterestScore:', error);
@@ -134,8 +148,12 @@ RULES:
 Return strictly a JSON object with this shape:
 { "protagonist": string, "queries": [string, string, ...] }`;
 
+            const contentChars = await this.configService.getImageQueryGenContentChars();
+            const model = await this.configService.getImageQueryModel();
+            const maxTokens = await this.configService.getImageQueryMaxTokens();
+
             const userContent: any[] = [
-                { type: "text", text: `Título: ${input.title}\n\nExtracto:\n${(input.content || '').substring(0, 1500)}\n${input.rewrittenTitle ? `\nTítulo reescrito: ${input.rewrittenTitle}` : ''}` }
+                { type: "text", text: `Título: ${input.title}\n\nExtracto:\n${(input.content || '').substring(0, contentChars)}\n${input.rewrittenTitle ? `\nTítulo reescrito: ${input.rewrittenTitle}` : ''}` }
             ];
 
             if (input.originalImageUrl) {
@@ -146,9 +164,9 @@ Return strictly a JSON object with this shape:
             }
 
             const completion = await this.openai.chat.completions.create({
-                model: "gpt-4o",
+                model,
                 response_format: { type: "json_object" },
-                max_tokens: 500,
+                max_tokens: maxTokens,
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userContent }
@@ -186,8 +204,8 @@ Return strictly a JSON object with this shape:
             let promptTemplate = config?.template || `You are a photo editor for a digital news agency, picking the lead image for a REPUBLICATION of someone else's article.
 
 You will receive:
-1. The article TITLE and a CONTENT EXCERPT — use these to identify the PROTAGONIST or SUBJECT of the story (a specific person, organization, location, event, or object).
-2. A REFERENCE IMAGE pulled from the original publication (when available). This is the image the source already used. We CANNOT republish with the same photo — we need a DIFFERENT photo of the same subject. Treat the reference as ground-truth for what the protagonist looks like, NOT as a candidate or a target to match exactly.
+1. The article TITLE and a CONTENT EXCERPT — these are your PRIMARY source of truth for who/what the story is about. Identify the protagonist from these BEFORE looking at any image.
+2. A REFERENCE IMAGE pulled from the original publication (when available). This image is OFTEN UNRELIABLE — it might be a TV broadcast screenshot, a montage, a banner, a low-quality grab, or a generic illustration that doesn't actually show the protagonist named in the article. Use it ONLY to recognize faces or places if it's clean. Do NOT prefer candidates that match its visual STYLE (TV chyrons, banners, news graphics) — those are usually the LEAST publishable. A clean photo-shoot image of the named protagonist is ALWAYS better than another version of the reference.
 3. A list of CANDIDATE IMAGES indexed 0..N.
 
 YOUR JOB:
@@ -232,11 +250,16 @@ Return a JSON object:
             // its user-agent or block hot-linking) the API returns 400 and
             // the WHOLE batch goes to waste. We parse the failing URL out of
             // the error message, drop it, and retry with the rest.
-            const candidatePool = imageUrls.slice(0, 30);
+            const poolSize = await this.configService.getImagePoolSize();
+            const scoringModel = await this.configService.getImageScoringModel();
+            const scoringMaxTokens = await this.configService.getImageScoringMaxTokens();
+            const scoringContentChars = await this.configService.getImageScoringContentChars();
+            const MAX_RETRIES = await this.configService.getImageScoringMaxRetries();
+
+            const candidatePool = imageUrls.slice(0, poolSize);
             let attemptUrls = [...candidatePool];
             const droppedUrls = new Set<string>();
             let rawResult: any = null;
-            const MAX_RETRIES = 6;
 
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                 if (attemptUrls.length === 0) {
@@ -245,9 +268,9 @@ Return a JSON object:
                 }
 
                 const referenceBlock: any[] = originalImageUrl ? [
-                    { type: "text", text: `--- REFERENCE IMAGE (ground truth for protagonist; NOT a candidate, do not select or score it) ---` },
+                    { type: "text", text: `--- REFERENCE IMAGE (the photo the original source used; may be a TV grab, banner, montage, or unrelated illustration — TREAT WITH SUSPICION. NOT a candidate. Use ONLY to recognize faces/places, not visual style.) ---` },
                     { type: "image_url", image_url: { url: originalImageUrl, detail: "high" } },
-                    { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${attemptUrls.length} candidates. Identify the protagonist first, then score each one against the protagonist and the reference.` }
+                    { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${attemptUrls.length} candidates. Identify the protagonist from the TITLE AND EXCERPT first; only use the reference image as a secondary cue and ignore it entirely if it looks like a TV screenshot, banner or montage.` }
                 ] : [
                     { type: "text", text: `No reference image available. Identify the protagonist from the title and excerpt, then score the following ${attemptUrls.length} candidates against it.` }
                 ];
@@ -257,7 +280,7 @@ Return a JSON object:
                     {
                         role: "user",
                         content: [
-                            { type: "text", text: `Article Title: ${title}\n\nContent Excerpt:\n${content.substring(0, 1200)}\n` },
+                            { type: "text", text: `Article Title: ${title}\n\nContent Excerpt:\n${content.substring(0, scoringContentChars)}\n` },
                             ...referenceBlock,
                             ...attemptUrls.flatMap((url, i) => ([
                                 { type: "text", text: `--- Candidate Index: ${i} ---` },
@@ -269,13 +292,10 @@ Return a JSON object:
 
                 try {
                     const completion = await this.openai.chat.completions.create({
-                        model: "gpt-4o",
+                        model: scoringModel,
                         messages: messages,
                         response_format: { type: "json_object" },
-                        // Up to 30 reasonings + scores + protagonist. ~30 reasonings *
-                        // ~25 tokens each = 750, plus the scores array and protagonist
-                        // line, comfortably within 2000.
-                        max_tokens: 2000
+                        max_tokens: scoringMaxTokens
                     });
                     rawResult = JSON.parse(completion.choices[0].message.content || '{}');
                     break;

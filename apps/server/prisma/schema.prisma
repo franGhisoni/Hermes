@@ -54,7 +54,10 @@ model Workflow {
   targetCategory  String?  // Custom category name for the destination (e.g. WordPress)
   cron            String
   isActive        Boolean  @default(true)
-  maxArticles     Int      @default(3) // Maximum articles to publish per cycle
+  // Per-workflow window (hours) for pulling eligible PENDING articles. If
+  // null, the scheduler falls back to the system-wide default
+  // (`workflow_default_window_hours` in SystemSetting, default 24).
+  articleWindowHours Int?
   // When true and the article pool is smaller than the number of targets, the
   // workflow refills the missing destinations by reusing articles with a fresh
   // AI rewrite and a fresh image search so each target still receives unique

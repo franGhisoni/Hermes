@@ -1,17 +1,20 @@
 import { PrismaClient, Article } from '@prisma/client';
+import { ConfigService } from './ConfigService';
 
 const prisma = new PrismaClient();
+const configService = new ConfigService();
 
 export class ArticleService {
 
-    async findSimilarArticle(embedding: number[], threshold = 0.15): Promise<Article | null> {
+    async findSimilarArticle(embedding: number[], threshold?: number): Promise<Article | null> {
         // pgvector uses <=> for cosine distance (lower is closer)
         // We need to query raw SQL because Prisma doesn't fully support vector ops in the typed API yet
+        const effectiveThreshold = threshold ?? await configService.getDedupThreshold();
         const vectorString = `[${embedding.join(',')}]`;
 
         const result = await prisma.$queryRaw`
       SELECT id, "originalTitle", "imageCandidates" FROM "Article"
-      WHERE 1 - (embedding <=> ${vectorString}::vector) > ${1 - threshold}
+      WHERE 1 - (embedding <=> ${vectorString}::vector) > ${1 - effectiveThreshold}
       ORDER BY embedding <=> ${vectorString}::vector
       LIMIT 1;
     `;

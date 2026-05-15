@@ -1,7 +1,42 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(npx prisma *)",
+      "Bash(docker compose *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(cd /c/Users/ghiso/Desktop/code/Hermes/apps/client && cat package.json | grep -E \"lucide|react-router\")",
+      "Bash(cd /c/Users/ghiso/Desktop/code/Hermes/apps/server && ls node_modules/.prisma/client 2>/dev/null | head -5)",
+      "WebFetch(domain:www.ambito.com)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.ambito.com/politica/manuel-adorni-y-luis-caputo-se-muestran-mendoza-junto-alfredo-cornejo-n6277507\")",
+      "Bash(grep -oE '<div class=\"article-body[^\"]*\"[^>]*>[^<]{0,200}')",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.ambito.com/politica/manuel-adorni-y-luis-caputo-se-muestran-mendoza-junto-alfredo-cornejo-n6277507\" -o /tmp/ambito.html)",
+      "Read(//tmp/**)",
+      "WebFetch(domain:www.cronista.com)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.cronista.com/economia-politica/\" -o /tmp/cronista.html)",
+      "Bash(tasklist)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.cronista.com/economia-politica/auh-y-suaf-anses-el-gobierno-modifico-los-requisitos-y-dara-de-baja-a-estos-beneficiarios-en-junio/\" -o /tmp/cronista-art.html)",
+      "Bash(grep -oE 'class=\"article-body__paragraph\"[^>]*>.{0,100}' /tmp/cronista-art.html)",
+      "Bash(curl -sIL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.cronista.com/login/\")",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.cronista.com/\" -o /tmp/cronista-home.html)",
+      "WebFetch(domain:www.cobranzas.com)",
+      "Bash(curl -sL -A \"Mozilla/5.0 \\(Windows NT 10.0; Win64; x64\\) AppleWebKit/537.36\" \"https://www.cobranzas.com/v2/login.asp?client_code=ECR\" -o /tmp/cobranzas.html)",
+      "Bash(grep -oE 'ingresar|iniciar.{0,3}sesi|account|suscrip|tinkle|piano' /tmp/cronista-home.html)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__switch_browser",
+      "mcp__Claude_in_Chrome__list_connected_browsers",
+      "mcp__Claude_in_Chrome__select_browser",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "mcp__Claude_in_Chrome__tabs_close_mcp",
+      "PowerShell(npx tsc --noEmit 2>&1)",
+      "Bash(grep -r \"const.*=\\\\s*[0-9]\\\\{1,4\\\\}\\\\|const.*=\\\\s*['\\\\\"]http\\\\|model:\\\\s*['\\\\\"]gpt-\\\\|model:\\\\s*['\\\\\"]dall-e\\\\|max_tokens:\\\\s*[0-9]\" apps/server/src --include=\"*.ts\")",
+      "Bash(grep -E \"\\(substring|slice\\)\\\\\\(.*[0-9]{2,}\")",
+      "Bash(grep -v \"console\\\\|^\\\\s*//\")",
+      "Bash(xargs ls)",
+      "Bash(echo \"exit=$?\")"
     ]
   }
 }

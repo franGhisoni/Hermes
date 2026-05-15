@@ -52,7 +52,8 @@ export class ProcessorService {
         }
 
         // 1. Generate Embedding
-        const textToEmbed = `${article.title}\n\n${article.content.substring(0, 1000)}`;
+        const embeddingChars = await this.configService.getEmbeddingTextChars();
+        const textToEmbed = `${article.title}\n\n${article.content.substring(0, embeddingChars)}`;
         const embedding = await this.aiService.generateEmbedding(textToEmbed);
 
         // 2. Semantic Deduplication

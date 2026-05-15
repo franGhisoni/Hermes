@@ -107,6 +107,13 @@ export class ConfigService {
         return this.getIntSetting('image_fetch_timeout_ms', 10000);
     }
 
+    async getImageEngineFailureThreshold(): Promise<number> {
+        // After this many consecutive empty/blocked responses from the primary
+        // image engine (Google), stop hitting it for the rest of the pipeline
+        // and rely on Bing alone. Lower = give up sooner, higher = retry more.
+        return this.getIntSetting('image_engine_failure_threshold', 2);
+    }
+
     // ---- AI models ----
 
     async getEmbeddingModel(): Promise<string> {

@@ -63,6 +63,7 @@ interface ExtendedSettings {
     imageSearchPageTimeoutMs: number;
     imageSearchSelectorTimeoutMs: number;
     imageFetchTimeoutMs: number;
+    imageEngineFailureThreshold: number;
     modelEmbedding: string;
     modelRewrite: string;
     modelInterest: string;
@@ -154,8 +155,8 @@ export default function Settings() {
                     imageLeadMaxChars: d.imageLeadMaxChars,
                     imageLeadMaxWords: d.imageLeadMaxWords,
                     imageSearchPageTimeoutMs: d.imageSearchPageTimeoutMs,
-                    imageSearchSelectorTimeoutMs: d.imageSearchSelectorTimeoutMs,
-                    imageFetchTimeoutMs: d.imageFetchTimeoutMs,
+                    imageSearchSelectorTimeoutMs: d.imageSearchSelectorTimeoutMs,                    imageFetchTimeoutMs: d.imageFetchTimeoutMs,
+                    imageEngineFailureThreshold: d.imageEngineFailureThreshold,
                     modelEmbedding: d.modelEmbedding,
                     modelRewrite: d.modelRewrite,
                     modelInterest: d.modelInterest,
@@ -899,6 +900,9 @@ function ImagenesTab(props: ImagenesTabProps) {
                     <NumericCard title="Timeout de descarga" description="Para attachear imágenes externas al mail."
                         value={extended.imageFetchTimeoutMs} unit="ms" min={100}
                         onCommit={(v) => updateExtended('imageFetchTimeoutMs', v)} />
+                    <NumericCard title="Umbral de fallos del engine primario" description="Cuántas queries seguidas pueden fallar en Google antes de desactivarlo para el resto del pipeline."
+                        value={extended.imageEngineFailureThreshold} unit="queries" min={1} max={20}
+                        onCommit={(v) => updateExtended('imageEngineFailureThreshold', v)} />
                 </div>
             </div>
 

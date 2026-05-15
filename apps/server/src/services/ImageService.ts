@@ -70,30 +70,24 @@ export class ImageService {
 
             // For every query, hit BOTH Google AND Bing and merge the top
             // results from each. Previously we only fell back to Bing when
-            // Google returned 0 — meaning if Google returned 3 bad results,
-            // Bing's good results were never seen. Now both engines always
-            // contribute; the AI scorer ranks them all afterwards.
-            // (Skip Google after 2 consecutive blocks per pipeline to avoid
-            // burning time on a captcha wall.)
+            // Google returned 0 — meaning if Google returned bad results,
+            // Bing's good ones were never seen. Now both engines always
+            // contribute; the AI scorer ranks them all afterwards. If
+            // Google gets blocked enough times in a row (configurable via
+            // image_engine_failure_threshold), we skip it for the rest of
+            // this pipeline and rely on Bing.
             const perQueryCap = await this.configService.getImagePerQueryCap();
+            const failureThreshold = await this.configService.getImageEngineFailureThreshold();
             const images: string[] = [];
             let googleFailures = 0;
             let googleBlocked = false;
             for (const query of queries) {
-                const tasks: Promise<string[]>[] = [];
+                const googleResults = googleBlocked ? [] : await this.fetchGoogleResults(page, query);
 
-                if (!googleBlocked) {
-                    tasks.push(this.fetchGoogleResults(page, query));
-                } else {
-                    tasks.push(Promise.resolve([]));
-                }
-                // Bing is the same page object so we can't truly parallelize.
-                // We do them sequentially but always do both.
-                const googleResults = await tasks[0];
-                if (googleResults.length === 0 && !googleBlocked) {
+                if (!googleBlocked && googleResults.length === 0) {
                     googleFailures++;
-                    if (googleFailures >= 2) {
-                        console.warn('[ImageService] Google blocked twice in a row, skipping it for the rest of the pipeline.');
+                    if (googleFailures >= failureThreshold) {
+                        console.warn(`[ImageService] Google blocked ${googleFailures} times in a row, skipping it for the rest of the pipeline.`);
                         googleBlocked = true;
                     }
                 }

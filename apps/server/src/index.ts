@@ -149,37 +149,74 @@ app.use('/api/config', requireAdmin);
 import { ConfigService } from './services/ConfigService';
 const configService = new ConfigService();
 
-// POST /api/scrape - Manual Trigger (scrapes ALL configured sections for a source)
+// POST /api/scrape - Manual Trigger
+// Body: { source, limit?, sectionId? }
+// - With `sectionId`: queues a single job for that section (override applied).
+// - Without `sectionId`: queues one job per enabled section, applying any
+//   per-source overrides (path / scrapeLimit / enabled flag).
 app.post('/api/scrape', async (req, res) => {
-    const { source, limit } = req.body;
+    const { source, limit, sectionId } = req.body;
     if (!source) {
         return res.status(400).json({ error: 'Missing source' });
     }
 
     try {
-        // Use provided limit, or fetch from DB, or default to 3
         let effectiveLimit = limit;
         if (!effectiveLimit) {
             effectiveLimit = await configService.getScrapeLimit();
         }
 
-        // Fetch all configured global sections
-        const sections = await prisma.section.findMany();
+        // Single-section path
+        if (sectionId) {
+            const section = await prisma.section.findUnique({
+                where: { id: sectionId },
+                include: { overrides: { where: { source } } }
+            });
+            if (!section) return res.status(404).json({ error: 'Section not found' });
+
+            const override = section.overrides[0];
+            if (override && override.enabled === false) {
+                return res.status(400).json({ error: 'Section is disabled for this source' });
+            }
+            const resolvedPath = override?.path ?? section.path;
+            const resolvedLimit = override?.scrapeLimit ?? section.scrapeLimit ?? effectiveLimit;
+            await queueService.addScrapeJob(source, resolvedPath, resolvedLimit);
+
+            return res.json({
+                message: `Scrape job started for ${section.name}`,
+                source,
+                section: section.name,
+                jobs: 1,
+                defaultLimit: effectiveLimit
+            });
+        }
+
+        // All-sections path — apply per-source overrides
+        const sections = await prisma.section.findMany({
+            include: { overrides: { where: { source } } }
+        });
 
         if (sections.length === 0) {
-            // Fallback: scrape just the base URL if no sections configured
             await queueService.addScrapeJob(source, undefined, effectiveLimit);
             return res.json({ message: 'Scrape job started (no sections configured)', source, jobs: 1 });
         }
 
-        // Queue a scrape job for each section, honoring its per-section limit
-        // override when set; fall back to the workflow-wide effectiveLimit.
+        let queued = 0;
         for (const section of sections) {
-            const sectionLimit = section.scrapeLimit ?? effectiveLimit;
-            await queueService.addScrapeJob(source, section.path, sectionLimit);
+            const override = section.overrides[0];
+            if (override && override.enabled === false) continue;
+            const resolvedPath = override?.path ?? section.path;
+            const resolvedLimit = override?.scrapeLimit ?? section.scrapeLimit ?? effectiveLimit;
+            await queueService.addScrapeJob(source, resolvedPath, resolvedLimit);
+            queued++;
         }
 
-        res.json({ message: `Scrape jobs started for ${sections.length} sections`, source, jobs: sections.length, defaultLimit: effectiveLimit });
+        res.json({
+            message: `Scrape jobs started for ${queued} sections`,
+            source,
+            jobs: queued,
+            defaultLimit: effectiveLimit
+        });
     } catch (error) {
         console.error('Error starting scrape:', error);
         res.status(500).json({ error: 'Failed to start job' });

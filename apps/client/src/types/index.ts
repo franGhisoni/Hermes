@@ -1,3 +1,10 @@
+export interface AiDecisionsTrace {
+    imageProtagonist?: string | null;
+    smartQueries?: string[];
+    imageScoring?: Array<{ url: string; score: number; reason: string }>;
+    fallbackUsed?: 'dalle' | 'original' | null;
+}
+
 export interface Article {
     id: string;
     originalTitle: string;
@@ -7,6 +14,7 @@ export interface Article {
     featureImageUrl?: string;
     imageCandidates?: string[];
     imageScores?: Record<string, number>;
+    aiDecisions?: AiDecisionsTrace | null;
     rewrittenTitle?: string;
     rewrittenContent?: string;
     interestScore?: number;

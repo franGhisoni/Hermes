@@ -167,14 +167,19 @@ export class SchedulerService {
                 // Resolve the global scrape limit once per tick, then let each
                 // section override it via its own scrapeLimit field.
                 const defaultLimit = await this.configService.getScrapeLimit();
-                const sections = await prisma.section.findMany();
+                const sections = await prisma.section.findMany({
+                    include: { overrides: { where: { source: schedule.source } } }
+                });
 
                 if (sections.length === 0) {
                     await this.queueService.addScrapeJob(schedule.source, undefined, defaultLimit);
                 } else {
                     for (const section of sections) {
-                        const limit = section.scrapeLimit ?? defaultLimit;
-                        await this.queueService.addScrapeJob(schedule.source, section.path, limit);
+                        const override = section.overrides[0];
+                        if (override && override.enabled === false) continue;
+                        const path = override?.path ?? section.path;
+                        const limit = override?.scrapeLimit ?? section.scrapeLimit ?? defaultLimit;
+                        await this.queueService.addScrapeJob(schedule.source, path, limit);
                     }
                 }
             } catch (error) {

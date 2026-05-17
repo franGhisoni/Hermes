@@ -116,10 +116,30 @@ model Section {
   // scrape_limit setting applies. Useful when some sections (politics) need
   // more articles per cycle than others (sports).
   scrapeLimit Int?
+  // Per-source overrides: let a single global section diverge for a given
+  // medium (different path, different limit, or disable it entirely).
+  overrides   SectionOverride[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@unique([name, path])
+}
+
+// Per-source customization for a global Section. The Section row is the
+// default; an override row tweaks it for the named source. When a field is
+// null on the override, the Section's value is used.
+model SectionOverride {
+  id          String   @id @default(uuid())
+  sectionId   String
+  section     Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  source      String   // "Clarin", "LaNacion", etc.
+  path        String?  // null = inherit section.path
+  scrapeLimit Int?     // null = inherit section.scrapeLimit / global
+  enabled     Boolean  @default(true) // false = skip this section for this source
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([sectionId, source])
 }
 
 enum UserRole {
@@ -151,6 +171,10 @@ model Article {
   featureImageUrl  String?  // The final image used for publication (Original, Found, or Generated)
   imageCandidates  String[] // Array of candidate image URLs (from search or generation)
   imageScores      Json?    // Map of { "url": score }
+  // Trace of every AI decision made during processing, shown only to admins
+  // in the editor for debugging the scoring/protagonist identification.
+  // Shape: { imageProtagonist, smartQueries[], imageScoring: [{url, score, reason}], fallbackUsed }
+  aiDecisions      Json?
   
   status          ArticleStatus @default(PENDING)
   

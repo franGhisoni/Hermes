@@ -127,7 +127,7 @@ export class AIService {
         content: string;
         rewrittenTitle?: string;
         originalImageUrl?: string;
-    }): Promise<string[]> {
+    }): Promise<{ queries: string[]; protagonist: string | null }> {
         try {
             const systemPrompt = `You generate image search queries for a Spanish-language news editor in Argentina.
 
@@ -188,15 +188,15 @@ Return strictly a JSON object with this shape:
             } else {
                 console.log(`[AIService] No smart queries returned, falling back to regex extraction.`);
             }
-            return cleaned;
+            return { queries: cleaned, protagonist: result.protagonist || null };
         } catch (error) {
             console.error('[AIService] Smart query generation failed, falling back:', error);
-            return [];
+            return { queries: [], protagonist: null };
         }
     }
 
-    async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[] }> {
-        if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [] };
+    async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[], reasonings: string[], protagonist: string | null }> {
+        if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [], reasonings: [], protagonist: null };
         // Single candidate still goes through AI — don't auto-approve without evaluation
 
         try {
@@ -363,18 +363,20 @@ Return a JSON object:
                 }
             });
 
+            const protagonist: string | null = result?.protagonist || null;
+
             // Reject if no image scored at or above the configured minimum
             if (bestIndex === -1 || bestScore < minScore) {
                 console.log(`[AIService] ❌ No suitable candidate (best score: ${bestScore}, min required: ${minScore}).`);
-                return { url: null, scores };
+                return { url: null, scores, reasonings, protagonist };
             }
 
             console.log(`[AIService] ✅ Best candidate: index ${bestIndex}, score ${bestScore}/10`);
-            return { url: imageUrls[bestIndex], scores };
+            return { url: imageUrls[bestIndex], scores, reasonings, protagonist };
 
         } catch (error) {
             console.error('[AIService] Image selection failed:', error);
-            return { url: null, scores: imageUrls.map(() => 0) }; // Let caller handle fallback
+            return { url: null, scores: imageUrls.map(() => 0), reasonings: [], protagonist: null };
         }
     }
 }

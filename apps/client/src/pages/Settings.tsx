@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
+import { SectionOverridesModal } from '../components/SectionOverridesModal';
 
 interface PromptConfig {
     id: string;
@@ -13,11 +14,21 @@ interface PromptConfig {
     template: string;
 }
 
+interface SectionOverride {
+    id: string;
+    sectionId: string;
+    source: string;
+    path: string | null;
+    scrapeLimit: number | null;
+    enabled: boolean;
+}
+
 interface Section {
     id: string;
     name: string;
     path: string;
     scrapeLimit: number | null;
+    overrides?: SectionOverride[];
 }
 
 interface ScrapeSchedule {
@@ -27,7 +38,7 @@ interface ScrapeSchedule {
     isActive: boolean;
 }
 
-const AVAILABLE_SOURCES = ['Clarin', 'LaNacion', 'Infobae', 'TN', 'NA'];
+const AVAILABLE_SOURCES = ['Clarin', 'LaNacion', 'Infobae', 'TN', 'NA', 'Ambito', 'Cronista'];
 
 const CRON_PRESETS = [
     { label: 'Cada 1 hora', value: '0 */1 * * *' },
@@ -95,6 +106,7 @@ export default function Settings() {
     const [newSecName, setNewSecName] = useState('');
     const [newSecPath, setNewSecPath] = useState('');
     const [newSecLimit, setNewSecLimit] = useState('');
+    const [overrideSectionId, setOverrideSectionId] = useState<string | null>(null);
 
     // Schedule Form State
     const [newSchedSource, setNewSchedSource] = useState(AVAILABLE_SOURCES[0]);
@@ -351,8 +363,23 @@ export default function Settings() {
                             handleCreateSchedule={handleCreateSchedule}
                             handleToggleSchedule={handleToggleSchedule}
                             handleDeleteSchedule={handleDeleteSchedule}
+                            onConfigureOverrides={(id) => setOverrideSectionId(id)}
                         />
                     )}
+
+                    {overrideSectionId && (() => {
+                        const target = sections.find(s => s.id === overrideSectionId);
+                        if (!target) return null;
+                        return (
+                            <SectionOverridesModal
+                                section={target}
+                                sources={AVAILABLE_SOURCES}
+                                globalLimit={scrapeLimit}
+                                onClose={() => setOverrideSectionId(null)}
+                                onSaved={fetchData}
+                            />
+                        );
+                    })()}
 
                     {activeTab === 'imagenes' && extended && (
                         <ImagenesTab
@@ -443,6 +470,7 @@ interface FuentesTabProps {
     handleCreateSchedule: (e: React.FormEvent) => Promise<void>;
     handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
     handleDeleteSchedule: (id: string) => Promise<void>;
+    onConfigureOverrides: (sectionId: string) => void;
 }
 
 function FuentesTab(props: FuentesTabProps) {
@@ -451,7 +479,8 @@ function FuentesTab(props: FuentesTabProps) {
         newSecName, setNewSecName, newSecPath, setNewSecPath, newSecLimit, setNewSecLimit,
         newSchedSource, setNewSchedSource, newSchedCron, setNewSchedCron,
         handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
-        handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule
+        handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule,
+        onConfigureOverrides
     } = props;
 
     return (
@@ -506,41 +535,57 @@ function FuentesTab(props: FuentesTabProps) {
                         Secciones configuradas <span className="opacity-50">({sections.length})</span>
                     </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {sections.map(sec => (
-                            <div key={sec.id} className="group flex justify-between items-start gap-2 border border-editorial-text/10 px-3 py-2 hover:bg-editorial-text/[0.02] transition-colors">
-                                <div className="flex flex-col flex-1 min-w-0">
-                                    <span className="font-sans font-bold text-sm truncate">{sec.name}</span>
-                                    <span className="font-sans text-[10px] text-editorial-text/60 font-mono bg-black/5 px-1.5 py-0.5 mt-1 rounded w-fit max-w-full truncate">{sec.path}</span>
-                                    <div className="flex items-center gap-1.5 mt-2">
-                                        <label className="text-[9px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max="100"
-                                            defaultValue={sec.scrapeLimit ?? ''}
-                                            placeholder={String(scrapeLimit)}
-                                            onBlur={e => {
-                                                const raw = e.target.value;
-                                                const current = sec.scrapeLimit;
-                                                const next = raw.trim() === '' ? null : parseInt(raw, 10);
-                                                if (next !== current) handleUpdateSectionLimit(sec.id, raw);
-                                            }}
-                                            className="w-12 border border-editorial-text/20 px-1.5 py-0.5 text-[11px] font-mono focus:outline-none focus:border-editorial-text bg-white"
-                                            title="Vacío = global"
-                                        />
-                                        {sec.scrapeLimit == null && (
-                                            <span className="text-[9px] font-sans italic opacity-50">(global)</span>
-                                        )}
+                        {sections.map(sec => {
+                            const overrideCount = sec.overrides?.length ?? 0;
+                            return (
+                                <div key={sec.id} className="group flex justify-between items-start gap-2 border border-editorial-text/10 px-3 py-2 hover:bg-editorial-text/[0.02] transition-colors">
+                                    <div className="flex flex-col flex-1 min-w-0">
+                                        <span className="font-sans font-bold text-sm truncate">{sec.name}</span>
+                                        <span className="font-sans text-[10px] text-editorial-text/60 font-mono bg-black/5 px-1.5 py-0.5 mt-1 rounded w-fit max-w-full truncate">{sec.path}</span>
+                                        <div className="flex items-center gap-1.5 mt-2">
+                                            <label className="text-[9px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                max="100"
+                                                defaultValue={sec.scrapeLimit ?? ''}
+                                                placeholder={String(scrapeLimit)}
+                                                onBlur={e => {
+                                                    const raw = e.target.value;
+                                                    const current = sec.scrapeLimit;
+                                                    const next = raw.trim() === '' ? null : parseInt(raw, 10);
+                                                    if (next !== current) handleUpdateSectionLimit(sec.id, raw);
+                                                }}
+                                                className="w-12 border border-editorial-text/20 px-1.5 py-0.5 text-[11px] font-mono focus:outline-none focus:border-editorial-text bg-white"
+                                                title="Vacío = global"
+                                            />
+                                            {sec.scrapeLimit == null && (
+                                                <span className="text-[9px] font-sans italic opacity-50">(global)</span>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={() => onConfigureOverrides(sec.id)}
+                                            className="mt-2 self-start flex items-center gap-1 text-[10px] font-sans uppercase tracking-widest text-editorial-text/60 hover:text-editorial-text transition-colors"
+                                            title="Configurar por medio (ruta, límite, activar/desactivar)"
+                                        >
+                                            <SettingsIcon size={11} />
+                                            <span>Por medio</span>
+                                            {overrideCount > 0 && (
+                                                <span className="bg-editorial-text text-editorial-bg px-1.5 py-0.5 rounded-full text-[9px] font-bold leading-none">
+                                                    {overrideCount}
+                                                </span>
+                                            )}
+                                        </button>
                                     </div>
+                                    <button
+                                        onClick={() => handleDeleteSection(sec.id)}
+                                        className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all mt-1"
+                                    >
+                                        <Trash2 size={14} />
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => handleDeleteSection(sec.id)}
-                                    className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all mt-1"
-                                >
-                                    <Trash2 size={14} />
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                         {sections.length === 0 && (
                             <div className="text-xs opacity-50 italic col-span-2 py-4 text-center border border-dashed border-editorial-text/20">
                                 Sin secciones configuradas.

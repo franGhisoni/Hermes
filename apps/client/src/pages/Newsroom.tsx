@@ -532,6 +532,10 @@ export default function Newsroom() {
                                             </button>
                                         </div>
                                     </div>
+
+                                    {user?.role === 'ADMIN' && article.aiDecisions && (
+                                        <AdminAiTracePanel trace={article.aiDecisions} />
+                                    )}
                                 </div>
                             );
                         })()}
@@ -560,6 +564,89 @@ export default function Newsroom() {
 
         </div>
 
+    );
+}
+
+// ---------- AdminAiTracePanel ----------
+// Collapsed by default. Shows the full thread of what gpt-4o decided per
+// candidate, plus the protagonist it identified and the search queries it
+// generated. Visible only to admins (the gate is in the parent).
+function AdminAiTracePanel({ trace }: { trace: NonNullable<Article['aiDecisions']> }) {
+    const [open, setOpen] = useState(false);
+    const scoring = trace.imageScoring || [];
+    const sorted = [...scoring].sort((a, b) => b.score - a.score);
+
+    const fallbackBadge = trace.fallbackUsed === 'dalle'
+        ? <span className="text-[9px] font-sans font-bold uppercase tracking-widest px-2 py-0.5 bg-purple-50 text-purple-800 border border-purple-200 rounded">Fallback DALL-E</span>
+        : trace.fallbackUsed === 'original'
+            ? <span className="text-[9px] font-sans font-bold uppercase tracking-widest px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded">Fallback original</span>
+            : null;
+
+    return (
+        <div className="mt-4 border border-purple-300/40 bg-purple-50/30">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="w-full px-3 py-2 flex items-center gap-2 text-left hover:bg-purple-100/30 transition-colors"
+            >
+                <span className="text-[10px] font-sans font-bold uppercase tracking-widest text-purple-900">
+                    Traza de IA <span className="opacity-50 normal-case">(solo admins)</span>
+                </span>
+                {fallbackBadge}
+                <span className="ml-auto text-[10px] font-sans text-purple-900/60">
+                    {open ? '▾' : '▸'}
+                </span>
+            </button>
+
+            {open && (
+                <div className="px-3 pb-3 pt-1 flex flex-col gap-3 text-xs font-sans">
+                    {trace.imageProtagonist && (
+                        <div>
+                            <div className="text-[9px] font-bold uppercase tracking-widest opacity-50">Protagonista identificado</div>
+                            <div className="mt-0.5 leading-snug">{trace.imageProtagonist}</div>
+                        </div>
+                    )}
+
+                    {trace.smartQueries && trace.smartQueries.length > 0 && (
+                        <div>
+                            <div className="text-[9px] font-bold uppercase tracking-widest opacity-50">Queries generadas por IA</div>
+                            <div className="mt-1 flex flex-wrap gap-1.5">
+                                {trace.smartQueries.map((q, i) => (
+                                    <code key={i} className="bg-white/60 border border-purple-200/60 px-1.5 py-0.5 text-[10px] rounded">{q}</code>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {sorted.length > 0 && (
+                        <div>
+                            <div className="text-[9px] font-bold uppercase tracking-widest opacity-50 mb-1">Scoring por candidata (ordenado de mejor a peor)</div>
+                            <div className="flex flex-col gap-1.5">
+                                {sorted.map((s, i) => {
+                                    const scoreColor = s.score >= 7 ? 'bg-green-100 text-green-900'
+                                        : s.score >= 4 ? 'bg-amber-100 text-amber-900'
+                                        : 'bg-red-100/70 text-red-900';
+                                    return (
+                                        <div key={`${s.url}-${i}`} className="flex items-start gap-2 bg-white/60 border border-purple-200/40 p-1.5">
+                                            <img src={resolveAssetUrl(s.url)} alt="" className="w-12 h-12 object-cover flex-shrink-0 border border-editorial-text/10" />
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${scoreColor}`}>{s.score}/10</span>
+                                                    <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono opacity-50 hover:opacity-100 truncate flex-1">
+                                                        {s.url.length > 70 ? s.url.slice(0, 70) + '…' : s.url}
+                                                    </a>
+                                                </div>
+                                                <div className="text-[11px] mt-0.5 leading-snug opacity-90">{s.reason || <span className="opacity-50 italic">(sin razón registrada)</span>}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
     );
 }
 

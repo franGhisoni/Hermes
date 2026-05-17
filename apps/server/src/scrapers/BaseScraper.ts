@@ -62,14 +62,15 @@ export abstract class BaseScraper {
                 req.continue();
             });
 
-            // Filter console logs: Only show warnings and errors, but ignore ERR_FAILED caused by our blocking
+            // Filter console logs: Only show warnings and errors, but ignore noise from blocked/failed sub-resources.
             page.on('console', msg => {
                 const type = msg.type();
                 const text = msg.text();
-                // Ignore blocked resource errors
+                // Ignore blocked resource errors (caused by our request interception above).
                 if (text.includes('ERR_FAILED') || text.includes('ERR_BLOCKED_BY_CLIENT')) return;
+                // Ignore HTTP errors from sub-resources (ads, trackers, images, etc.) — they don't affect article content.
+                if (/Failed to load resource.*status of \d+/.test(text)) return;
 
-                // Fix: string comparison for console message type
                 const typeStr = String(type).toLowerCase();
                 if (typeStr === 'error' || typeStr === 'warning') {
                     console.log(`[Browser ${this.name}] ${type.toUpperCase()}:`, text);

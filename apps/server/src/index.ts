@@ -236,15 +236,6 @@ const SETTINGS: SettingDef[] = [
     { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
     { api: 'articleRetentionHours', key: 'article_retention_hours', kind: 'int', min: 1 },
     { api: 'articleCleanupCron', key: 'article_cleanup_cron', kind: 'cron' },
-    {
-        api: 'imageSearchQueryTemplate', key: 'image_search_query_template', kind: 'string',
-        validate: (v) => v.includes('{{query}}') ? null : 'imageSearchQueryTemplate must contain {{query}}'
-    },
-    {
-        api: 'imageSearchUrlTemplate', key: 'image_search_url_template', kind: 'string',
-        validate: (v) => (v.startsWith('http') && (v.includes('{{q}}') || v.includes('{{query}}')))
-            ? null : 'imageSearchUrlTemplate must be a URL containing {{q}} or {{query}}'
-    },
     { api: 'imageMinScore', key: 'image_min_score', kind: 'int', min: 1, max: 10 },
     { api: 'imagePoolSize', key: 'image_pool_size', kind: 'int', min: 1, max: 100 },
     { api: 'imageScoringMaxRetries', key: 'image_scoring_max_retries', kind: 'int', min: 0, max: 20 },
@@ -257,10 +248,7 @@ const SETTINGS: SettingDef[] = [
     { api: 'imageLeadMinChars', key: 'image_lead_min_chars', kind: 'int', min: 1 },
     { api: 'imageLeadMaxChars', key: 'image_lead_max_chars', kind: 'int', min: 1 },
     { api: 'imageLeadMaxWords', key: 'image_lead_max_words', kind: 'int', min: 1 },
-    { api: 'imageSearchPageTimeoutMs', key: 'image_search_page_timeout_ms', kind: 'int', min: 1000 },
-    { api: 'imageSearchSelectorTimeoutMs', key: 'image_search_selector_timeout_ms', kind: 'int', min: 100 },
     { api: 'imageFetchTimeoutMs', key: 'image_fetch_timeout_ms', kind: 'int', min: 100 },
-    { api: 'imageEngineFailureThreshold', key: 'image_engine_failure_threshold', kind: 'int', min: 1, max: 20 },
     { api: 'modelEmbedding', key: 'model_embedding', kind: 'string' },
     { api: 'modelRewrite', key: 'model_rewrite', kind: 'string' },
     { api: 'modelInterest', key: 'model_interest', kind: 'string' },
@@ -307,8 +295,6 @@ async function resolveDefault(def: SettingDef): Promise<any> {
         scrapeLimit: () => configService.getScrapeLimit(),
         articleRetentionHours: () => configService.getArticleRetentionHours(),
         articleCleanupCron: () => configService.getArticleCleanupCron(),
-        imageSearchQueryTemplate: () => configService.getImageSearchQueryTemplate(),
-        imageSearchUrlTemplate: () => configService.getImageSearchUrlTemplate(),
         imageMinScore: () => configService.getImageMinScore(),
         imagePoolSize: () => configService.getImagePoolSize(),
         imageScoringMaxRetries: () => configService.getImageScoringMaxRetries(),
@@ -321,10 +307,7 @@ async function resolveDefault(def: SettingDef): Promise<any> {
         imageLeadMinChars: () => configService.getImageLeadMinChars(),
         imageLeadMaxChars: () => configService.getImageLeadMaxChars(),
         imageLeadMaxWords: () => configService.getImageLeadMaxWords(),
-        imageSearchPageTimeoutMs: () => configService.getImageSearchPageTimeoutMs(),
-        imageSearchSelectorTimeoutMs: () => configService.getImageSearchSelectorTimeoutMs(),
         imageFetchTimeoutMs: () => configService.getImageFetchTimeoutMs(),
-        imageEngineFailureThreshold: () => configService.getImageEngineFailureThreshold(),
         modelEmbedding: () => configService.getEmbeddingModel(),
         modelRewrite: () => configService.getRewriteModel(),
         modelInterest: () => configService.getInterestModel(),

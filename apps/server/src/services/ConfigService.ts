@@ -32,17 +32,6 @@ export class ConfigService {
 
     // ---- Image search ----
 
-    async getImageSearchQueryTemplate(): Promise<string> {
-        return this.getSetting('image_search_query_template', '{{query}} foto noticia');
-    }
-
-    async getImageSearchUrlTemplate(): Promise<string> {
-        return this.getSetting(
-            'image_search_url_template',
-            'https://www.bing.com/images/search?q={{q}}&qft=%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide'
-        );
-    }
-
     async getImageMinScore(): Promise<number> {
         // Default 4: candidates that show the right context but aren't the
         // exact protagonist (5-6 in the scoring rubric) should make it through
@@ -95,23 +84,8 @@ export class ConfigService {
         return this.getIntSetting('image_lead_max_words', 8);
     }
 
-    async getImageSearchPageTimeoutMs(): Promise<number> {
-        return this.getIntSetting('image_search_page_timeout_ms', 20000);
-    }
-
-    async getImageSearchSelectorTimeoutMs(): Promise<number> {
-        return this.getIntSetting('image_search_selector_timeout_ms', 8000);
-    }
-
     async getImageFetchTimeoutMs(): Promise<number> {
         return this.getIntSetting('image_fetch_timeout_ms', 10000);
-    }
-
-    async getImageEngineFailureThreshold(): Promise<number> {
-        // After this many consecutive empty/blocked responses from the primary
-        // image engine (Google), stop hitting it for the rest of the pipeline
-        // and rely on Bing alone. Lower = give up sooner, higher = retry more.
-        return this.getIntSetting('image_engine_failure_threshold', 2);
     }
 
     // ---- AI models ----

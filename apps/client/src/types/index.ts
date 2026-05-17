@@ -3,14 +3,17 @@ export interface AiDecisionsTrace {
     smartQueries?: string[];
     searchExecutions?: Array<{
         query: string;
-        google?: { url: string; resultCount: number };
-        bing?: { url: string; resultCount: number };
+        providerUrl: string;
+        resultCount: number;
     }>;
     imageScoring?: Array<{
         url: string;
         score: number;
         reason: string;
-        sourceEngine?: 'google' | 'bing' | 'dalle' | 'original' | string;
+        // 'searxng-google' / 'searxng-bing' / 'searxng-duckduckgo' / 'searxng-qwant'
+        // (or 'dalle' / 'original' for fallbacks). Legacy values 'google' / 'bing'
+        // may appear in older articles persisted before the SearXNG migration.
+        sourceEngine?: string;
     }>;
     fallbackUsed?: 'dalle' | 'original' | null;
 }

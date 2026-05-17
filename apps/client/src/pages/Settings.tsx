@@ -71,10 +71,7 @@ interface ExtendedSettings {
     imageLeadMinChars: number;
     imageLeadMaxChars: number;
     imageLeadMaxWords: number;
-    imageSearchPageTimeoutMs: number;
-    imageSearchSelectorTimeoutMs: number;
     imageFetchTimeoutMs: number;
-    imageEngineFailureThreshold: number;
     modelEmbedding: string;
     modelRewrite: string;
     modelInterest: string;
@@ -114,8 +111,6 @@ export default function Settings() {
     const [scrapeLimit, setScrapeLimit] = useState(3);
     const [articleRetentionHours, setArticleRetentionHours] = useState(48);
     const [articleCleanupCron, setArticleCleanupCron] = useState('0 * * * *');
-    const [imageSearchQueryTemplate, setImageSearchQueryTemplate] = useState('{{query}} foto noticia');
-    const [imageSearchUrlTemplate, setImageSearchUrlTemplate] = useState('https://www.bing.com/images/search?q={{q}}&qft=%2Bfilterui%3Aimagesize-large%2Bfilterui%3Aaspect-wide');
     const [imageMinScore, setImageMinScore] = useState(6);
     const [extended, setExtended] = useState<ExtendedSettings | null>(null);
 
@@ -151,8 +146,6 @@ export default function Settings() {
                 setScrapeLimit(d.scrapeLimit ?? 3);
                 setArticleRetentionHours(d.articleRetentionHours ?? 48);
                 setArticleCleanupCron(d.articleCleanupCron ?? '0 * * * *');
-                if (d.imageSearchQueryTemplate) setImageSearchQueryTemplate(d.imageSearchQueryTemplate);
-                if (d.imageSearchUrlTemplate) setImageSearchUrlTemplate(d.imageSearchUrlTemplate);
                 if (d.imageMinScore) setImageMinScore(d.imageMinScore);
                 setExtended({
                     imagePoolSize: d.imagePoolSize,
@@ -166,9 +159,7 @@ export default function Settings() {
                     imageLeadMinChars: d.imageLeadMinChars,
                     imageLeadMaxChars: d.imageLeadMaxChars,
                     imageLeadMaxWords: d.imageLeadMaxWords,
-                    imageSearchPageTimeoutMs: d.imageSearchPageTimeoutMs,
-                    imageSearchSelectorTimeoutMs: d.imageSearchSelectorTimeoutMs,                    imageFetchTimeoutMs: d.imageFetchTimeoutMs,
-                    imageEngineFailureThreshold: d.imageEngineFailureThreshold,
+                    imageFetchTimeoutMs: d.imageFetchTimeoutMs,
                     modelEmbedding: d.modelEmbedding,
                     modelRewrite: d.modelRewrite,
                     modelInterest: d.modelInterest,
@@ -383,10 +374,6 @@ export default function Settings() {
 
                     {activeTab === 'imagenes' && extended && (
                         <ImagenesTab
-                            imageSearchQueryTemplate={imageSearchQueryTemplate}
-                            setImageSearchQueryTemplate={setImageSearchQueryTemplate}
-                            imageSearchUrlTemplate={imageSearchUrlTemplate}
-                            setImageSearchUrlTemplate={setImageSearchUrlTemplate}
                             imageMinScore={imageMinScore}
                             setImageMinScore={setImageMinScore}
                             extended={extended}
@@ -843,10 +830,6 @@ function SistemaTab(props: SistemaTabProps) {
 // ---------- Imagenes Tab ----------
 
 interface ImagenesTabProps {
-    imageSearchQueryTemplate: string;
-    setImageSearchQueryTemplate: (v: string) => void;
-    imageSearchUrlTemplate: string;
-    setImageSearchUrlTemplate: (v: string) => void;
     imageMinScore: number;
     setImageMinScore: (n: number) => void;
     extended: ExtendedSettings;
@@ -855,8 +838,6 @@ interface ImagenesTabProps {
 
 function ImagenesTab(props: ImagenesTabProps) {
     const {
-        imageSearchQueryTemplate, setImageSearchQueryTemplate,
-        imageSearchUrlTemplate, setImageSearchUrlTemplate,
         imageMinScore, setImageMinScore,
         extended, updateExtended
     } = props;
@@ -866,61 +847,19 @@ function ImagenesTab(props: ImagenesTabProps) {
             <div>
                 <Header
                     title="Búsqueda"
-                    subtitle="Cómo Hermes pide imágenes a Google/Bing y cuáles acepta."
+                    subtitle="Provider de imágenes y parámetros de descarte."
                 />
+                <div className="mb-4 p-3 bg-editorial-bg/30 border border-editorial-text/15 text-xs font-sans flex items-center gap-3">
+                    <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">Provider activo</span>
+                    <code className="bg-editorial-text/5 px-2 py-0.5 font-mono">SearXNG</code>
+                    <span className="opacity-70">
+                        Configurá el endpoint con la env var <code className="bg-editorial-text/5 px-1">SEARXNG_URL</code>
+                        {' '}(default <code className="bg-editorial-text/5 px-1">http://localhost:8888</code>).
+                        Si el backend usa una URL interna de Docker, usá <code className="bg-editorial-text/5 px-1">SEARXNG_PUBLIC_URL</code> para los links de traza.
+                        Engines, safe search y locale viven en <code className="bg-editorial-text/5 px-1">searxng/settings.yml</code>.
+                    </span>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <Card>
-                        <CardHeading
-                            title="Plantilla de búsqueda"
-                            description={<>Texto enviado al buscador. Usá <code className="bg-editorial-text/5 px-1">{`{{query}}`}</code> como placeholder.</>}
-                        />
-                        <input
-                            type="text"
-                            value={imageSearchQueryTemplate}
-                            onChange={e => setImageSearchQueryTemplate(e.target.value)}
-                            onBlur={async (e) => {
-                                const value = e.target.value.trim();
-                                if (!value.includes('{{query}}')) {
-                                    alert('La plantilla debe contener {{query}}');
-                                    return;
-                                }
-                                setImageSearchQueryTemplate(value);
-                                try {
-                                    await api.post('/api/config/settings', { imageSearchQueryTemplate: value });
-                                } catch (err: any) {
-                                    alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                                }
-                            }}
-                            placeholder="{{query}} foto noticia"
-                            className="w-full p-2 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none"
-                        />
-                    </Card>
-
-                    <Card>
-                        <CardHeading
-                            title="URL del buscador (Bing fallback)"
-                            description={<>URL completa. Usá <code className="bg-editorial-text/5 px-1">{`{{q}}`}</code> donde va la consulta URL-encoded.</>}
-                        />
-                        <textarea
-                            value={imageSearchUrlTemplate}
-                            onChange={e => setImageSearchUrlTemplate(e.target.value)}
-                            onBlur={async (e) => {
-                                const value = e.target.value.trim();
-                                if (!value.startsWith('http') || (!value.includes('{{q}}') && !value.includes('{{query}}'))) {
-                                    alert('La URL debe empezar con http y contener {{q}} o {{query}}');
-                                    return;
-                                }
-                                setImageSearchUrlTemplate(value);
-                                try {
-                                    await api.post('/api/config/settings', { imageSearchUrlTemplate: value });
-                                } catch (err: any) {
-                                    alert('Error: ' + (err.response?.data?.error || 'No se pudo guardar'));
-                                }
-                            }}
-                            className="w-full h-20 p-2 font-mono text-[11px] bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none"
-                        />
-                    </Card>
-
                     <NumericCard title="Resultados por query" description="Cuántas imágenes tomamos de cada búsqueda antes del scoring."
                         value={extended.imagePerQueryCap} unit="" min={1} max={20}
                         onCommit={(v) => updateExtended('imagePerQueryCap', v)} />
@@ -930,24 +869,15 @@ function ImagenesTab(props: ImagenesTabProps) {
                     <NumericCard title="Largo mínimo de query" description="Queries más cortas se descartan."
                         value={extended.imageQueryMinLength} unit="chars" min={1}
                         onCommit={(v) => updateExtended('imageQueryMinLength', v)} />
-                    <NumericCard title="Ancho mínimo aceptado" description="Imágenes más chicas se descartan (Bing)."
+                    <NumericCard title="Ancho mínimo aceptado" description="Hint pasado al provider para descartar thumbnails."
                         value={extended.imageMinWidth} unit="px" min={1}
                         onCommit={(v) => updateExtended('imageMinWidth', v)} />
-                    <NumericCard title="Alto mínimo aceptado" description="Imágenes más chicas se descartan (Bing)."
+                    <NumericCard title="Alto mínimo aceptado" description="Hint pasado al provider para descartar thumbnails."
                         value={extended.imageMinHeight} unit="px" min={1}
                         onCommit={(v) => updateExtended('imageMinHeight', v)} />
-                    <NumericCard title="Timeout de carga de página" description="Cuánto esperar a que cargue la página de resultados."
-                        value={extended.imageSearchPageTimeoutMs} unit="ms" min={1000}
-                        onCommit={(v) => updateExtended('imageSearchPageTimeoutMs', v)} />
-                    <NumericCard title="Timeout de selector" description="Cuánto esperar a que aparezcan los thumbnails."
-                        value={extended.imageSearchSelectorTimeoutMs} unit="ms" min={100}
-                        onCommit={(v) => updateExtended('imageSearchSelectorTimeoutMs', v)} />
                     <NumericCard title="Timeout de descarga" description="Para attachear imágenes externas al mail."
                         value={extended.imageFetchTimeoutMs} unit="ms" min={100}
                         onCommit={(v) => updateExtended('imageFetchTimeoutMs', v)} />
-                    <NumericCard title="Umbral de fallos del engine primario" description="Cuántas queries seguidas pueden fallar en Google antes de desactivarlo para el resto del pipeline."
-                        value={extended.imageEngineFailureThreshold} unit="queries" min={1} max={20}
-                        onCommit={(v) => updateExtended('imageEngineFailureThreshold', v)} />
                 </div>
             </div>
 

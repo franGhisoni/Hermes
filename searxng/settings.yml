@@ -1,0 +1,71 @@
+# SearXNG configuration for Hermes image search.
+#
+# Key choices:
+#   * formats: html + json (JSON is off by default upstream; we need it for the
+#     server-side fetch from SearxngProvider.ts)
+#   * safe_search: 2 (strict) — non-negotiable since we surface results in
+#     a public publishing tool
+#   * locale: es-AR — matches the geo bias we used to pass to Google/Bing
+#   * engines: enable the image engines that actually return useful
+#     Argentina news photography (Google, Bing, DuckDuckGo). Qwant is
+#     temporarily disabled because current SearXNG images crash on startup with
+#     KeyError: 'qwant' when that engine is kept without its shared network.
+#     Yandex is
+#     disabled by default — leave it off until we have a reason to add it
+#     (it has a different content profile and was the main source of weird
+#     results in the puppeteer days).
+
+use_default_settings:
+  engines:
+    keep_only:
+      - google images
+      - bing images
+      - duckduckgo images
+
+general:
+  instance_name: "Hermes SearXNG"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 2
+  autocomplete: ""
+  default_lang: "es-AR"
+  formats:
+    - html
+    - json
+
+server:
+  # Random secret — only used for cookie signing on the (unused) HTML UI.
+  # Keep this file out of source control if you change it to something
+  # sensitive; for our use the API never sets cookies.
+  secret_key: "hermes-searxng-change-me"
+  limiter: false
+  image_proxy: false
+  bind_address: "0.0.0.0"
+  port: 8080
+
+ui:
+  static_use_hash: true
+  default_locale: "es"
+
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 15.0
+  pool_connections: 100
+  pool_maxsize: 20
+
+engines:
+  - name: google images
+    disabled: false
+    timeout: 8.0
+
+  - name: bing images
+    disabled: false
+    timeout: 8.0
+
+  - name: duckduckgo images
+    disabled: false
+    timeout: 8.0

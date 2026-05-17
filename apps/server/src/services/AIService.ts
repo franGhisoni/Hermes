@@ -258,8 +258,10 @@ Return a JSON object:
 
             const candidatePool = imageUrls.slice(0, poolSize);
             let attemptUrls = [...candidatePool];
+            let useReferenceImage = Boolean(originalImageUrl);
             const droppedUrls = new Set<string>();
             let rawResult: any = null;
+            let lastScoringError = '';
 
             for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
                 if (attemptUrls.length === 0) {
@@ -267,7 +269,7 @@ Return a JSON object:
                     break;
                 }
 
-                const referenceBlock: any[] = originalImageUrl ? [
+                const referenceBlock: any[] = useReferenceImage && originalImageUrl ? [
                     { type: "text", text: `--- REFERENCE IMAGE (the photo the original source used; may be a TV grab, banner, montage, or unrelated illustration — TREAT WITH SUSPICION. NOT a candidate. Use ONLY to recognize faces/places, not visual style.) ---` },
                     { type: "image_url", image_url: { url: originalImageUrl, detail: "high" } },
                     { type: "text", text: `--- END REFERENCE ---\n\nNow score the following ${attemptUrls.length} candidates. Identify the protagonist from the TITLE AND EXCERPT first; only use the reference image as a secondary cue and ignore it entirely if it looks like a TV screenshot, banner or montage.` }
@@ -300,20 +302,30 @@ Return a JSON object:
                     rawResult = JSON.parse(completion.choices[0].message.content || '{}');
                     break;
                 } catch (err: any) {
+                    lastScoringError = err?.error?.message || err?.message || String(err);
                     if (err?.code === 'invalid_image_url' || err?.error?.code === 'invalid_image_url') {
-                        const msg: string = err?.error?.message || err?.message || '';
-                        const match = msg.match(/Error while downloading\s+(https?:\/\/\S+)/);
-                        let badUrl: string | undefined = match?.[1];
+                        const msg: string = lastScoringError;
+                        let badUrl = this.extractRejectedImageUrl(msg);
                         // OpenAI's error message ends with a trailing period that isn't
                         // actually part of the URL — strip it before matching.
-                        if (badUrl && badUrl.endsWith('.') && !badUrl.endsWith('..')) {
-                            badUrl = badUrl.slice(0, -1);
+                        const exact = this.matchRejectedUrl(badUrl, attemptUrls);
+                        const referenceFailed = useReferenceImage && originalImageUrl
+                            && this.isRejectedUrlMatch(badUrl, originalImageUrl, msg);
+
+                        if (referenceFailed) {
+                            console.warn(`[AIService] OpenAI could not download reference image ${originalImageUrl}; retrying scoring without reference image.`);
+                            useReferenceImage = false;
+                            continue;
                         }
-                        const exact = attemptUrls.find(u => u === badUrl);
                         if (exact) {
                             console.warn(`[AIService] OpenAI couldn't download ${exact} — dropping and retrying without it.`);
                             droppedUrls.add(exact);
                             attemptUrls = attemptUrls.filter(u => u !== exact);
+                            continue;
+                        }
+                        if (useReferenceImage && originalImageUrl) {
+                            console.warn(`[AIService] OpenAI rejected an image URL but we could not identify which (parsed: ${badUrl}); retrying without reference image first.`);
+                            useReferenceImage = false;
                             continue;
                         }
                         console.warn(`[AIService] OpenAI rejected an image URL but we couldn't identify which (parsed: ${badUrl}) — aborting retries.`);
@@ -339,6 +351,11 @@ Return a JSON object:
                 const origIdx = imageUrls.indexOf(url);
                 if (origIdx >= 0) reasonings[origIdx] = '⚠ OpenAI could not download this image';
             });
+            if (!rawResult && lastScoringError) {
+                reasonings.forEach((reason, i) => {
+                    if (!reason) reasonings[i] = `Image scoring failed before analysis: ${lastScoringError}`;
+                });
+            }
 
             const result = rawResult || {};
 
@@ -376,7 +393,40 @@ Return a JSON object:
 
         } catch (error) {
             console.error('[AIService] Image selection failed:', error);
-            return { url: null, scores: imageUrls.map(() => 0), reasonings: [], protagonist: null };
+            const message = error instanceof Error ? error.message : String(error);
+            return {
+                url: null,
+                scores: imageUrls.map(() => 0),
+                reasonings: imageUrls.map(() => `Image scoring failed before analysis: ${message}`),
+                protagonist: null
+            };
         }
+    }
+
+    private extractRejectedImageUrl(message: string): string | undefined {
+        const match = message.match(/Error while downloading\s+(https?:\/\/\S+)/)
+            || message.match(/(https?:\/\/\S+)/);
+        return this.cleanRejectedUrl(match?.[1]);
+    }
+
+    private matchRejectedUrl(rejectedUrl: string | undefined, urls: string[]): string | undefined {
+        if (!rejectedUrl) return undefined;
+        return urls.find(url => this.cleanRejectedUrl(url) === rejectedUrl)
+            || urls.find(url => rejectedUrl.includes(url) || url.includes(rejectedUrl));
+    }
+
+    private isRejectedUrlMatch(rejectedUrl: string | undefined, expectedUrl: string, message: string): boolean {
+        const cleanedExpected = this.cleanRejectedUrl(expectedUrl);
+        return Boolean(
+            (rejectedUrl && cleanedExpected && (rejectedUrl === cleanedExpected || rejectedUrl.includes(cleanedExpected) || cleanedExpected.includes(rejectedUrl)))
+            || message.includes(expectedUrl)
+        );
+    }
+
+    private cleanRejectedUrl(url?: string): string | undefined {
+        if (!url) return undefined;
+        return url
+            .replace(/[)\].,;]+$/g, '')
+            .replace(/&amp;/g, '&');
     }
 }

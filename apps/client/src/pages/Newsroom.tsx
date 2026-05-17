@@ -645,20 +645,10 @@ function AdminAiTracePanel({ trace }: { trace: NonNullable<Article['aiDecisions'
                                 {trace.searchExecutions.map((exec, i) => (
                                     <div key={i} className="bg-white/60 border border-purple-200/40 px-2 py-1.5 text-[10px]">
                                         <div className="font-mono opacity-80 mb-0.5 truncate">{exec.query}</div>
-                                        <div className="flex flex-wrap gap-2">
-                                            {exec.google && (
-                                                <a href={exec.google.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${exec.google.resultCount === 0 ? 'text-red-700/60' : 'text-blue-700'}`}>
-                                                    <span className="font-bold">Google</span>
-                                                    <span className="opacity-70">({exec.google.resultCount} resultados)</span>
-                                                </a>
-                                            )}
-                                            {exec.bing && (
-                                                <a href={exec.bing.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${exec.bing.resultCount === 0 ? 'text-red-700/60' : 'text-blue-700'}`}>
-                                                    <span className="font-bold">Bing</span>
-                                                    <span className="opacity-70">({exec.bing.resultCount} resultados)</span>
-                                                </a>
-                                            )}
-                                        </div>
+                                        <a href={exec.providerUrl} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${exec.resultCount === 0 ? 'text-red-700/60' : 'text-blue-700'}`}>
+                                            <span className="font-bold">SearXNG</span>
+                                            <span className="opacity-70">({exec.resultCount} resultados)</span>
+                                        </a>
                                     </div>
                                 ))}
                             </div>
@@ -673,10 +663,13 @@ function AdminAiTracePanel({ trace }: { trace: NonNullable<Article['aiDecisions'
                                     const scoreColor = s.score >= 7 ? 'bg-green-100 text-green-900'
                                         : s.score >= 4 ? 'bg-amber-100 text-amber-900'
                                         : 'bg-red-100/70 text-red-900';
-                                    const engineColor = s.sourceEngine === 'google' ? 'bg-blue-100 text-blue-900'
-                                        : s.sourceEngine === 'bing' ? 'bg-cyan-100 text-cyan-900'
+                                    const engineColor = s.sourceEngine === 'google' || s.sourceEngine === 'searxng-google' || s.sourceEngine === 'searxng-google images' ? 'bg-blue-100 text-blue-900'
+                                        : s.sourceEngine === 'bing' || s.sourceEngine === 'searxng-bing' || s.sourceEngine === 'searxng-bing images' ? 'bg-cyan-100 text-cyan-900'
+                                        : s.sourceEngine === 'searxng-duckduckgo' || s.sourceEngine === 'searxng-duckduckgo images' ? 'bg-orange-100 text-orange-900'
+                                        : s.sourceEngine === 'searxng-qwant' || s.sourceEngine === 'searxng-qwant images' ? 'bg-emerald-100 text-emerald-900'
                                         : s.sourceEngine === 'dalle' ? 'bg-purple-100 text-purple-900'
                                         : s.sourceEngine === 'original' ? 'bg-gray-100 text-gray-700'
+                                        : s.sourceEngine?.startsWith('searxng') ? 'bg-slate-100 text-slate-800'
                                         : 'bg-gray-50 text-gray-500';
                                     return (
                                         <div key={`${s.url}-${i}`} className="flex items-start gap-2 bg-white/60 border border-purple-200/40 p-1.5">

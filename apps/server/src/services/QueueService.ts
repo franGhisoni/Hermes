@@ -4,6 +4,8 @@ import { LaNacionScraper } from '../scrapers/LaNacionScraper';
 import { InfobaeScraper } from '../scrapers/InfobaeScraper';
 import { TNScraper } from '../scrapers/TNScraper';
 import { NAScraper } from '../scrapers/NAScraper';
+import { AmbitoScraper } from '../scrapers/AmbitoScraper';
+import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 
@@ -44,6 +46,8 @@ export class QueueService {
             'Infobae': InfobaeScraper,
             'TN': TNScraper,
             'NA': NAScraper,
+            'Ambito': AmbitoScraper,
+            'Cronista': CronistaScraper,
         };
 
         // Scraper Worker

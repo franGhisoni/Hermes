@@ -1,6 +1,8 @@
 import OpenAI from 'openai';
 import { PrismaClient } from '@prisma/client';
 import { ConfigService } from './ConfigService';
+import { ImageSearchProvider } from './imageProviders/types';
+import { SearxngProvider } from './imageProviders/SearxngProvider';
 
 const prisma = new PrismaClient();
 
@@ -16,15 +18,17 @@ interface ImageSearchInput {
 
 export interface SearchExecution {
     query: string;
-    google?: { url: string; resultCount: number };
-    bing?: { url: string; resultCount: number };
+    // URL of the search page the provider hit (for the admin trace). The
+    // engine breakdown lives in the per-URL sourceEngine on each candidate.
+    providerUrl: string;
+    resultCount: number;
 }
 
 export interface SearchTrace {
     executions: SearchExecution[];
-    // url -> first engine that surfaced it (so the editor can see whether
-    // garbage candidates came from Google or Bing).
-    sourceByUrl: Record<string, 'google' | 'bing'>;
+    // url -> underlying engine that first surfaced it (e.g. 'searxng-google',
+    // 'searxng-bing'). Used by the admin trace panel.
+    sourceByUrl: Record<string, string>;
 }
 
 export interface SearchResult {
@@ -48,14 +52,16 @@ const BLOCKED_URL_PATTERNS = [
 export class ImageService {
     private openai: OpenAI;
     private configService: ConfigService;
+    private provider: ImageSearchProvider;
 
-    constructor() {
+    constructor(opts?: { provider?: ImageSearchProvider }) {
         const apiKey = process.env.OPENAI_API_KEY;
         if (!apiKey) {
             throw new Error('OPENAI_API_KEY env var is required');
         }
         this.openai = new OpenAI({ apiKey });
         this.configService = new ConfigService();
+        this.provider = opts?.provider ?? new SearxngProvider();
     }
 
     public async searchImages(input: string | ImageSearchInput): Promise<SearchResult> {
@@ -65,78 +71,31 @@ export class ImageService {
         // Cap the total queries at imageQueryMaxCount + smart ones (smart take priority).
         const queryCap = (await this.configService.getImageQueryMaxCount()) + smart.length;
         const queries = this.uniqueStrings([...smart, ...fallbackQueries]).slice(0, queryCap);
-        console.log(`[ImageService] Searching images with queries: ${queries.map(q => `"${q}"`).join(' | ')}`);
+        console.log(`[ImageService] Searching images via ${this.provider.name} with queries: ${queries.map(q => `"${q}"`).join(' | ')}`);
 
-        let browser;
         try {
-            const puppeteer = require('puppeteer');
-            browser = await puppeteer.launch({
-                headless: "new",
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-blink-features=AutomationControlled',
-                    '--window-size=1280,800'
-                ]
-            });
-            const page = await browser.newPage();
-            await page.setViewport({ width: 1280, height: 800 });
-            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-            await page.setExtraHTTPHeaders({
-                'Accept-Language': 'es-AR,es;q=0.9,en;q=0.8'
-            });
-
-            // For every query, hit BOTH Google AND Bing and merge the top
-            // results from each. Previously we only fell back to Bing when
-            // Google returned 0 — meaning if Google returned bad results,
-            // Bing's good ones were never seen. Now both engines always
-            // contribute; the AI scorer ranks them all afterwards. If
-            // Google gets blocked enough times in a row (configurable via
-            // image_engine_failure_threshold), we skip it for the rest of
-            // this pipeline and rely on Bing.
             const perQueryCap = await this.configService.getImagePerQueryCap();
-            const failureThreshold = await this.configService.getImageEngineFailureThreshold();
+            const minWidth = await this.configService.getImageMinWidth();
+            const minHeight = await this.configService.getImageMinHeight();
             const images: string[] = [];
             const executions: SearchExecution[] = [];
-            const sourceByUrl: Record<string, 'google' | 'bing'> = {};
-            let googleFailures = 0;
-            let googleBlocked = false;
+            const sourceByUrl: Record<string, string> = {};
+
             for (const query of queries) {
-                const execution: SearchExecution = { query };
+                const data = await this.provider.search(query, { minWidth, minHeight });
+                executions.push({
+                    query,
+                    providerUrl: data.url,
+                    resultCount: data.results.length
+                });
 
-                const googleData = googleBlocked
-                    ? { url: '', results: [] }
-                    : await this.fetchGoogleResults(page, query);
-                if (!googleBlocked) {
-                    execution.google = { url: googleData.url, resultCount: googleData.results.length };
-                    if (googleData.results.length === 0) {
-                        googleFailures++;
-                        if (googleFailures >= failureThreshold) {
-                            console.warn(`[ImageService] Google blocked ${googleFailures} times in a row, skipping it for the rest of the pipeline.`);
-                            googleBlocked = true;
-                        }
-                    }
-                }
-
-                const bingData = await this.fetchBingResults(page, query);
-                execution.bing = { url: bingData.url, resultCount: bingData.results.length };
-
-                // Take top N from each engine, dedupe across them, and remember
-                // which engine first surfaced each URL (for the admin trace).
-                for (const imageUrl of googleData.results.slice(0, perQueryCap)) {
+                // Take top N from this query and dedupe across queries.
+                for (const imageUrl of data.results.slice(0, perQueryCap)) {
                     if (!images.includes(imageUrl)) {
                         images.push(imageUrl);
-                        sourceByUrl[imageUrl] = 'google';
+                        sourceByUrl[imageUrl] = data.engineByUrl[imageUrl] || this.provider.name;
                     }
                 }
-                for (const imageUrl of bingData.results.slice(0, perQueryCap)) {
-                    if (!images.includes(imageUrl)) {
-                        images.push(imageUrl);
-                        sourceByUrl[imageUrl] = 'bing';
-                    }
-                }
-
-                executions.push(execution);
             }
 
             const filtered = images.filter((imgUrl: string) => {
@@ -151,119 +110,6 @@ export class ImageService {
         } catch (error) {
             console.error('[ImageService] Search failed:', error);
             return { images: [], trace: { executions: [], sourceByUrl: {} } };
-        } finally {
-            if (browser) await browser.close();
-        }
-    }
-
-    /**
-     * Scrape Google Images via puppeteer. We hit the unified image search UI
-     * (udm=2), wait for thumbnails to hydrate, and read the gstatic thumbnail
-     * URLs out of the rendered DOM. Thumbnails are limited resolution but
-     * OpenAI downsamples to 512px on "low" detail anyway, so they're enough
-     * for scoring.
-     *
-     * Google blocks scrapers aggressively. On CAPTCHA or rate-limit pages
-     * this returns [] and the caller falls back to Bing for that query.
-     */
-    private async fetchGoogleResults(page: any, query: string): Promise<{ url: string; results: string[] }> {
-        // Use the .com.ar TLD + gl=ar (geolocation Argentina) + hl=es (Spanish
-        // UI) + lr=lang_es (Spanish-language results) so we don't get Japanese
-        // or Chinese spam farms when the server is hosted outside Argentina.
-        // safe=active enforces SafeSearch (CRITICAL — the previous safe=off
-        // let adult content leak through).
-        const url = `https://www.google.com.ar/search?q=${encodeURIComponent(query)}&udm=2&safe=active&hl=es&gl=ar&lr=lang_es`;
-        const pageTimeout = await this.configService.getImageSearchPageTimeoutMs();
-        const selectorTimeout = await this.configService.getImageSearchSelectorTimeoutMs();
-        try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout });
-            const captcha = await page.evaluate(() => {
-                const t = (document.body.textContent || '').toLowerCase();
-                return t.includes('unusual traffic') || t.includes('captcha') || t.includes('antes de continuar a google');
-            });
-            if (captcha) {
-                console.warn(`[ImageService] Google blocked us on "${query}" (captcha/consent), falling back.`);
-                return { url, results: [] };
-            }
-
-            await page.waitForSelector('img', { timeout: selectorTimeout }).catch(() => null);
-            // Give the JS layout a moment to populate <img src> attributes.
-            await new Promise(resolve => setTimeout(resolve, 1200));
-
-            const urls: string[] = await page.evaluate(() => {
-                const out: string[] = [];
-                document.querySelectorAll('img').forEach((img: any) => {
-                    const src = img.src || img.getAttribute('data-src') || '';
-                    if (!src.startsWith('https://encrypted-tbn') && !src.startsWith('https://lh3.googleusercontent')) return;
-                    if (img.naturalWidth && img.naturalWidth < 80) return;
-                    if (img.naturalHeight && img.naturalHeight < 60) return;
-                    out.push(src);
-                });
-                return [...new Set(out)];
-            });
-
-            console.log(`[ImageService] Google: "${query}" -> ${urls.length} results`);
-            return { url, results: urls };
-        } catch (error) {
-            console.error(`[ImageService] Google scrape failed for "${query}":`, error);
-            return { url, results: [] };
-        }
-    }
-
-    private async fetchBingResults(page: any, query: string): Promise<{ url: string; results: string[] }> {
-        const queryTemplate = await this.configService.getImageSearchQueryTemplate();
-        const urlTemplate = await this.configService.getImageSearchUrlTemplate();
-        const enrichedQuery = (queryTemplate || '{{query}}').replace(/\{\{query\}\}/g, query).trim();
-        let url = (urlTemplate || 'https://www.bing.com/images/search?q={{q}}')
-            .replace(/\{\{q\}\}/g, encodeURIComponent(enrichedQuery))
-            .replace(/\{\{query\}\}/g, encodeURIComponent(enrichedQuery));
-
-        // Enforce SafeSearch + Argentina locale regardless of what the URL
-        // template in the DB has (older templates didn't include these and
-        // were letting adult content + Asian spam farms leak through when
-        // the server was hosted outside Argentina).
-        const separator = url.includes('?') ? '&' : '?';
-        const enforced: string[] = [];
-        if (!/[?&]adlt=/.test(url)) enforced.push('adlt=strict');
-        if (!/[?&]cc=/.test(url)) enforced.push('cc=ar');
-        if (!/[?&]setLang=/.test(url)) enforced.push('setLang=es-AR');
-        if (enforced.length > 0) url += separator + enforced.join('&');
-
-        const pageTimeout = await this.configService.getImageSearchPageTimeoutMs();
-        const selectorTimeout = await this.configService.getImageSearchSelectorTimeoutMs();
-        const minWidth = await this.configService.getImageMinWidth();
-        const minHeight = await this.configService.getImageMinHeight();
-
-        try {
-            await page.goto(url, { waitUntil: 'domcontentloaded', timeout: pageTimeout });
-            await page.waitForSelector('a.iusc', { timeout: selectorTimeout }).catch(() => null);
-            console.log(`[ImageService] Bing fallback: "${enrichedQuery}"`);
-
-            const results: string[] = await page.evaluate((minW: number, minH: number) => {
-                const out: string[] = [];
-                const anchors = document.querySelectorAll('a.iusc');
-                anchors.forEach((a: any) => {
-                    try {
-                        const m = a.getAttribute('m');
-                        if (!m) return;
-                        const parsed = JSON.parse(m);
-                        const imageUrl = parsed.murl;
-                        const width = Number(parsed.w || 0);
-                        const height = Number(parsed.h || 0);
-                        if (!imageUrl || !imageUrl.startsWith('http')) return;
-                        if (width > 0 && width < minW) return;
-                        if (height > 0 && height < minH) return;
-                        out.push(imageUrl);
-                    } catch {
-                        // ignore parse errors
-                    }
-                });
-                return [...new Set(out)];
-            }, minWidth, minHeight);
-            return { url, results };
-        } catch (error) {
-            console.error(`[ImageService] Bing scrape failed for "${enrichedQuery}":`, error);
-            return { url, results: [] };
         }
     }
 
@@ -440,11 +286,12 @@ export class ImageService {
      * Uses HEAD requests with a short timeout to avoid blocking the pipeline.
      */
     private async validateImageUrls(urls: string[]): Promise<string[]> {
+        const fetchTimeoutMs = await this.configService.getImageFetchTimeoutMs();
         const results = await Promise.allSettled(
             urls.map(async (url) => {
                 try {
                     const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 3000);
+                    const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
 
                     const response = await fetch(url, {
                         method: 'HEAD',

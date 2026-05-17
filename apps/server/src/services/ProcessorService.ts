@@ -97,8 +97,8 @@ export class ProcessorService {
             smartQueries: string[];
             searchExecutions: Array<{
                 query: string;
-                google?: { url: string; resultCount: number };
-                bing?: { url: string; resultCount: number };
+                providerUrl: string;
+                resultCount: number;
             }>;
             imageScoring: Array<{ url: string; score: number; reason: string; sourceEngine?: string }>;
             fallbackUsed: 'dalle' | 'original' | null;

@@ -1,7 +1,17 @@
 export interface AiDecisionsTrace {
     imageProtagonist?: string | null;
     smartQueries?: string[];
-    imageScoring?: Array<{ url: string; score: number; reason: string }>;
+    searchExecutions?: Array<{
+        query: string;
+        google?: { url: string; resultCount: number };
+        bing?: { url: string; resultCount: number };
+    }>;
+    imageScoring?: Array<{
+        url: string;
+        score: number;
+        reason: string;
+        sourceEngine?: 'google' | 'bing' | 'dalle' | 'original' | string;
+    }>;
     fallbackUsed?: 'dalle' | 'original' | null;
 }
 

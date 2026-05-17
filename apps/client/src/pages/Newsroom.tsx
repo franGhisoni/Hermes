@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
@@ -72,6 +72,16 @@ export default function Newsroom() {
     const [searching, setSearching] = useState(false);
     const [customImageUrl, setCustomImageUrl] = useState('');
     const [addingCustom, setAddingCustom] = useState(false);
+    const titleRef = useRef<HTMLTextAreaElement>(null);
+
+    // Auto-resize the title textarea to fit its content (wraps to as many
+    // lines as needed instead of clipping when the headline is long).
+    useEffect(() => {
+        const el = titleRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+    }, [article?.rewrittenTitle]);
 
     const handleAddCustomUrl = async () => {
         if (!id || !customImageUrl.trim()) return;
@@ -540,10 +550,20 @@ export default function Newsroom() {
                             );
                         })()}
 
-                        <input
-                            className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight"
+                        <textarea
+                            ref={titleRef}
+                            rows={1}
+                            className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none overflow-hidden"
                             value={article.rewrittenTitle || ''}
-                            onChange={(e) => setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null)}
+                            onChange={(e) => {
+                                setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null);
+                                // Resize synchronously so the textarea grows
+                                // as the user types instead of waiting for the
+                                // useEffect on the next render.
+                                const el = e.currentTarget;
+                                el.style.height = 'auto';
+                                el.style.height = `${el.scrollHeight}px`;
+                            }}
                         />
 
                         <textarea
@@ -618,6 +638,33 @@ function AdminAiTracePanel({ trace }: { trace: NonNullable<Article['aiDecisions'
                         </div>
                     )}
 
+                    {trace.searchExecutions && trace.searchExecutions.length > 0 && (
+                        <div>
+                            <div className="text-[9px] font-bold uppercase tracking-widest opacity-50 mb-1">URLs de búsqueda ejecutadas</div>
+                            <div className="flex flex-col gap-1">
+                                {trace.searchExecutions.map((exec, i) => (
+                                    <div key={i} className="bg-white/60 border border-purple-200/40 px-2 py-1.5 text-[10px]">
+                                        <div className="font-mono opacity-80 mb-0.5 truncate">{exec.query}</div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {exec.google && (
+                                                <a href={exec.google.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${exec.google.resultCount === 0 ? 'text-red-700/60' : 'text-blue-700'}`}>
+                                                    <span className="font-bold">Google</span>
+                                                    <span className="opacity-70">({exec.google.resultCount} resultados)</span>
+                                                </a>
+                                            )}
+                                            {exec.bing && (
+                                                <a href={exec.bing.url} target="_blank" rel="noopener noreferrer" className={`inline-flex items-center gap-1 hover:underline ${exec.bing.resultCount === 0 ? 'text-red-700/60' : 'text-blue-700'}`}>
+                                                    <span className="font-bold">Bing</span>
+                                                    <span className="opacity-70">({exec.bing.resultCount} resultados)</span>
+                                                </a>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
                     {sorted.length > 0 && (
                         <div>
                             <div className="text-[9px] font-bold uppercase tracking-widest opacity-50 mb-1">Scoring por candidata (ordenado de mejor a peor)</div>
@@ -626,13 +673,21 @@ function AdminAiTracePanel({ trace }: { trace: NonNullable<Article['aiDecisions'
                                     const scoreColor = s.score >= 7 ? 'bg-green-100 text-green-900'
                                         : s.score >= 4 ? 'bg-amber-100 text-amber-900'
                                         : 'bg-red-100/70 text-red-900';
+                                    const engineColor = s.sourceEngine === 'google' ? 'bg-blue-100 text-blue-900'
+                                        : s.sourceEngine === 'bing' ? 'bg-cyan-100 text-cyan-900'
+                                        : s.sourceEngine === 'dalle' ? 'bg-purple-100 text-purple-900'
+                                        : s.sourceEngine === 'original' ? 'bg-gray-100 text-gray-700'
+                                        : 'bg-gray-50 text-gray-500';
                                     return (
                                         <div key={`${s.url}-${i}`} className="flex items-start gap-2 bg-white/60 border border-purple-200/40 p-1.5">
                                             <img src={resolveAssetUrl(s.url)} alt="" className="w-12 h-12 object-cover flex-shrink-0 border border-editorial-text/10" />
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${scoreColor}`}>{s.score}/10</span>
-                                                    <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono opacity-50 hover:opacity-100 truncate flex-1">
+                                                    {s.sourceEngine && (
+                                                        <span className={`text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${engineColor}`}>{s.sourceEngine}</span>
+                                                    )}
+                                                    <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-mono opacity-50 hover:opacity-100 truncate flex-1 min-w-0">
                                                         {s.url.length > 70 ? s.url.slice(0, 70) + '…' : s.url}
                                                     </a>
                                                 </div>

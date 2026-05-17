@@ -385,7 +385,7 @@ export class SchedulerService {
         const rewritten = await this.aiService.rewriteContent(article.originalTitle, article.originalContent);
 
         const imageService = new ImageService();
-        const searchResults = await imageService.searchImages({
+        const { images: searchResults } = await imageService.searchImages({
             title: article.originalTitle,
             content: article.originalContent,
             rewrittenTitle: rewritten.title

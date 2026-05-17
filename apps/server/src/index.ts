@@ -608,7 +608,7 @@ app.post('/api/articles/:id/search-images', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Not found' });
 
         const imageService = new ImageService();
-        const images = await imageService.searchImages({
+        const { images } = await imageService.searchImages({
             title: article.originalTitle,
             content: article.originalContent,
             rewrittenTitle: article.rewrittenTitle || undefined

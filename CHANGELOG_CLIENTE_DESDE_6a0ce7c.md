@@ -1,330 +1,266 @@
-# Informe de cambios realizados en Hermes
+# Resumen de mejoras realizadas en Hermes
 
-Periodo cubierto: desde el commit `6a0ce7c049e7011e01fd2e59da72b1d5753426ef` (`feat: enhance settings management with article retention and cleanup configurations`) hasta el estado actual.
+Periodo cubierto: desde la ultima version informada al cliente, correspondiente al commit `6a0ce7c049e7011e01fd2e59da72b1d5753426ef`, hasta la version actual.
 
-Este documento resume el trabajo realizado sobre la plataforma Hermes desde la ultima version informada al cliente. El foco del desarrollo fue convertir el sistema en una herramienta editorial mas robusta, trazable y operable: mejorar la calidad de imagenes, ampliar la configuracion del scraping y la publicacion, agregar visibilidad sobre decisiones automaticas, reducir fallos silenciosos y hacer mas comodo el trabajo diario del equipo.
+Durante este periodo se realizo una evolucion importante de Hermes. El trabajo no se limito a ajustes visuales o correcciones puntuales: se reforzo el proceso completo de trabajo, desde la captura de noticias hasta la seleccion de imagenes, la preparacion editorial, la publicacion, el monitoreo y la operacion diaria.
 
-## Resumen ejecutivo
+El resultado es una plataforma mas estable, mas controlable y mas alineada con un uso real de redaccion.
 
-Desde el ultimo punto informado se trabajo sobre practicamente todo el circuito operativo de Hermes: ingestion de noticias, procesamiento con IA, busqueda y seleccion de imagenes, publicacion, configuracion, monitoreo, trazabilidad y experiencia de uso.
+## Vision general
 
-Los cambios mas importantes fueron:
+Hermes paso de ser una herramienta funcional de procesamiento automatico a una plataforma mucho mas completa para operar noticias con criterio editorial.
 
-- Se redisenio el flujo de imagenes editoriales para buscar mejores candidatas, evitar reutilizar fotos originales de terceros, puntuar con IA y conservar una traza detallada de cada decision.
-- Se integro SearXNG como proveedor de busqueda de imagenes, reemplazando scrapers mas fragiles y mejorando la estabilidad frente a bloqueos de Google/Bing.
-- Se agregaron consultas inteligentes generadas por IA para encontrar imagenes realmente relacionadas con el protagonista o tema de la nota.
-- Se amplio fuertemente la configuracion desde pantalla de Settings, reduciendo valores hardcodeados y dando control operativo sobre thresholds, modelos, limites y retencion.
-- Se incorporaron notificaciones para problemas de scraping, workflows y publicacion.
-- Se agrego configuracion avanzada de secciones, incluyendo limites y overrides por medio.
-- Se mejoro el modulo de Flujos con edicion in-place, multiples destinos, republicacion opcional y controles de cron mas flexibles.
-- Se robustecio el envio por email, incluyendo mejoras para adjuntar imagenes externas que bloquean requests basicos.
-- Se sumaron mejoras de UX para el editor: trazas visibles para admin, ocultamiento de imagenes descartadas, seleccion manual de imagen, regeneracion, busqueda de medio en publicacion y busqueda global de noticias.
+Se trabajo especialmente en cuatro objetivos:
 
-## Imagenes editoriales e IA
+- Mejorar la calidad del contenido final.
+- Reducir errores operativos y decisiones automaticas poco claras.
+- Dar mas control al equipo sobre fuentes, secciones, imagenes y publicaciones.
+- Hacer que la plataforma sea mas comoda y confiable para el uso diario.
 
-El bloque de trabajo mas grande estuvo en el pipeline de imagenes. Antes, el sistema tenia mas chances de quedarse con imagenes pobres, repetidas, bloqueadas o demasiado dependientes de la fuente original. Ahora el flujo es mucho mas editorial y auditable.
+En terminos practicos, hoy Hermes no solo procesa noticias: tambien ayuda a elegir mejores imagenes, informa cuando algo falla, permite configurar reglas por medio, distribuye publicaciones, organiza flujos de trabajo y deja mas visibles las decisiones tomadas por el sistema.
 
-### Busqueda inteligente de imagenes
+## Mejoras en imagenes editoriales
 
-- Se agrego una etapa de generacion de queries inteligentes con IA.
-- La IA analiza titulo, contenido y, cuando existe, la imagen original para entender quien o que es el protagonista real de la nota.
-- A partir de esa lectura genera consultas de busqueda mas precisas, pensadas para encontrar fotos periodisticas reutilizables y no simplemente repetir las palabras del titulo.
-- Esto ayuda especialmente en titulos ambiguos, ironicos o poco descriptivos, donde una busqueda literal suele traer malos resultados.
+Uno de los bloques de trabajo mas importantes fue la mejora del sistema de imagenes.
 
-### Scoring editorial de candidatas
+Antes, la seleccion de imagenes podia depender demasiado de la imagen original de la fuente o de resultados de busqueda poco precisos. Eso generaba riesgos editoriales: imagenes con marcas de agua, capturas de TV, graficas con texto, fotos repetidas del medio original o imagenes poco representativas de la nota.
 
-- Se amplio el criterio de scoring de imagenes para que la IA evalue cada candidata con un puntaje de 0 a 10.
-- Se ajusto el prompt para que no castigue en exceso imagenes razonables: una imagen contextual puede recibir 4, 5 o 6 aunque no sea perfecta.
-- Se endurecio el rechazo de imagenes no publicables: zocalos, logos, capturas de TV, marcas de agua, collages, graficas con texto o fotos identicas a la fuente original.
-- Se agrego una regla editorial clave: no republicar la misma foto que uso el medio original, incluso si aparece hosteada en otra URL.
-- Se ajusto la seleccion para confiar en el mayor puntaje real y no solamente en el indice devuelto por la IA, evitando inconsistencias.
+Ahora el proceso es mucho mas cuidadoso:
 
-### Mejor manejo de errores de descarga
+- El sistema busca imagenes alternativas para cada noticia.
+- Analiza que persona, entidad, lugar o tema es realmente protagonista.
+- Evalua distintas candidatas y les asigna una calificacion.
+- Prioriza imagenes limpias, periodisticas y utilizables.
+- Penaliza imagenes con logos, zocalos, marcas de agua o apariencia poco profesional.
+- Evita reutilizar la misma imagen que uso la fuente original.
+- Si no encuentra una imagen adecuada, puede recurrir a una imagen generada como alternativa.
 
-- Se corrigio un problema donde OpenAI podia fallar al descargar una imagen candidata y dejar todo el lote con puntajes `0/10`.
-- Ahora, si OpenAI no puede descargar una URL puntual, el sistema intenta identificarla, quitarla del lote y reintentar con las restantes.
-- Tambien se manejo el caso de timeout de descarga, no solo el error `invalid_image_url`.
-- Resultado: menos falsos negativos, menos caidas completas del scoring y mas chances de elegir una imagen util sin caer innecesariamente en generacion.
+Esto mejora tanto la calidad visual como la seguridad editorial del contenido publicado.
 
-### DALL-E como fallback mejor integrado
+## Mejor criterio editorial en la seleccion automatica
 
-- Se corrigio la alineacion entre imagenes candidatas y puntajes cuando se genera una imagen con DALL-E.
-- Antes podia quedar un puntaje alto asignado a una candidata incorrecta. Ahora la imagen generada entra explicitamente como candidata con score propio.
-- El sistema conserva la generacion como fallback cuando no hay imagenes de busqueda que superen el minimo configurado.
+Se ajusto el comportamiento de la inteligencia artificial para que actue mas parecido a un editor.
 
-### Trazabilidad completa de decisiones de imagen
+El sistema ahora distingue mejor entre:
 
-- Se agrego una traza de IA visible para administradores.
-- La traza registra:
-  - protagonista detectado;
-  - queries inteligentes usadas;
-  - busquedas ejecutadas;
-  - proveedor/engine de cada candidata;
-  - puntaje asignado;
-  - razon corta del puntaje;
-  - fallback usado, si corresponde.
-- Esto permite auditar por que una imagen fue elegida, por que otra fue descartada y donde fallo la busqueda.
+- una imagen perfecta para la nota;
+- una imagen aceptable pero no ideal;
+- una imagen relacionada pero floja;
+- una imagen que directamente no conviene usar.
 
-### Mejor experiencia editorial en el Newsroom
+Tambien se redujo el problema de rechazar imagenes razonables por no ser exactas. En muchos casos, para una nota es preferible usar una imagen contextual buena antes que forzar una generacion o quedarse sin alternativa. Ese criterio fue afinado.
 
-- Se ocultan a usuarios no admin las imagenes con score `0`, porque representan descartes duros o fallos de descarga.
-- Los administradores siguen pudiendo verlas para diagnostico.
-- Se agrego soporte para URL manual de imagen: el editor puede pegar una imagen concreta y dejarla seleccionada.
-- Se mantiene la posibilidad de regenerar imagenes cuando ninguna candidata sirve.
-- Se muestra mejor contexto sobre la fuente de cada imagen: Google, Bing, DuckDuckGo via SearXNG, DALL-E u original.
+## Menos fallos silenciosos con imagenes
 
-## Integracion de SearXNG para busqueda de imagenes
+Se corrigieron casos donde algunos servicios externos no podian descargar una imagen puntual y eso provocaba que todo el grupo de candidatas quedara descartado.
 
-Se incorporo SearXNG como capa de busqueda de imagenes autoalojada.
+Ahora, cuando una imagen falla, Hermes intenta aislar esa imagen problematica y continuar con las demas. Esto hace que el sistema sea mas resistente y evita perder buenas opciones por un error puntual de una URL o de un proveedor externo.
 
-Este cambio es importante porque reduce la fragilidad del scraping directo contra buscadores. En lugar de depender de automatizaciones de navegador facilmente bloqueables, Hermes consulta una instancia SearXNG con salida JSON y engines configurados.
+## Busqueda de imagenes mas estable
 
-Trabajo realizado:
+Se incorporo una nueva capa de busqueda de imagenes mas robusta.
 
-- Se agrego servicio `searxng` al `docker-compose.yml`.
-- Se agrego `searxng/settings.yml` versionado en el repo.
-- Se habilito salida JSON.
-- Se configuraron engines de imagenes como Google Images, Bing Images y DuckDuckGo Images.
-- Se aplico SafeSearch estricto.
-- Se configuro idioma y region orientados a Argentina / espanol.
-- Se agrego `SearxngProvider` en backend.
-- Se refactorizo `ImageService` para delegar la busqueda a un proveedor, dejando el sistema preparado para cambiar o sumar proveedores en el futuro.
-- Se conserva en la traza que engine encontro cada imagen, por ejemplo `searxng-google`, `searxng-bing` o `searxng-duckduckgo`.
-- Se agrego soporte para `SEARXNG_URL` y `SEARXNG_PUBLIC_URL`, separando la URL interna del backend y la URL visible para el panel de admin.
+Esto permite depender menos de comportamientos inestables de buscadores tradicionales, que suelen bloquear o limitar automatizaciones. La plataforma ahora cuenta con una forma mas ordenada de consultar multiples fuentes de imagenes y conservar informacion sobre de donde vino cada resultado.
 
-## Configuracion avanzada del sistema
+Para el cliente, el beneficio concreto es:
 
-Se amplio mucho la pantalla de Settings y el servicio de configuracion.
+- mas estabilidad en la busqueda;
+- mejores resultados;
+- menos bloqueos;
+- mas variedad de candidatas;
+- mayor capacidad de diagnostico cuando algo no sale bien.
 
-La idea fue sacar decisiones operativas del codigo y llevarlas a configuracion editable, para que el sistema pueda ajustarse sin redeploy ante cambios de volumen, calidad, costos o criterio editorial.
+## Mayor transparencia sobre las decisiones de IA
 
-Entre los parametros expuestos o centralizados se incluyen:
+Se agrego mas visibilidad sobre lo que hace Hermes cuando procesa una noticia.
 
-- thresholds de deduplicacion;
-- score minimo de imagen;
-- tamano del pool de imagenes a evaluar;
-- cantidad maxima de retries del scoring;
-- modelo usado para scoring de imagenes;
-- max tokens del scoring;
-- cantidad de caracteres de contenido enviados al scorer;
-- limites y comportamiento de queries de imagen;
-- timeouts de fetch;
-- modelo de generacion de imagenes;
+Ahora los administradores pueden revisar informacion como:
+
+- que interpreto el sistema como protagonista de la nota;
+- que busquedas realizo;
+- que imagenes considero;
+- que puntaje recibio cada imagen;
+- por que una imagen fue aceptada o descartada;
+- si se uso una imagen encontrada, generada o la original.
+
+Esto es clave para confiar en la automatizacion. En lugar de que el sistema tome decisiones como una caja negra, ahora deja una explicacion revisable.
+
+## Mejoras para el equipo editorial
+
+Se incorporaron varias mejoras pensadas para el trabajo diario de quienes revisan y publican notas.
+
+Entre ellas:
+
+- posibilidad de cambiar la imagen principal;
+- posibilidad de pegar una imagen manualmente;
+- opcion para regenerar imagen cuando ninguna candidata sirve;
+- ocultamiento de imagenes claramente descartadas para no ensuciar la vista de trabajo;
+- mejor visualizacion de candidatas;
+- mayor claridad sobre el estado de cada articulo;
+- mejoras en la pantalla de revision y publicacion.
+
+Estas mejoras reducen friccion y aceleran la tarea de edicion.
+
+## Buscador de noticias en la pagina principal
+
+Se agrego un buscador global de noticias en el Dashboard principal.
+
+Ahora el equipo puede buscar noticias por:
+
+- titulo;
+- contenido;
+- medio;
+- seccion;
+- URL;
+- texto reescrito.
+
+La busqueda no se limita a lo que se ve en pantalla: consulta el conjunto de noticias disponible y respeta los filtros existentes.
+
+Esto hace mucho mas facil encontrar notas ya procesadas, revisar historicos, ubicar una publicacion especifica o filtrar rapidamente una cobertura.
+
+## Buscador de medio al publicar manualmente
+
+Se agrego un buscador dentro del modal de publicacion manual.
+
+Cuando hay varios medios o destinos configurados, el usuario ya no necesita recorrer la lista completa. Puede buscar por nombre o email y seleccionar rapidamente el destino correcto.
+
+Esta mejora es simple en apariencia, pero importante para el uso diario: reduce errores, acelera la publicacion y hace mas clara la operacion cuando crece la cantidad de destinos.
+
+## Mejoras en flujos de publicacion
+
+Se amplio el modulo de flujos para soportar operaciones mas reales y flexibles.
+
+Ahora Hermes permite configurar mejor como se distribuyen las noticias, a que destinos se envian y bajo que condiciones.
+
+Se trabajo sobre:
+
+- flujos mas faciles de editar;
+- seleccion de fuentes para cada flujo;
+- configuracion de categorias;
+- criterios de score minimo;
+- multiples destinos;
+- distribucion rotativa entre destinos;
+- posibilidad de republicar contenido para completar cupos;
+- pausado y reactivacion de flujos;
+- configuracion mas flexible de horarios.
+
+Esto permite que la plataforma se adapte mejor a distintas rutinas editoriales y comerciales.
+
+## Mejoras en configuracion de fuentes y secciones
+
+Se amplio mucho el control sobre fuentes y secciones.
+
+Ahora es posible manejar diferencias entre medios sin tener que tocar codigo o forzar configuraciones generales.
+
+Por ejemplo:
+
+- una seccion puede existir de forma general;
+- cada medio puede tener una ruta distinta para esa seccion;
+- se puede definir un limite particular de noticias por medio;
+- se puede desactivar una seccion solo para un medio puntual.
+
+Esto da mucha mas flexibilidad para trabajar con medios que no tienen la misma estructura o que requieren tratamientos distintos.
+
+## Panel de configuracion mas completo
+
+Se reorganizo y amplio el panel de configuracion.
+
+El objetivo fue que mas decisiones puedan gestionarse desde la interfaz y no queden escondidas en el sistema.
+
+Ahora hay mas control sobre:
+
+- comportamiento del procesamiento;
+- parametros de imagenes;
+- limites;
+- modelos utilizados;
+- thresholds;
 - retencion de noticias;
 - limpieza automatica;
-- parametros de procesamiento y scraping.
+- fuentes;
+- secciones;
+- prompts y reglas.
 
-Tambien se reorganizo Settings en pestanas mas claras, separando areas como fuentes, sistema, prompts e imagenes.
-
-## Secciones y fuentes
-
-Se trabajo sobre la configuracion de secciones para que el scraping sea mas granular y controlable.
-
-Cambios principales:
-
-- Se agregaron limites por seccion.
-- Se agregaron overrides por medio.
-- Una seccion puede tener una ruta global, pero un medio puntual puede usar otra ruta.
-- Tambien se puede modificar el limite de scraping por medio y seccion.
-- Se puede desactivar una seccion para un medio especifico.
-- Se agrego un modal de administracion de overrides por fuente.
-- El scraper manual respeta estas configuraciones efectivas.
-
-Esto permite manejar medios con estructuras distintas sin duplicar secciones ni hardcodear casos especiales.
-
-## Flujos de publicacion
-
-Se mejoro el modulo de Flujos para hacerlo mas operativo y menos rigido.
-
-Trabajo realizado:
-
-- Edicion de workflows in-place.
-- Soporte para multiples targets de publicacion.
-- Distribucion round-robin entre targets.
-- Cursor de target para mantener rotacion.
-- Republicacion opcional para rellenar cupos cuando no hay suficientes notas nuevas.
-- Ventana configurable de articulos.
-- Target category configurable.
-- Seleccion de fuentes asociadas a un flujo.
-- Min score por flujo.
-- Pausa/activacion mas clara.
-- Builder de cron para facilitar horarios sin escribir expresiones manualmente.
-- Registro y notificaciones de ejecucion.
-
-## Publicacion por email
-
-Se robustecio el envio de publicaciones por email.
-
-Cambios principales:
-
-- Mejor manejo de imagenes externas al preparar el email.
-- Uso de headers como User-Agent y Referer para descargar imagenes de sitios que bloquean fetch basico.
-- Fallbacks mas claros cuando no se puede adjuntar una imagen externa.
-- Notificaciones ante errores de publicacion.
-- Mejor trazabilidad de los intentos de envio.
+Esto facilita ajustar la plataforma sin depender siempre de un cambio tecnico.
 
 ## Notificaciones operativas
 
-Se agrego un sistema de notificaciones para que errores importantes no queden perdidos en logs.
+Se agrego un sistema de notificaciones para que los problemas relevantes no queden perdidos en registros internos.
 
-Incluye:
+Hermes puede informar situaciones como:
 
-- modelo de notificacion en base de datos;
-- servicio backend de notificaciones;
-- router API;
-- panel frontend;
-- estados de lectura;
-- clasificacion por fuente: scraper, workflow, publish o system;
-- niveles de severidad: info, warning y error.
-
-Se usan notificaciones para:
-
-- scraping vacio;
-- errores de scraping;
-- medios desconocidos;
+- un scraping que no trajo resultados;
+- un error al scrapear un medio;
 - problemas de publicacion;
-- eventos relevantes de workflows.
+- eventos de flujos automaticos;
+- situaciones que requieren revision.
 
-## Scraping y fuentes
+Esto ayuda a operar la plataforma con mas control, especialmente cuando hay procesos automaticos corriendo en segundo plano.
 
-Se agregaron y ajustaron scrapers para ampliar cobertura y estabilidad.
+## Mejoras en publicacion por email
 
-Cambios incluidos:
+Se reforzo el envio de publicaciones por email.
 
-- Nuevos scrapers para Ambito y El Cronista.
-- Ajustes en scrapers existentes para mejorar extraccion.
-- Mejor filtrado de ruido de consola y recursos bloqueados.
-- Mejor manejo de secciones efectivas por fuente.
-- Respeto de limites configurables por seccion y por fuente.
+Algunos medios o proveedores de imagen bloquean descargas automaticas si no se hacen de forma similar a un navegador real. Se ajusto el sistema para mejorar la capacidad de obtener esas imagenes y adjuntarlas correctamente.
 
-## Dashboard y experiencia de uso
+Tambien se mejoro el manejo de errores para que, si algo falla, sea mas facil entender que ocurrio.
 
-Se hicieron mejoras de experiencia para que el equipo editorial pueda encontrar y operar noticias mas rapido.
+## Nuevas fuentes y mejoras de scraping
 
-Cambios realizados:
+Se amplio y ajusto el trabajo de scraping.
 
-- Logo clickeable para volver al Dashboard.
-- Favicon / branding actualizado.
-- Dashboard con agrupacion por medio o seccion.
-- Filtros por medio, seccion, estado, orden y score.
-- Buscador global de noticias agregado en la pagina principal.
-- La busqueda consulta backend y aplica sobre todo el conjunto paginado, no solo sobre los articulos visibles.
-- La busqueda contempla titulo original, titulo reescrito, contenido, URL, seccion y medio.
-- Mensaje claro cuando no hay resultados para los filtros actuales.
+Se agrego soporte para nuevas fuentes y se mejoro la extraccion en fuentes existentes. Tambien se redujo ruido operativo y se mejoro la forma en que se manejan secciones, limites y casos vacios.
 
-## Modal de publicacion manual
+Esto aporta mas cobertura y una operacion mas estable.
 
-Se agrego un buscador de medios dentro del modal de publicacion manual.
+## Mejoras visuales y de navegacion
 
-Antes, si habia varios targets configurados, el editor tenia que recorrer visualmente toda la lista. Ahora puede filtrar por:
+Se realizaron ajustes de experiencia de usuario para que la plataforma sea mas clara y agradable de usar.
 
-- nombre del medio;
-- email de destino.
+Entre ellos:
 
-Tambien se conserva:
+- logo clickeable para volver al inicio;
+- mejoras de branding;
+- organizacion mas clara del panel de configuracion;
+- mejor disposicion de flujos;
+- dashboard con filtros y agrupaciones;
+- mensajes mas claros cuando no hay resultados;
+- mejor separacion entre vistas operativas.
 
-- seleccion de categoria;
-- precarga de categoria desde la seccion del articulo;
-- validacion de target seleccionado;
-- estado de carga;
-- estado de envio;
-- mensaje cuando no hay medios configurados.
+## Control de calidad y reduccion de riesgos
 
-## Backend de articulos
+Varios cambios apuntan directamente a reducir riesgos en una operacion editorial real:
 
-Se extendio el endpoint `GET /api/articles` con busqueda textual.
+- evitar imagenes con marcas de agua;
+- evitar republicar fotos de la fuente original;
+- detectar mejor imagenes no utilizables;
+- no descartar todo un lote por una imagen fallida;
+- mostrar motivos de decisiones automaticas;
+- alertar errores importantes;
+- permitir ajustes desde interfaz;
+- mejorar busqueda y seleccion manual.
 
-El backend ahora acepta `search` y lo combina con filtros existentes:
-
-- medio;
-- seccion;
-- estado;
-- paginacion;
-- orden por fecha o score;
-- orden ascendente/descendente.
-
-La busqueda contempla:
-
-- `originalTitle`;
-- `rewrittenTitle`;
-- `originalContent`;
-- `rewrittenContent`;
-- `originalUrl`;
-- `section`;
-- `source.name`.
-
-Esto deja la busqueda integrada de forma limpia con la API existente.
-
-## Seguridad editorial y control de calidad
-
-Varias mejoras apuntan a reducir riesgos editoriales:
-
-- evitar republicar imagenes identicas a la fuente;
-- rechazar marcas de agua y capturas con zocalos;
-- no depender ciegamente de la imagen original;
-- conservar razonamientos y puntajes;
-- separar visibilidad admin/editor para imagenes descartadas;
-- configurar thresholds sin tocar codigo;
-- alertar problemas operativos;
-- evitar silencios cuando un scraper no trae resultados.
-
-## Cambios tecnicos destacados
-
-Archivos y modulos relevantes trabajados:
-
-- `apps/server/src/services/AIService.ts`
-- `apps/server/src/services/ImageService.ts`
-- `apps/server/src/services/ProcessorService.ts`
-- `apps/server/src/services/ConfigService.ts`
-- `apps/server/src/services/SchedulerService.ts`
-- `apps/server/src/services/MailService.ts`
-- `apps/server/src/services/NotificationService.ts`
-- `apps/server/src/services/imageProviders/SearxngProvider.ts`
-- `apps/server/src/routes/NotificationRouter.ts`
-- `apps/server/src/routes/SectionRouter.ts`
-- `apps/server/src/routes/WorkflowRouter.ts`
-- `apps/client/src/pages/Settings.tsx`
-- `apps/client/src/pages/Flows.tsx`
-- `apps/client/src/pages/Newsroom.tsx`
-- `apps/client/src/pages/Dashboard.tsx`
-- `apps/client/src/components/NotificationsPanel.tsx`
-- `apps/client/src/components/SectionOverridesModal.tsx`
-- `apps/client/src/components/ScraperControl.tsx`
-- `apps/client/src/components/CronBuilder.tsx`
-- `searxng/settings.yml`
-- `docker-compose.yml`
-- `apps/server/prisma/schema.prisma`
-
-## Migraciones y estructura de datos
-
-Se agregaron cambios de schema y migraciones para soportar:
-
-- notificaciones;
-- configuracion de secciones;
-- overrides por fuente;
-- targets multiples en workflows;
-- cursor de distribucion;
-- republicacion;
-- trazas de IA;
-- puntajes de imagenes;
-- configuraciones persistidas.
+Esto hace que Hermes sea mas confiable tanto para automatizar como para revisar manualmente.
 
 ## Resultado final
 
-Hermes queda bastante mas cerca de una herramienta editorial completa:
+La plataforma queda significativamente mas completa que en la ultima version informada.
 
-- procesa noticias;
-- reescribe contenido;
-- evalua interes;
-- busca imagenes mejores y mas seguras;
-- evita republicar imagenes problematicas;
-- permite diagnosticar decisiones de IA;
-- publica a multiples medios;
-- automatiza flujos;
-- notifica problemas;
-- permite ajustar el comportamiento desde UI;
-- permite buscar y filtrar noticias;
-- permite operar manualmente con menos friccion.
+Hoy Hermes permite:
 
-En terminos practicos, el trabajo no fue solo agregar pantallas: se reforzo todo el circuito de punta a punta, desde la entrada de una noticia hasta su publicacion y posterior auditoria.
+- capturar noticias de distintas fuentes;
+- procesarlas con IA;
+- reescribirlas;
+- evaluar su interes;
+- buscar imagenes adecuadas;
+- elegir o generar imagen principal;
+- revisar decisiones automaticas;
+- publicar manual o automaticamente;
+- distribuir contenido entre destinos;
+- configurar flujos;
+- recibir notificaciones;
+- buscar noticias procesadas;
+- ajustar reglas desde paneles administrativos.
 
+En resumen, se avanzo de una herramienta automatizada a una plataforma editorial mucho mas madura, configurable y preparada para operacion diaria.
+
+El trabajo realizado mejora calidad, control, estabilidad y velocidad de uso. Tambien deja una base mas solida para seguir creciendo sin que cada nueva necesidad requiera rehacer partes centrales del sistema.

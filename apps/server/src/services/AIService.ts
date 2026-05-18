@@ -303,7 +303,7 @@ Return a JSON object:
                     break;
                 } catch (err: any) {
                     lastScoringError = err?.error?.message || err?.message || String(err);
-                    if (err?.code === 'invalid_image_url' || err?.error?.code === 'invalid_image_url') {
+                    if (this.isImageDownloadError(err, lastScoringError)) {
                         const msg: string = lastScoringError;
                         let badUrl = this.extractRejectedImageUrl(msg);
                         // OpenAI's error message ends with a trailing period that isn't
@@ -403,8 +403,16 @@ Return a JSON object:
         }
     }
 
+    private isImageDownloadError(err: any, message: string): boolean {
+        const code = err?.code || err?.error?.code;
+        return code === 'invalid_image_url'
+            || /(?:error|timeout)\s+while\s+downloading\s+https?:\/\//i.test(message)
+            || /could\s+not\s+download\s+https?:\/\//i.test(message);
+    }
+
     private extractRejectedImageUrl(message: string): string | undefined {
-        const match = message.match(/Error while downloading\s+(https?:\/\/\S+)/)
+        const match = message.match(/(?:Error|Timeout)\s+while\s+downloading\s+(https?:\/\/\S+)/i)
+            || message.match(/could\s+not\s+download\s+(https?:\/\/\S+)/i)
             || message.match(/(https?:\/\/\S+)/);
         return this.cleanRejectedUrl(match?.[1]);
     }

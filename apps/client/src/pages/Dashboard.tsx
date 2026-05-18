@@ -15,6 +15,8 @@ export default function Dashboard() {
     const [filterSource, setFilterSource] = useState<string>('all');
     const [filterSection, setFilterSection] = useState<string>('all');
     const [filterStatus, setFilterStatus] = useState<string>('all');
+    const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'score'>('date');
     const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
     const [groupBy, setGroupBy] = useState<'none' | 'source' | 'section'>('none');
@@ -29,7 +31,14 @@ export default function Dashboard() {
     // Also reset page to 1 when filters change
     useEffect(() => {
         setPage(1);
-    }, [filterSource, filterSection, filterStatus, sortBy, sortOrder]);
+    }, [filterSource, filterSection, filterStatus, debouncedSearchQuery, sortBy, sortOrder]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery.trim());
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
 
     const fetchArticles = async () => {
         try {
@@ -42,6 +51,9 @@ export default function Dashboard() {
                 sortBy,
                 sortOrder
             });
+            if (debouncedSearchQuery) {
+                params.set('search', debouncedSearchQuery);
+            }
             const res = await api.get(`/api/articles?${params.toString()}`);
             setArticles(res.data.items || []);
             setTotalArticles(res.data.total || 0);
@@ -82,7 +94,7 @@ export default function Dashboard() {
         fetchArticles();
         const interval = setInterval(fetchArticles, 10000); // 10s to lower load
         return () => clearInterval(interval);
-    }, [page, filterSource, filterSection, filterStatus, sortBy, sortOrder]);
+    }, [page, filterSource, filterSection, filterStatus, debouncedSearchQuery, sortBy, sortOrder]);
 
     const groupedArticles = useMemo(() => {
         if (groupBy === 'none') return null;
@@ -134,6 +146,19 @@ export default function Dashboard() {
 
                 {/* Toolbar */}
                 <div className="mb-8 flex flex-wrap gap-4 items-end font-sans text-xs">
+                    <div className="flex flex-col gap-1 min-w-[260px] flex-1">
+                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Buscar noticias</label>
+                        <input
+                            type="search"
+                            value={searchQuery}
+                            onChange={e => setSearchQuery(e.target.value)}
+                            placeholder="Título, texto, medio o URL"
+                            className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text"
+                        />
+                    </div>
+
+                    <div className="w-px h-8 bg-editorial-text/10 self-center mx-2 hidden sm:block"></div>
+
                     <div className="flex flex-col gap-1">
                         <label className="font-bold uppercase tracking-widest text-editorial-text/50">Medio</label>
                         <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
@@ -187,6 +212,10 @@ export default function Dashboard() {
 
                 {loading && articles.length === 0 ? (
                     <div className="text-center py-20 opacity-50 font-sans animate-pulse">Reuniendo noticias...</div>
+                ) : articles.length === 0 ? (
+                    <div className="text-center py-20 font-sans text-sm text-editorial-text/50 border border-editorial-text/10">
+                        No hay noticias para los filtros actuales.
+                    </div>
                 ) : groupedArticles ? (
                     <div className="flex flex-col gap-12">
                         {Object.entries(groupedArticles).map(([groupName, groupArticles]) => (

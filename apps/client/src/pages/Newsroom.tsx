@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
@@ -23,6 +23,7 @@ export default function Newsroom() {
     const [sections, setSections] = useState<{ id: string, name: string, path: string }[]>([]);
     const [selectedTargetId, setSelectedTargetId] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('');
+    const [targetSearch, setTargetSearch] = useState('');
     const [publishing, setPublishing] = useState(false);
     const [loadingTargets, setLoadingTargets] = useState(false);
 
@@ -174,6 +175,7 @@ export default function Newsroom() {
     const openPublishModal = async () => {
         setShowPublishModal(true);
         setLoadingTargets(true);
+        setTargetSearch('');
         // Auto-set category from article's section
         setSelectedCategory(article?.section || '');
         try {
@@ -192,6 +194,15 @@ export default function Newsroom() {
             setLoadingTargets(false);
         }
     };
+
+    const filteredTargets = useMemo(() => {
+        const term = targetSearch.trim().toLowerCase();
+        if (!term) return targets;
+        return targets.filter(target =>
+            target.name.toLowerCase().includes(term)
+            || target.email.toLowerCase().includes(term)
+        );
+    }, [targets, targetSearch]);
 
     const handlePublish = async () => {
         if (!id || !selectedTargetId) return;
@@ -277,29 +288,46 @@ export default function Newsroom() {
                             </div>
                         ) : (
                             <>
+                                <div className="mb-3">
+                                    <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
+                                    <input
+                                        type="search"
+                                        value={targetSearch}
+                                        onChange={e => setTargetSearch(e.target.value)}
+                                        placeholder="Nombre o email"
+                                        className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text"
+                                    />
+                                </div>
+
                                 <div className="flex flex-col gap-2 mb-6 max-h-60 overflow-y-auto">
-                                    {targets.map(t => (
-                                        <label
-                                            key={t.id}
-                                            className={`flex items-center gap-3 p-3 border cursor-pointer transition-all font-sans text-sm ${selectedTargetId === t.id
-                                                ? 'border-editorial-text bg-editorial-text/5 shadow-sm'
-                                                : 'border-editorial-text/10 hover:border-editorial-text/30'
-                                                }`}
-                                        >
-                                            <input
-                                                type="radio"
-                                                name="target"
-                                                value={t.id}
-                                                checked={selectedTargetId === t.id}
-                                                onChange={() => setSelectedTargetId(t.id)}
-                                                className="accent-editorial-text"
-                                            />
-                                            <div className="flex flex-col">
-                                                <span className="font-bold">{t.name}</span>
-                                                <span className="text-xs text-editorial-text/50">{t.email}</span>
-                                            </div>
-                                        </label>
-                                    ))}
+                                    {filteredTargets.length === 0 ? (
+                                        <div className="py-6 text-center font-sans text-sm text-editorial-text/50 border border-editorial-text/10">
+                                            No hay medios que coincidan.
+                                        </div>
+                                    ) : (
+                                        filteredTargets.map(t => (
+                                            <label
+                                                key={t.id}
+                                                className={`flex items-center gap-3 p-3 border cursor-pointer transition-all font-sans text-sm ${selectedTargetId === t.id
+                                                    ? 'border-editorial-text bg-editorial-text/5 shadow-sm'
+                                                    : 'border-editorial-text/10 hover:border-editorial-text/30'
+                                                    }`}
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="target"
+                                                    value={t.id}
+                                                    checked={selectedTargetId === t.id}
+                                                    onChange={() => setSelectedTargetId(t.id)}
+                                                    className="accent-editorial-text"
+                                                />
+                                                <div className="flex flex-col">
+                                                    <span className="font-bold">{t.name}</span>
+                                                    <span className="text-xs text-editorial-text/50">{t.email}</span>
+                                                </div>
+                                            </label>
+                                        ))
+                                    )}
                                 </div>
 
                                 {/* Category selector */}

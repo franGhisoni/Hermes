@@ -85,7 +85,7 @@ app.get('/api/articles', async (req, res) => {
     try {
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
-        const { source, section, status, sortBy, sortOrder } = req.query as Record<string, string>;
+        const { source, section, status, search, sortBy, sortOrder } = req.query as Record<string, string>;
 
         const result = await articleService.getArticles({
             page,
@@ -93,6 +93,7 @@ app.get('/api/articles', async (req, res) => {
             source,
             section,
             status,
+            search,
             sortBy: sortBy as 'date' | 'score',
             sortOrder: sortOrder as 'desc' | 'asc'
         });

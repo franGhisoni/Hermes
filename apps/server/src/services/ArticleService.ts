@@ -103,10 +103,11 @@ export class ArticleService {
         source?: string;
         section?: string;
         status?: string;
+        search?: string;
         sortBy?: 'date' | 'score';
         sortOrder?: 'desc' | 'asc';
     }) {
-        const { page, limit, source, section, status, sortBy = 'date', sortOrder = 'desc' } = params;
+        const { page, limit, source, section, status, search, sortBy = 'date', sortOrder = 'desc' } = params;
         const skip = (page - 1) * limit;
 
         let where: any = {};
@@ -115,6 +116,18 @@ export class ArticleService {
             where.section = { contains: section, mode: 'insensitive' };
         }
         if (status && status !== 'all') where.status = status as any;
+        if (search?.trim()) {
+            const term = search.trim();
+            where.OR = [
+                { originalTitle: { contains: term, mode: 'insensitive' } },
+                { rewrittenTitle: { contains: term, mode: 'insensitive' } },
+                { originalContent: { contains: term, mode: 'insensitive' } },
+                { rewrittenContent: { contains: term, mode: 'insensitive' } },
+                { originalUrl: { contains: term, mode: 'insensitive' } },
+                { section: { contains: term, mode: 'insensitive' } },
+                { source: { name: { contains: term, mode: 'insensitive' } } }
+            ];
+        }
 
         let orderBy: any = {};
         if (sortBy === 'date') orderBy = { createdAt: sortOrder };

@@ -11,6 +11,13 @@ interface SearxngImageResult {
 
 interface SearxngResponse {
     results?: SearxngImageResult[];
+    unresponsive_engines?: unknown[];
+}
+
+interface SearxngSearchVariant {
+    label: string;
+    language?: string;
+    engines?: string;
 }
 
 /**
@@ -39,19 +46,52 @@ export class SearxngProvider implements ImageSearchProvider {
     }
 
     async search(query: string, options: ImageSearchOptions = {}): Promise<ProviderSearchResult> {
+        const primary = await this.searchVariant(query, options, {
+            label: 'default',
+            language: 'es-AR'
+        });
+
+        // SearXNG sometimes falls back to Bing-only results when Google Images
+        // is rate-limited or unhappy with the locale. Those Bing-only batches
+        // are the source of the recurring unrelated anime/wallpaper/China
+        // candidates. Before accepting that degraded response, retry a broader
+        // search using only the engines that have produced usable editorial
+        // images for Hermes.
+        if (primary.results.length >= 10 && this.hasPreferredEngine(primary.engineByUrl)) {
+            return primary;
+        }
+
+        const preferredBroad = await this.searchVariant(query, options, {
+            label: 'preferred-broad',
+            language: 'all',
+            engines: 'google images,duckduckgo images'
+        });
+
+        if (preferredBroad.results.length > 0) {
+            console.warn(`[SearxngProvider] "${query}" used preferred-broad retry (${primary.results.length} default -> ${preferredBroad.results.length} preferred results).`);
+            return preferredBroad;
+        }
+
+        return primary;
+    }
+
+    private async searchVariant(query: string, options: ImageSearchOptions, variant: SearxngSearchVariant): Promise<ProviderSearchResult> {
         const params = new URLSearchParams({
             q: query,
             format: 'json',
             categories: 'images',
             // Argentina geo + Spanish locale: matches what we used to pass to
             // Google/Bing directly. SafeSearch is enforced via settings.yml.
-            language: 'es-AR',
             safesearch: '2'
         });
+        if (variant.language) params.set('language', variant.language);
+        if (variant.engines) params.set('engines', variant.engines);
 
         const apiUrl = `${this.baseUrl}/search?${params.toString()}`;
         // Public-facing URL the editor can open from the trace panel.
-        const browserUrl = `${this.publicBaseUrl}/search?q=${encodeURIComponent(query)}&categories=images`;
+        const browserParams = new URLSearchParams(params);
+        browserParams.delete('format');
+        const browserUrl = `${this.publicBaseUrl}/search?${browserParams.toString()}`;
 
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
@@ -73,6 +113,9 @@ export class SearxngProvider implements ImageSearchProvider {
 
             const data = (await response.json()) as SearxngResponse;
             const items = data.results || [];
+            if (data.unresponsive_engines && data.unresponsive_engines.length > 0) {
+                console.warn(`[SearxngProvider] "${query}" ${variant.label} unresponsive engines: ${JSON.stringify(data.unresponsive_engines)}`);
+            }
 
             const seen = new Set<string>();
             const results: string[] = [];
@@ -91,15 +134,24 @@ export class SearxngProvider implements ImageSearchProvider {
                 engineByUrl[imageUrl] = `searxng-${engine}`;
             }
 
-            console.log(`[SearxngProvider] "${query}" -> ${results.length} results`);
+            console.log(`[SearxngProvider] "${query}" ${variant.label} -> ${results.length} results`);
             return { url: browserUrl, results, engineByUrl };
         } catch (error: any) {
             const msg = error?.name === 'AbortError' ? `timeout after ${this.timeoutMs}ms` : (error?.message || String(error));
-            console.error(`[SearxngProvider] search failed for "${query}": ${msg}`);
+            console.error(`[SearxngProvider] search failed for "${query}" ${variant.label}: ${msg}`);
             return { url: browserUrl, results: [], engineByUrl: {} };
         } finally {
             clearTimeout(timer);
         }
+    }
+
+    private hasPreferredEngine(engineByUrl: Record<string, string>): boolean {
+        return Object.values(engineByUrl).some(engine =>
+            engine === 'searxng-google'
+            || engine === 'searxng-duckduckgo'
+            || engine === 'searxng-google images'
+            || engine === 'searxng-duckduckgo images'
+        );
     }
 
     private normalizeEngineName(engine?: string): string {

@@ -54,8 +54,20 @@ ui:
 outgoing:
   request_timeout: 8.0
   max_request_timeout: 15.0
+  extra_proxy_timeout: 10.0
   pool_connections: 100
   pool_maxsize: 20
+  # Decodo residential proxy for Google/DDG Images. Replace this placeholder
+  # with the real copied endpoint in URL format:
+  #   host:port:username:password
+  # becomes:
+  #   http://username:url_encoded_password@host:port
+  #
+  # Example below is intentionally fake. If the real password contains
+  # special URL characters, encode them (for example "=" -> "%3D").
+  proxies:
+    all://:
+      - http://sp693n5awq:h2pw%3DhQRvVSf2ri5v5@gate.decodo.com:10004
 
 engines:
   - name: google images

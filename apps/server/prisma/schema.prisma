@@ -108,6 +108,38 @@ model ScrapeSchedule {
   updatedAt DateTime @updatedAt
 }
 
+model ScrapeRun {
+  id             String           @id @default(uuid())
+  source         String
+  sectionName    String?
+  path           String?
+  requestedLimit Int
+  scrapedCount   Int              @default(0)
+  processedCount Int              @default(0)
+  status         ScrapeRunStatus
+  trigger        ScrapeRunTrigger @default(MANUAL)
+  startedAt      DateTime         @default(now())
+  finishedAt     DateTime?
+  durationMs     Int?
+  errorMessage   String?
+
+  @@index([startedAt])
+  @@index([source, startedAt])
+  @@index([sectionName, startedAt])
+}
+
+enum ScrapeRunStatus {
+  RUNNING
+  SUCCESS
+  EMPTY
+  ERROR
+}
+
+enum ScrapeRunTrigger {
+  MANUAL
+  SCHEDULED
+}
+
 model Section {
   id          String   @id @default(uuid())
   name        String

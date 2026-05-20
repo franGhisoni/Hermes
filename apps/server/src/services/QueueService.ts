@@ -8,6 +8,14 @@ import { AmbitoScraper } from '../scrapers/AmbitoScraper';
 import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
+import { PrismaClient, ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
+
+const prisma = new PrismaClient();
+
+type ScrapeJobOptions = {
+    sectionName?: string;
+    trigger?: ScrapeRunTrigger;
+};
 
 // Connection config
 // Connection config
@@ -33,9 +41,15 @@ export class QueueService {
         this.setupWorkers();
     }
 
-    async addScrapeJob(source: string, url?: string, limit: number = 30) {
-        console.log(`[Queue] Adding scrape job for ${source} with limit ${limit}`);
-        await this.scraperQueue.add('scrape', { source, url, limit });
+    async addScrapeJob(source: string, url?: string, limit: number = 30, options: ScrapeJobOptions = {}) {
+        console.log(`[Queue] Adding scrape job for ${source}${options.sectionName ? ` / ${options.sectionName}` : ''} with limit ${limit}`);
+        await this.scraperQueue.add('scrape', {
+            source,
+            url,
+            limit,
+            sectionName: options.sectionName,
+            trigger: options.trigger || ScrapeRunTrigger.MANUAL
+        });
     }
 
     private setupWorkers() {
@@ -54,10 +68,44 @@ export class QueueService {
         new Worker(QUEUES.SCRAPER, async (job: Job) => {
             console.log(`[Worker] Processing job ${job.id}: ${job.data.source} - ${job.data.url || 'No URL custom'} - Limit: ${job.data.limit}`);
 
+            const limit = job.data.limit || 30;
+            const startedAt = new Date();
+            const run = await prisma.scrapeRun.create({
+                data: {
+                    source: job.data.source,
+                    sectionName: job.data.sectionName || null,
+                    path: job.data.url || null,
+                    requestedLimit: limit,
+                    status: ScrapeRunStatus.RUNNING,
+                    trigger: job.data.trigger || ScrapeRunTrigger.MANUAL
+                }
+            });
+
+            const finishRun = async (
+                status: ScrapeRunStatus,
+                scrapedCount: number,
+                processedCount: number,
+                errorMessage?: string
+            ) => {
+                const finishedAt = new Date();
+                await prisma.scrapeRun.update({
+                    where: { id: run.id },
+                    data: {
+                        status,
+                        scrapedCount,
+                        processedCount,
+                        finishedAt,
+                        durationMs: finishedAt.getTime() - startedAt.getTime(),
+                        errorMessage: errorMessage ? errorMessage.slice(0, 1000) : null
+                    }
+                });
+            };
+
             const ScraperClass = scraperRegistry[job.data.source];
 
             if (!ScraperClass) {
                 console.error(`[Worker] Unknown source: ${job.data.source}`);
+                await finishRun(ScrapeRunStatus.ERROR, 0, 0, `Unknown source: ${job.data.source}`);
                 await notificationService.emit({
                     level: 'ERROR',
                     source: 'SCRAPER',
@@ -76,8 +124,6 @@ export class QueueService {
                     scraper.baseUrl = isFullPath ? job.data.url : `${scraper.baseUrl}${job.data.url}`;
                 }
 
-                const limit = job.data.limit || 30;
-
                 console.log(`[Worker] Starting scrape for ${job.data.source} with limit ${limit}...`);
                 const articles = await scraper.scrape(limit);
                 console.log(`[Worker] Scraped ${articles.length} articles from ${job.data.source}.`);
@@ -92,18 +138,27 @@ export class QueueService {
                     });
                 }
 
+                let processedCount = 0;
                 if (articles.length > 0) {
                     // Pipeline Integration
                     console.log('[Worker] Invoking processScrapedArticles...');
                     const processor = new ProcessorService();
-                    await processor.processScrapedArticles(job.data.source, articles);
+                    const processedArticles = await processor.processScrapedArticles(job.data.source, articles);
+                    processedCount = processedArticles.length;
                     console.log('[Worker] Processing complete.');
                 }
+
+                await finishRun(
+                    articles.length === 0 ? ScrapeRunStatus.EMPTY : ScrapeRunStatus.SUCCESS,
+                    articles.length,
+                    processedCount
+                );
 
                 return articles;
 
             } catch (err: any) {
                 console.error(`[Worker] Error scraping ${job.data.source}:`, err);
+                await finishRun(ScrapeRunStatus.ERROR, 0, 0, err?.message || String(err) || 'Unknown scraping error');
                 await notificationService.emit({
                     level: 'ERROR',
                     source: 'SCRAPER',

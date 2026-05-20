@@ -49,3 +49,19 @@ export interface Notification {
     readAt?: string | null;
     createdAt: string;
 }
+
+export interface ScrapeRun {
+    id: string;
+    source: string;
+    sectionName?: string | null;
+    path?: string | null;
+    requestedLimit: number;
+    scrapedCount: number;
+    processedCount: number;
+    status: 'RUNNING' | 'SUCCESS' | 'EMPTY' | 'ERROR';
+    trigger: 'MANUAL' | 'SCHEDULED';
+    startedAt: string;
+    finishedAt?: string | null;
+    durationMs?: number | null;
+    errorMessage?: string | null;
+}

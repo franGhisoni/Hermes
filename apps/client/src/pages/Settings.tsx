@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
+import type { ScrapeRun } from '../types';
 
 interface PromptConfig {
     id: string;
@@ -96,6 +97,7 @@ export default function Settings() {
     const [prompts, setPrompts] = useState<PromptConfig[]>([]);
     const [sections, setSections] = useState<Section[]>([]);
     const [schedules, setSchedules] = useState<ScrapeSchedule[]>([]);
+    const [scrapeRuns, setScrapeRuns] = useState<ScrapeRun[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<TabKey>('fuentes');
 
@@ -124,19 +126,26 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [promptsRes, sectionsRes, schedulesRes] = await Promise.all([
+            const [promptsRes, sectionsRes, schedulesRes, scrapeRunsRes] = await Promise.all([
                 api.get('/api/config/prompts'),
                 api.get('/api/config/sections'),
-                api.get('/api/scrape-schedules')
+                api.get('/api/scrape-schedules'),
+                api.get('/api/scrape-runs?limit=100')
             ]);
             setPrompts(promptsRes.data);
             setSections(sectionsRes.data);
             setSchedules(schedulesRes.data);
+            setScrapeRuns(scrapeRunsRes.data);
         } catch (e) {
             console.error(e);
         } finally {
             setLoading(false);
         }
+    };
+
+    const fetchScrapeRuns = async () => {
+        const res = await api.get('/api/scrape-runs?limit=100');
+        setScrapeRuns(res.data);
     };
 
     useEffect(() => {
@@ -337,6 +346,7 @@ export default function Settings() {
                         <FuentesTab
                             sections={sections}
                             schedules={schedules}
+                            scrapeRuns={scrapeRuns}
                             scrapeLimit={scrapeLimit}
                             newSecName={newSecName}
                             setNewSecName={setNewSecName}
@@ -354,6 +364,7 @@ export default function Settings() {
                             handleCreateSchedule={handleCreateSchedule}
                             handleToggleSchedule={handleToggleSchedule}
                             handleDeleteSchedule={handleDeleteSchedule}
+                            refreshScrapeRuns={fetchScrapeRuns}
                             onConfigureOverrides={(id) => setOverrideSectionId(id)}
                         />
                     )}
@@ -440,6 +451,7 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
 interface FuentesTabProps {
     sections: Section[];
     schedules: ScrapeSchedule[];
+    scrapeRuns: ScrapeRun[];
     scrapeLimit: number;
     newSecName: string;
     setNewSecName: (v: string) => void;
@@ -457,21 +469,24 @@ interface FuentesTabProps {
     handleCreateSchedule: (e: React.FormEvent) => Promise<void>;
     handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
     handleDeleteSchedule: (id: string) => Promise<void>;
+    refreshScrapeRuns: () => Promise<void>;
     onConfigureOverrides: (sectionId: string) => void;
 }
 
 function FuentesTab(props: FuentesTabProps) {
     const {
-        sections, schedules, scrapeLimit,
+        sections, schedules, scrapeRuns, scrapeLimit,
         newSecName, setNewSecName, newSecPath, setNewSecPath, newSecLimit, setNewSecLimit,
         newSchedSource, setNewSchedSource, newSchedCron, setNewSchedCron,
         handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
         handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule,
+        refreshScrapeRuns,
         onConfigureOverrides
     } = props;
 
     return (
-        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Sections column */}
             <div className="flex flex-col gap-4">
                 <Header
@@ -655,7 +670,128 @@ function FuentesTab(props: FuentesTabProps) {
                     </div>
                 </Card>
             </div>
+            </div>
+
+            <ScrapeRunsPanel runs={scrapeRuns} onRefresh={refreshScrapeRuns} />
         </section>
+    );
+}
+
+function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: () => Promise<void> }) {
+    const [refreshing, setRefreshing] = useState(false);
+
+    const formatDate = (value: string) => new Intl.DateTimeFormat('es-AR', {
+        day: '2-digit',
+        month: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    }).format(new Date(value));
+
+    const formatDuration = (ms?: number | null) => {
+        if (ms == null) return '-';
+        if (ms < 1000) return `${ms}ms`;
+        return `${Math.round(ms / 1000)}s`;
+    };
+
+    const statusClass: Record<ScrapeRun['status'], string> = {
+        RUNNING: 'bg-blue-50 text-blue-700 border-blue-100',
+        SUCCESS: 'bg-green-50 text-green-700 border-green-100',
+        EMPTY: 'bg-amber-50 text-amber-700 border-amber-100',
+        ERROR: 'bg-red-50 text-red-700 border-red-100'
+    };
+
+    const statusLabel: Record<ScrapeRun['status'], string> = {
+        RUNNING: 'En curso',
+        SUCCESS: 'Ok',
+        EMPTY: 'Sin notas',
+        ERROR: 'Error'
+    };
+
+    const handleRefresh = async () => {
+        setRefreshing(true);
+        try {
+            await onRefresh();
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    return (
+        <Card>
+            <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                    <h3 className="text-xs font-bold uppercase tracking-widest font-sans">
+                        Ejecuciones de scraping <span className="opacity-50">({runs.length})</span>
+                    </h3>
+                    <p className="font-sans text-[11px] text-editorial-text/60 mt-1">
+                        Registro admin por medio y secciÃ³n: lÃ­mite pedido, notas detectadas y notas nuevas procesadas.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={handleRefresh}
+                    disabled={refreshing}
+                    className="flex items-center gap-2 border border-editorial-text/20 px-3 py-1.5 text-[10px] font-sans font-bold uppercase tracking-widest hover:bg-editorial-text/5 disabled:opacity-50"
+                >
+                    <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+                    Actualizar
+                </button>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] font-sans text-xs">
+                    <thead>
+                        <tr className="text-left border-b border-editorial-text/10 text-[10px] uppercase tracking-widest text-editorial-text/50">
+                            <th className="py-2 pr-3">Inicio</th>
+                            <th className="py-2 pr-3">Medio</th>
+                            <th className="py-2 pr-3">SecciÃ³n</th>
+                            <th className="py-2 pr-3 text-right">LÃ­mite</th>
+                            <th className="py-2 pr-3 text-right">Trajo</th>
+                            <th className="py-2 pr-3 text-right">Nuevas</th>
+                            <th className="py-2 pr-3">Estado</th>
+                            <th className="py-2 pr-3">Tipo</th>
+                            <th className="py-2 pr-3 text-right">Dur.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {runs.map(run => (
+                            <tr key={run.id} className="border-b border-editorial-text/5 align-top">
+                                <td className="py-2 pr-3 whitespace-nowrap">{formatDate(run.startedAt)}</td>
+                                <td className="py-2 pr-3 font-bold">{run.source}</td>
+                                <td className="py-2 pr-3">
+                                    <div className="flex flex-col">
+                                        <span>{run.sectionName || '-'}</span>
+                                        {run.path && <span className="font-mono text-[10px] text-editorial-text/45 truncate max-w-[220px]">{run.path}</span>}
+                                    </div>
+                                </td>
+                                <td className="py-2 pr-3 text-right font-mono">{run.requestedLimit}</td>
+                                <td className="py-2 pr-3 text-right font-mono">{run.scrapedCount}</td>
+                                <td className="py-2 pr-3 text-right font-mono">{run.processedCount}</td>
+                                <td className="py-2 pr-3">
+                                    <span className={`inline-flex border px-2 py-0.5 rounded-full text-[10px] font-bold ${statusClass[run.status]}`}>
+                                        {statusLabel[run.status]}
+                                    </span>
+                                    {run.errorMessage && (
+                                        <div className="mt-1 text-[10px] text-red-700 max-w-[240px] truncate" title={run.errorMessage}>
+                                            {run.errorMessage}
+                                        </div>
+                                    )}
+                                </td>
+                                <td className="py-2 pr-3">{run.trigger === 'SCHEDULED' ? 'Auto' : 'Manual'}</td>
+                                <td className="py-2 pr-3 text-right font-mono">{formatDuration(run.durationMs)}</td>
+                            </tr>
+                        ))}
+                        {runs.length === 0 && (
+                            <tr>
+                                <td colSpan={9} className="py-8 text-center text-editorial-text/50 italic">
+                                    TodavÃ­a no hay ejecuciones registradas.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                </table>
+            </div>
+        </Card>
     );
 }
 

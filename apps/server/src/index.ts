@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { QueueService } from './services/QueueService';
 import { ArticleService } from './services/ArticleService';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ScrapeRunTrigger } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -181,7 +181,10 @@ app.post('/api/scrape', async (req, res) => {
             }
             const resolvedPath = override?.path ?? section.path;
             const resolvedLimit = override?.scrapeLimit ?? section.scrapeLimit ?? effectiveLimit;
-            await queueService.addScrapeJob(source, resolvedPath, resolvedLimit);
+            await queueService.addScrapeJob(source, resolvedPath, resolvedLimit, {
+                sectionName: section.name,
+                trigger: ScrapeRunTrigger.MANUAL
+            });
 
             return res.json({
                 message: `Scrape job started for ${section.name}`,
@@ -198,7 +201,9 @@ app.post('/api/scrape', async (req, res) => {
         });
 
         if (sections.length === 0) {
-            await queueService.addScrapeJob(source, undefined, effectiveLimit);
+            await queueService.addScrapeJob(source, undefined, effectiveLimit, {
+                trigger: ScrapeRunTrigger.MANUAL
+            });
             return res.json({ message: 'Scrape job started (no sections configured)', source, jobs: 1 });
         }
 
@@ -208,7 +213,10 @@ app.post('/api/scrape', async (req, res) => {
             if (override && override.enabled === false) continue;
             const resolvedPath = override?.path ?? section.path;
             const resolvedLimit = override?.scrapeLimit ?? section.scrapeLimit ?? effectiveLimit;
-            await queueService.addScrapeJob(source, resolvedPath, resolvedLimit);
+            await queueService.addScrapeJob(source, resolvedPath, resolvedLimit, {
+                sectionName: section.name,
+                trigger: ScrapeRunTrigger.MANUAL
+            });
             queued++;
         }
 
@@ -221,6 +229,28 @@ app.post('/api/scrape', async (req, res) => {
     } catch (error) {
         console.error('Error starting scrape:', error);
         res.status(500).json({ error: 'Failed to start job' });
+    }
+});
+
+// GET /api/scrape-runs - Admin audit log for scraper executions
+app.get('/api/scrape-runs', requireAdmin, async (req, res) => {
+    try {
+        const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+        const { source, section } = req.query as Record<string, string | undefined>;
+
+        const runs = await prisma.scrapeRun.findMany({
+            where: {
+                ...(source ? { source } : {}),
+                ...(section ? { sectionName: section } : {})
+            },
+            orderBy: { startedAt: 'desc' },
+            take: limit
+        });
+
+        res.json(runs);
+    } catch (error) {
+        console.error('Error fetching scrape runs:', error);
+        res.status(500).json({ error: 'Failed to fetch scrape runs' });
     }
 });
 

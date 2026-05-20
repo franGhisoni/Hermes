@@ -96,18 +96,31 @@ export default function Dashboard() {
         return () => clearInterval(interval);
     }, [page, filterSource, filterSection, filterStatus, debouncedSearchQuery, sortBy, sortOrder]);
 
+    const sectionLabelByKey = useMemo(() => {
+        const labels: Record<string, string> = {};
+        configSections.forEach(section => {
+            labels[normalizeGroupKey(section.name)] = section.name;
+        });
+        return labels;
+    }, [configSections]);
+
     const groupedArticles = useMemo(() => {
         if (groupBy === 'none') return null;
-        const groups: Record<string, Article[]> = {};
+        const groups: Record<string, { label: string; articles: Article[] }> = {};
         articles.forEach(article => {
-            let key = 'Otros';
-            if (groupBy === 'source' && article.source?.name) key = article.source.name;
-            else if (groupBy === 'section' && article.section) key = article.section;
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(article);
+            const rawLabel = groupBy === 'source'
+                ? article.source?.name
+                : article.section;
+            const key = normalizeGroupKey(rawLabel || 'Otros');
+            const label = groupBy === 'section'
+                ? (sectionLabelByKey[key] || rawLabel || 'Otros')
+                : (rawLabel || 'Otros');
+
+            if (!groups[key]) groups[key] = { label, articles: [] };
+            groups[key].articles.push(article);
         });
-        return groups;
-    }, [articles, groupBy]);
+        return Object.values(groups).sort((a, b) => a.label.localeCompare(b.label, 'es'));
+    }, [articles, groupBy, sectionLabelByKey]);
 
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
@@ -218,11 +231,11 @@ export default function Dashboard() {
                     </div>
                 ) : groupedArticles ? (
                     <div className="flex flex-col gap-12">
-                        {Object.entries(groupedArticles).map(([groupName, groupArticles]) => (
-                            <div key={groupName}>
-                                <h3 className="text-2xl font-bold border-b border-editorial-text/20 pb-2 mb-6 capitalize font-sans">{groupName} <span className="text-sm font-sans font-normal opacity-50 ml-2">({groupArticles.length})</span></h3>
+                        {groupedArticles.map(group => (
+                            <div key={normalizeGroupKey(group.label)}>
+                                <h3 className="text-2xl font-bold border-b border-editorial-text/20 pb-2 mb-6 capitalize font-sans">{group.label} <span className="text-sm font-sans font-normal opacity-50 ml-2">({group.articles.length})</span></h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
-                                    {groupArticles.map(article => <ArticleCard key={article.id} article={article} />)}
+                                    {group.articles.map(article => <ArticleCard key={article.id} article={article} />)}
                                 </div>
                             </div>
                         ))}
@@ -258,6 +271,15 @@ export default function Dashboard() {
             </main>
         </div>
     );
+}
+
+function normalizeGroupKey(value: string) {
+    return value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 function ArticleCard({ article }: { article: Article }) {

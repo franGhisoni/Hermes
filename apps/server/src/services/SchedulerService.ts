@@ -1,5 +1,5 @@
 import cron, { ScheduledTask } from 'node-cron';
-import { Article, PrismaClient, WorkflowRunStatus } from '@prisma/client';
+import { Article, PrismaClient, ScrapeRunTrigger, WorkflowRunStatus } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
 import { ArticleService } from './ArticleService';
@@ -172,14 +172,19 @@ export class SchedulerService {
                 });
 
                 if (sections.length === 0) {
-                    await this.queueService.addScrapeJob(schedule.source, undefined, defaultLimit);
+                    await this.queueService.addScrapeJob(schedule.source, undefined, defaultLimit, {
+                        trigger: ScrapeRunTrigger.SCHEDULED
+                    });
                 } else {
                     for (const section of sections) {
                         const override = section.overrides[0];
                         if (override && override.enabled === false) continue;
                         const path = override?.path ?? section.path;
                         const limit = override?.scrapeLimit ?? section.scrapeLimit ?? defaultLimit;
-                        await this.queueService.addScrapeJob(schedule.source, path, limit);
+                        await this.queueService.addScrapeJob(schedule.source, path, limit, {
+                            sectionName: section.name,
+                            trigger: ScrapeRunTrigger.SCHEDULED
+                        });
                     }
                 }
             } catch (error) {

@@ -54,7 +54,7 @@ ui:
 outgoing:
   request_timeout: 8.0
   max_request_timeout: 15.0
-  extra_proxy_timeout: 10.0
+  extra_proxy_timeout: 10
   pool_connections: 100
   pool_maxsize: 20
   # Decodo residential proxy for Google/DDG Images. Replace this placeholder

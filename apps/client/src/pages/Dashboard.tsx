@@ -235,14 +235,26 @@ export default function Dashboard() {
                             <div key={normalizeGroupKey(group.label)}>
                                 <h3 className="text-2xl font-bold border-b border-editorial-text/20 pb-2 mb-6 capitalize font-sans">{group.label} <span className="text-sm font-sans font-normal opacity-50 ml-2">({group.articles.length})</span></h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
-                                    {group.articles.map(article => <ArticleCard key={article.id} article={article} />)}
+                                    {group.articles.map(article => (
+                                        <ArticleCard
+                                            key={article.id}
+                                            article={article}
+                                            sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
+                                        />
+                                    ))}
                                 </div>
                             </div>
                         ))}
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
-                        {articles.map(article => <ArticleCard key={article.id} article={article} />)}
+                        {articles.map(article => (
+                            <ArticleCard
+                                key={article.id}
+                                article={article}
+                                sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
+                            />
+                        ))}
                     </div>
                 )}
 
@@ -282,7 +294,7 @@ function normalizeGroupKey(value: string) {
         .trim();
 }
 
-function ArticleCard({ article }: { article: Article }) {
+function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {
     return (
         <article className="group flex flex-col h-full">
             {article.originalImageUrl && (
@@ -303,7 +315,7 @@ function ArticleCard({ article }: { article: Article }) {
                     <span>{article.source?.name}</span>
                     {article.section && (
                         <span className="font-bold text-editorial-text/80 opacity-70 border-l border-editorial-text/20 pl-2">
-                            {article.section}
+                            {sectionLabel || article.section}
                         </span>
                     )}
                 </div>

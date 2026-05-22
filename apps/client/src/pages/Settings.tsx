@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
@@ -146,6 +146,11 @@ export default function Settings() {
     const fetchScrapeRuns = async () => {
         const res = await api.get('/api/scrape-runs?limit=100');
         setScrapeRuns(res.data);
+    };
+
+    const cancelScrapeRun = async (id: string) => {
+        await api.post(`/api/scrape-runs/${id}/cancel`);
+        await fetchScrapeRuns();
     };
 
     useEffect(() => {
@@ -365,6 +370,7 @@ export default function Settings() {
                             handleToggleSchedule={handleToggleSchedule}
                             handleDeleteSchedule={handleDeleteSchedule}
                             refreshScrapeRuns={fetchScrapeRuns}
+                            cancelScrapeRun={cancelScrapeRun}
                             onConfigureOverrides={(id) => setOverrideSectionId(id)}
                         />
                     )}
@@ -470,6 +476,7 @@ interface FuentesTabProps {
     handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
     handleDeleteSchedule: (id: string) => Promise<void>;
     refreshScrapeRuns: () => Promise<void>;
+    cancelScrapeRun: (id: string) => Promise<void>;
     onConfigureOverrides: (sectionId: string) => void;
 }
 
@@ -481,6 +488,7 @@ function FuentesTab(props: FuentesTabProps) {
         handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
         handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule,
         refreshScrapeRuns,
+        cancelScrapeRun,
         onConfigureOverrides
     } = props;
 
@@ -672,13 +680,22 @@ function FuentesTab(props: FuentesTabProps) {
             </div>
             </div>
 
-            <ScrapeRunsPanel runs={scrapeRuns} onRefresh={refreshScrapeRuns} />
+            <ScrapeRunsPanel runs={scrapeRuns} onRefresh={refreshScrapeRuns} onCancel={cancelScrapeRun} />
         </section>
     );
 }
 
-function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: () => Promise<void> }) {
+function ScrapeRunsPanel({
+    runs,
+    onRefresh,
+    onCancel
+}: {
+    runs: ScrapeRun[];
+    onRefresh: () => Promise<void>;
+    onCancel: (id: string) => Promise<void>;
+}) {
     const [refreshing, setRefreshing] = useState(false);
+    const [cancellingId, setCancellingId] = useState<string | null>(null);
 
     const formatDate = (value: string) => new Intl.DateTimeFormat('es-AR', {
         day: '2-digit',
@@ -694,18 +711,24 @@ function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: ()
     };
 
     const statusClass: Record<ScrapeRun['status'], string> = {
+        QUEUED: 'bg-slate-50 text-slate-700 border-slate-100',
         RUNNING: 'bg-blue-50 text-blue-700 border-blue-100',
         SUCCESS: 'bg-green-50 text-green-700 border-green-100',
         EMPTY: 'bg-amber-50 text-amber-700 border-amber-100',
+        CANCELLED: 'bg-zinc-50 text-zinc-600 border-zinc-100',
         ERROR: 'bg-red-50 text-red-700 border-red-100'
     };
 
     const statusLabel: Record<ScrapeRun['status'], string> = {
+        QUEUED: 'En cola',
         RUNNING: 'En curso',
         SUCCESS: 'Ok',
         EMPTY: 'Sin notas',
+        CANCELLED: 'Cancelado',
         ERROR: 'Error'
     };
+
+    const activeCount = runs.filter(run => run.status === 'QUEUED' || run.status === 'RUNNING').length;
 
     const handleRefresh = async () => {
         setRefreshing(true);
@@ -716,12 +739,28 @@ function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: ()
         }
     };
 
+    const handleCancel = async (run: ScrapeRun) => {
+        const label = `${run.source}${run.sectionName ? ` / ${run.sectionName}` : ''}`;
+        if (!confirm(`¿Cancelar ${label}?`)) return;
+        setCancellingId(run.id);
+        try {
+            await onCancel(run.id);
+        } finally {
+            setCancellingId(null);
+        }
+    };
+
     return (
         <Card>
             <div className="flex items-start justify-between gap-4 mb-4">
                 <div>
                     <h3 className="text-xs font-bold uppercase tracking-widest font-sans">
                         Ejecuciones de scraping <span className="opacity-50">({runs.length})</span>
+                        {activeCount > 0 && (
+                            <span className="ml-2 bg-editorial-text text-editorial-bg px-2 py-0.5 rounded-full text-[9px]">
+                                {activeCount} en cola/curso
+                            </span>
+                        )}
                     </h3>
                     <p className="font-sans text-[11px] text-editorial-text/60 mt-1">
                         Registro admin por medio y secciÃ³n: lÃ­mite pedido, notas detectadas y notas nuevas procesadas.
@@ -751,6 +790,7 @@ function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: ()
                             <th className="py-2 pr-3">Estado</th>
                             <th className="py-2 pr-3">Tipo</th>
                             <th className="py-2 pr-3 text-right">Dur.</th>
+                            <th className="py-2 pl-3 text-right">Acción</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -769,7 +809,7 @@ function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: ()
                                 <td className="py-2 pr-3 text-right font-mono">{run.processedCount}</td>
                                 <td className="py-2 pr-3">
                                     <span className={`inline-flex border px-2 py-0.5 rounded-full text-[10px] font-bold ${statusClass[run.status]}`}>
-                                        {statusLabel[run.status]}
+                                        {run.cancelRequested && run.status === 'RUNNING' ? 'Cancelando' : statusLabel[run.status]}
                                     </span>
                                     {run.errorMessage && (
                                         <div className="mt-1 text-[10px] text-red-700 max-w-[240px] truncate" title={run.errorMessage}>
@@ -779,11 +819,25 @@ function ScrapeRunsPanel({ runs, onRefresh }: { runs: ScrapeRun[]; onRefresh: ()
                                 </td>
                                 <td className="py-2 pr-3">{run.trigger === 'SCHEDULED' ? 'Auto' : 'Manual'}</td>
                                 <td className="py-2 pr-3 text-right font-mono">{formatDuration(run.durationMs)}</td>
+                                <td className="py-2 pl-3 text-right">
+                                    {(run.status === 'QUEUED' || run.status === 'RUNNING') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleCancel(run)}
+                                            disabled={cancellingId === run.id || run.cancelRequested}
+                                            className="inline-flex items-center gap-1 border border-red-200 text-red-700 px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-red-50 disabled:opacity-50"
+                                            title={run.status === 'QUEUED' ? 'Quitar de la cola' : 'Solicitar cancelación'}
+                                        >
+                                            <Ban size={12} />
+                                            {cancellingId === run.id ? '...' : 'Cancelar'}
+                                        </button>
+                                    )}
+                                </td>
                             </tr>
                         ))}
                         {runs.length === 0 && (
                             <tr>
-                                <td colSpan={9} className="py-8 text-center text-editorial-text/50 italic">
+                                <td colSpan={10} className="py-8 text-center text-editorial-text/50 italic">
                                     TodavÃ­a no hay ejecuciones registradas.
                                 </td>
                             </tr>

@@ -110,6 +110,7 @@ model ScrapeSchedule {
 
 model ScrapeRun {
   id             String           @id @default(uuid())
+  queueJobId     String?
   source         String
   sectionName    String?
   path           String?
@@ -122,16 +123,21 @@ model ScrapeRun {
   finishedAt     DateTime?
   durationMs     Int?
   errorMessage   String?
+  cancelRequested Boolean         @default(false)
+  cancelledAt     DateTime?
 
   @@index([startedAt])
   @@index([source, startedAt])
   @@index([sectionName, startedAt])
+  @@index([queueJobId])
 }
 
 enum ScrapeRunStatus {
+  QUEUED
   RUNNING
   SUCCESS
   EMPTY
+  CANCELLED
   ERROR
 }
 

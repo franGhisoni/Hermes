@@ -52,16 +52,19 @@ export interface Notification {
 
 export interface ScrapeRun {
     id: string;
+    queueJobId?: string | null;
     source: string;
     sectionName?: string | null;
     path?: string | null;
     requestedLimit: number;
     scrapedCount: number;
     processedCount: number;
-    status: 'RUNNING' | 'SUCCESS' | 'EMPTY' | 'ERROR';
+    status: 'QUEUED' | 'RUNNING' | 'SUCCESS' | 'EMPTY' | 'CANCELLED' | 'ERROR';
     trigger: 'MANUAL' | 'SCHEDULED';
     startedAt: string;
     finishedAt?: string | null;
     durationMs?: number | null;
     errorMessage?: string | null;
+    cancelRequested: boolean;
+    cancelledAt?: string | null;
 }

@@ -43,12 +43,111 @@ export class QueueService {
 
     async addScrapeJob(source: string, url?: string, limit: number = 30, options: ScrapeJobOptions = {}) {
         console.log(`[Queue] Adding scrape job for ${source}${options.sectionName ? ` / ${options.sectionName}` : ''} with limit ${limit}`);
-        await this.scraperQueue.add('scrape', {
-            source,
-            url,
-            limit,
-            sectionName: options.sectionName,
-            trigger: options.trigger || ScrapeRunTrigger.MANUAL
+        const run = await prisma.scrapeRun.create({
+            data: {
+                source,
+                sectionName: options.sectionName || null,
+                path: url || null,
+                requestedLimit: limit,
+                status: ScrapeRunStatus.QUEUED,
+                trigger: options.trigger || ScrapeRunTrigger.MANUAL
+            }
+        });
+
+        try {
+            const job = await this.scraperQueue.add('scrape', {
+                source,
+                url,
+                limit,
+                sectionName: options.sectionName,
+                trigger: options.trigger || ScrapeRunTrigger.MANUAL,
+                scrapeRunId: run.id
+            });
+
+            await prisma.scrapeRun.update({
+                where: { id: run.id },
+                data: { queueJobId: String(job.id) }
+            });
+        } catch (error: any) {
+            const finishedAt = new Date();
+            await prisma.scrapeRun.update({
+                where: { id: run.id },
+                data: {
+                    status: ScrapeRunStatus.ERROR,
+                    finishedAt,
+                    durationMs: finishedAt.getTime() - run.startedAt.getTime(),
+                    errorMessage: error?.message || 'No se pudo encolar el scrapeo.'
+                }
+            });
+            throw error;
+        }
+    }
+
+    async cancelScrapeRun(runId: string) {
+        const run = await prisma.scrapeRun.findUnique({ where: { id: runId } });
+        if (!run) {
+            throw new Error('Scrape run not found');
+        }
+
+        if (run.status !== ScrapeRunStatus.QUEUED && run.status !== ScrapeRunStatus.RUNNING) {
+            return run;
+        }
+
+        const cancelledAt = new Date();
+
+        if (run.status === ScrapeRunStatus.QUEUED) {
+            if (run.queueJobId) {
+                const job = await this.scraperQueue.getJob(run.queueJobId);
+                if (job) {
+                    const state = await job.getState();
+                    if (state === 'active') {
+                        return prisma.scrapeRun.update({
+                            where: { id: run.id },
+                            data: {
+                                cancelRequested: true,
+                                cancelledAt,
+                                errorMessage: 'Cancelación solicitada; se cortará antes de procesar nuevas notas.'
+                            }
+                        });
+                    }
+
+                    if (!['completed', 'failed'].includes(state)) {
+                        try {
+                            await job.remove();
+                        } catch {
+                            return prisma.scrapeRun.update({
+                                where: { id: run.id },
+                                data: {
+                                    cancelRequested: true,
+                                    cancelledAt,
+                                    errorMessage: 'Cancelación solicitada; el job ya había empezado.'
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+
+            return prisma.scrapeRun.update({
+                where: { id: run.id },
+                data: {
+                    status: ScrapeRunStatus.CANCELLED,
+                    cancelRequested: true,
+                    cancelledAt,
+                    finishedAt: cancelledAt,
+                    durationMs: cancelledAt.getTime() - run.startedAt.getTime(),
+                    errorMessage: 'Cancelado antes de ejecutar.'
+                }
+            });
+        }
+
+        return prisma.scrapeRun.update({
+            where: { id: run.id },
+            data: {
+                cancelRequested: true,
+                cancelledAt,
+                errorMessage: 'Cancelación solicitada; se cortará antes de procesar nuevas notas.'
+            }
         });
     }
 
@@ -70,16 +169,26 @@ export class QueueService {
 
             const limit = job.data.limit || 30;
             const startedAt = new Date();
-            const run = await prisma.scrapeRun.create({
-                data: {
+            const run = job.data.scrapeRunId
+                ? await prisma.scrapeRun.update({
+                    where: { id: job.data.scrapeRunId },
+                    data: {
+                        status: ScrapeRunStatus.RUNNING,
+                        startedAt,
+                        queueJobId: String(job.id)
+                    }
+                })
+                : await prisma.scrapeRun.create({
+                    data: {
                     source: job.data.source,
                     sectionName: job.data.sectionName || null,
                     path: job.data.url || null,
                     requestedLimit: limit,
                     status: ScrapeRunStatus.RUNNING,
-                    trigger: job.data.trigger || ScrapeRunTrigger.MANUAL
-                }
-            });
+                    trigger: job.data.trigger || ScrapeRunTrigger.MANUAL,
+                    queueJobId: String(job.id)
+                    }
+                });
 
             const finishRun = async (
                 status: ScrapeRunStatus,
@@ -101,6 +210,14 @@ export class QueueService {
                 });
             };
 
+            const isCancellationRequested = async () => {
+                const fresh = await prisma.scrapeRun.findUnique({
+                    where: { id: run.id },
+                    select: { cancelRequested: true, cancelledAt: true }
+                });
+                return !!fresh?.cancelRequested;
+            };
+
             const ScraperClass = scraperRegistry[job.data.source];
 
             if (!ScraperClass) {
@@ -117,6 +234,11 @@ export class QueueService {
             }
 
             try {
+                if (await isCancellationRequested()) {
+                    await finishRun(ScrapeRunStatus.CANCELLED, 0, 0, 'Cancelado antes de iniciar el scraper.');
+                    return [];
+                }
+
                 const scraper = new ScraperClass();
                 // If the job url is a path (e.g. /politica), append it to the base URL
                 if (job.data.url) {
@@ -127,6 +249,11 @@ export class QueueService {
                 console.log(`[Worker] Starting scrape for ${job.data.source} with limit ${limit}...`);
                 const articles = await scraper.scrape(limit);
                 console.log(`[Worker] Scraped ${articles.length} articles from ${job.data.source}.`);
+
+                if (await isCancellationRequested()) {
+                    await finishRun(ScrapeRunStatus.CANCELLED, articles.length, 0, 'Cancelado antes de procesar notas.');
+                    return articles;
+                }
 
                 if (articles.length === 0) {
                     await notificationService.emit({

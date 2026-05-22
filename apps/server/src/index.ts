@@ -254,6 +254,22 @@ app.get('/api/scrape-runs', requireAdmin, async (req, res) => {
     }
 });
 
+// POST /api/scrape-runs/:id/cancel - Cancel a queued run or request cancellation
+// for an active one. Active scraper jobs stop cooperatively before processing
+// articles once the scraper returns control.
+app.post('/api/scrape-runs/:id/cancel', requireAdmin, async (req, res) => {
+    try {
+        const run = await queueService.cancelScrapeRun(req.params.id);
+        res.json(run);
+    } catch (error: any) {
+        if (error?.message === 'Scrape run not found') {
+            return res.status(404).json({ error: 'Scrape run not found' });
+        }
+        console.error('Error cancelling scrape run:', error);
+        res.status(500).json({ error: 'Failed to cancel scrape run' });
+    }
+});
+
 // Map between the camelCase API surface and the underlying setting keys. The
 // keys belong to ConfigService (snake_case in the DB); the API contracts use
 // camelCase for the UI.

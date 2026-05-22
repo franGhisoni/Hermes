@@ -113,19 +113,31 @@ export class ArticleService {
         let where: any = {};
         if (source && source !== 'all') where.source = { name: source };
         if (section && section !== 'all') {
-            where.section = { contains: section, mode: 'insensitive' };
+            where.AND = [
+                ...(where.AND || []),
+                {
+                    OR: buildSectionVariants(section).map(value => ({
+                    section: { contains: value, mode: 'insensitive' }
+                    }))
+                }
+            ];
         }
         if (status && status !== 'all') where.status = status as any;
         if (search?.trim()) {
             const term = search.trim();
-            where.OR = [
-                { originalTitle: { contains: term, mode: 'insensitive' } },
-                { rewrittenTitle: { contains: term, mode: 'insensitive' } },
-                { originalContent: { contains: term, mode: 'insensitive' } },
-                { rewrittenContent: { contains: term, mode: 'insensitive' } },
-                { originalUrl: { contains: term, mode: 'insensitive' } },
-                { section: { contains: term, mode: 'insensitive' } },
-                { source: { name: { contains: term, mode: 'insensitive' } } }
+            where.AND = [
+                ...(where.AND || []),
+                {
+                    OR: [
+                        { originalTitle: { contains: term, mode: 'insensitive' } },
+                        { rewrittenTitle: { contains: term, mode: 'insensitive' } },
+                        { originalContent: { contains: term, mode: 'insensitive' } },
+                        { rewrittenContent: { contains: term, mode: 'insensitive' } },
+                        { originalUrl: { contains: term, mode: 'insensitive' } },
+                        { section: { contains: term, mode: 'insensitive' } },
+                        { source: { name: { contains: term, mode: 'insensitive' } } }
+                    ]
+                }
             ];
         }
 
@@ -177,4 +189,35 @@ export class ArticleService {
             });
         }
     }
+}
+
+function buildSectionVariants(value: string): string[] {
+    const normalized = value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+    if (!normalized) return [];
+
+    const variants = new Set<string>([value.trim(), normalized]);
+    const accentOptions: Record<string, string[]> = {
+        a: ['a', 'á'],
+        e: ['e', 'é'],
+        i: ['i', 'í'],
+        o: ['o', 'ó'],
+        u: ['u', 'ú'],
+        n: ['n', 'ñ']
+    };
+
+    const chars = normalized.toLowerCase().split('');
+    const expanded = chars.reduce<string[]>((acc, char) => {
+        const options = accentOptions[char] || [char];
+        const next: string[] = [];
+        acc.forEach(prefix => {
+            options.forEach(option => next.push(prefix + option));
+        });
+        return next.slice(0, 32);
+    }, ['']);
+
+    expanded.forEach(item => variants.add(item));
+    return Array.from(variants);
 }

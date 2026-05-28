@@ -156,14 +156,19 @@ export default function Newsroom() {
 
     const [saving, setSaving] = useState(false);
 
+    const saveDraft = async () => {
+        if (!id || !article) return;
+        return api.put(`/api/articles/${id}`, {
+            rewrittenTitle: article.rewrittenTitle,
+            rewrittenContent: article.rewrittenContent
+        });
+    };
+
     const handleSave = async () => {
         if (!id || !article) return;
         setSaving(true);
         try {
-            await api.put(`/api/articles/${id}`, {
-                rewrittenTitle: article.rewrittenTitle,
-                rewrittenContent: article.rewrittenContent
-            });
+            await saveDraft();
             alert('¡Cambios guardados!');
         } catch (e) {
             alert('Error al guardar cambios');
@@ -205,10 +210,15 @@ export default function Newsroom() {
     }, [targets, targetSearch]);
 
     const handlePublish = async () => {
-        if (!id || !selectedTargetId) return;
+        if (!id || !article || !selectedTargetId) return;
         setPublishing(true);
         try {
-            const res = await api.post(`/api/articles/${id}/publish`, { targetId: selectedTargetId, category: selectedCategory || undefined });
+            const res = await api.post(`/api/articles/${id}/publish`, {
+                targetId: selectedTargetId,
+                category: selectedCategory || undefined,
+                rewrittenTitle: article.rewrittenTitle,
+                rewrittenContent: article.rewrittenContent
+            });
             setArticle(prev => prev ? { ...prev, status: 'PUBLISHED' } : null);
             setShowPublishModal(false);
             alert(`✅ ${res.data.message}`);

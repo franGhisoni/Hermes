@@ -477,12 +477,24 @@ const mailService = new MailService();
 const aiService = new AIService();
 
 app.post('/api/articles/:id/publish', async (req, res) => {
-    const { targetId, category } = req.body;
+    const { targetId, category, rewrittenTitle, rewrittenContent } = req.body;
     if (!targetId) return res.status(400).json({ error: 'targetId is required' });
 
     try {
-        const article = await articleService.getArticleById(req.params.id);
+        const draftUpdates: { rewrittenTitle?: string; rewrittenContent?: string } = {};
+        if (typeof rewrittenTitle === 'string') draftUpdates.rewrittenTitle = rewrittenTitle;
+        if (typeof rewrittenContent === 'string') draftUpdates.rewrittenContent = rewrittenContent;
+
+        let article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        if (Object.keys(draftUpdates).length > 0) {
+            article = await prisma.article.update({
+                where: { id: req.params.id },
+                data: draftUpdates,
+                include: { source: true }
+            });
+        }
 
         const target = await prisma.target.findUnique({ where: { id: targetId } });
         if (!target) return res.status(404).json({ error: 'Target not found' });

@@ -68,8 +68,6 @@ outgoing:
   proxies:
     all://:
       - http://sp693n5awq:h2pw%3DhQRvVSf2ri5v5@ar.decodo.com:10000
-      - http://sp693n5awq:h2pw%3DhQRvVSf2ri5v5@ar.decodo.com:10001
-      - http://sp693n5awq:h2pw%3DhQRvVSf2ri5v5@ar.decodo.com:10002
 
 engines:
   - name: google images

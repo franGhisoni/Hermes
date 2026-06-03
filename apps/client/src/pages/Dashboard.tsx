@@ -134,7 +134,7 @@ export default function Dashboard() {
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                 </div>
                 <div className="flex gap-4 items-center">
-                    <NotificationsPanel />
+                    {user?.role === 'ADMIN' && <NotificationsPanel />}
                     <ScraperControl />
                     {user?.role === 'ADMIN' && (
                         <>

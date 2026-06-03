@@ -257,7 +257,25 @@ Return a JSON object:
             const MAX_RETRIES = await this.configService.getImageScoringMaxRetries();
 
             const candidatePool = imageUrls.slice(0, poolSize);
-            let attemptUrls = [...candidatePool];
+
+            // Pre-filter: OpenAI rejects everything outside [png, jpeg, gif, webp].
+            // Cloudinary's `f_auto`, FIFA `transform`, and similar endpoints often
+            // serve AVIF, which kills the WHOLE batch. Drop the known-bad extensions
+            // before sending — anything ambiguous (no extension, query strings) still
+            // goes through and is handled by the retry loop below.
+            const unsupportedUrls = new Set<string>();
+            const filteredPool = candidatePool.filter(url => {
+                if (this.hasUnsupportedExtension(url)) {
+                    unsupportedUrls.add(url);
+                    return false;
+                }
+                return true;
+            });
+            if (unsupportedUrls.size > 0) {
+                console.warn(`[AIService] Pre-filtered ${unsupportedUrls.size} candidates with unsupported image extensions.`);
+            }
+
+            let attemptUrls = [...filteredPool];
             let useReferenceImage = Boolean(originalImageUrl);
             const droppedUrls = new Set<string>();
             let rawResult: any = null;
@@ -330,6 +348,24 @@ Return a JSON object:
                         }
                         console.warn(`[AIService] OpenAI rejected an image URL but we couldn't identify which (parsed: ${badUrl}) — aborting retries.`);
                     }
+                    if (this.isUnsupportedImageFormatError(err, lastScoringError)) {
+                        // OpenAI doesn't tell us WHICH candidate had the bad format
+                        // (its error message is generic). Bisect: keep the first half
+                        // and drop the second half this attempt. With MAX_RETRIES=6
+                        // this converges fast even if the bad apple sits at the front.
+                        if (attemptUrls.length <= 1) {
+                            if (attemptUrls[0]) unsupportedUrls.add(attemptUrls[0]);
+                            attemptUrls = [];
+                            console.warn(`[AIService] Unsupported image format and only 1 candidate left — dropping it.`);
+                            continue;
+                        }
+                        const half = Math.ceil(attemptUrls.length / 2);
+                        const dropped = attemptUrls.slice(half);
+                        dropped.forEach(u => unsupportedUrls.add(u));
+                        attemptUrls = attemptUrls.slice(0, half);
+                        console.warn(`[AIService] Unsupported image format in batch — bisecting, retrying with ${attemptUrls.length} candidates (dropped ${dropped.length}).`);
+                        continue;
+                    }
                     throw err;
                 }
             }
@@ -350,6 +386,10 @@ Return a JSON object:
             droppedUrls.forEach(url => {
                 const origIdx = imageUrls.indexOf(url);
                 if (origIdx >= 0) reasonings[origIdx] = '⚠ OpenAI could not download this image';
+            });
+            unsupportedUrls.forEach(url => {
+                const origIdx = imageUrls.indexOf(url);
+                if (origIdx >= 0) reasonings[origIdx] = '⚠ Unsupported image format (not png/jpeg/gif/webp)';
             });
             if (!rawResult && lastScoringError) {
                 reasonings.forEach((reason, i) => {
@@ -408,6 +448,29 @@ Return a JSON object:
         return code === 'invalid_image_url'
             || /(?:error|timeout)\s+while\s+downloading\s+https?:\/\//i.test(message)
             || /could\s+not\s+download\s+https?:\/\//i.test(message);
+    }
+
+    private isUnsupportedImageFormatError(err: any, message: string): boolean {
+        // OpenAI returns 400 with text like:
+        //   "You uploaded an unsupported image. Please make sure your image
+        //    has one of the following formats: ['png', 'jpeg', 'gif', 'webp']."
+        // The error code varies (sometimes invalid_image_format, sometimes a
+        // generic invalid_request_error) so we match on the message text.
+        const code = err?.code || err?.error?.code;
+        if (code === 'invalid_image_format') return true;
+        return /unsupported\s+image/i.test(message)
+            || /image\s+has\s+one\s+of\s+the\s+following\s+formats/i.test(message);
+    }
+
+    private hasUnsupportedExtension(url: string): boolean {
+        // Strip query string + fragment, then look at the last segment's extension.
+        // OpenAI's supported set is png/jpeg/gif/webp — everything else is fair game
+        // to drop pre-flight. We're intentionally conservative: only flag extensions
+        // we KNOW will fail (avif, svg, bmp, tiff, ico, heic, heif). URLs without an
+        // extension or with f_auto-style transforms still pass through and are
+        // handled by the bisecting retry loop.
+        const clean = url.split('?')[0].split('#')[0].toLowerCase();
+        return /\.(avif|svg|bmp|tiff?|ico|heic|heif)$/.test(clean);
     }
 
     private extractRejectedImageUrl(message: string): string | undefined {

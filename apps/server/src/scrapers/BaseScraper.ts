@@ -173,4 +173,57 @@ export abstract class BaseScraper {
 
     // Updated signature: pass the specific URL to scrape (homepage or section)
     protected abstract performScrape(page: Page, url: string): Promise<ScrapedArticle[]>;
+
+    // Shared paragraph-level cleanup applied AFTER raw <p> extraction in every
+    // scraper. Strips the kinds of noise the rewriter prompt cannot reliably
+    // delete on its own: tweet captions, byline-only paragraphs at the head,
+    // and Noticias Argentinas-style datelines.
+    protected cleanParagraphs(rawTexts: string[]): string[] {
+        const texts = rawTexts
+            .map(t => (t || '').trim())
+            .filter(t => t.length > 0);
+
+        // Drop tweet/embed captions: a paragraph that's basically `@handle …`
+        // or "View on X" / "Ver en Twitter" / a bare Twitter date stamp.
+        const tweetLike = (t: string): boolean => {
+            if (/^@[A-Za-z0-9_]{2,15}(\s|$)/.test(t)) return true;
+            if (/^@[A-Za-z0-9_]{2,15}\s+·\s+/.test(t)) return true;
+            if (/^(View on (X|Twitter)|Ver en (X|Twitter))/i.test(t)) return true;
+            if (/^\d{1,2}:\d{2}\s+(AM|PM|a\.m\.|p\.m\.)\b/i.test(t)) return true;
+            return false;
+        };
+
+        // Byline-only paragraph: a short line that's only proper-noun tokens,
+        // optionally separated by /, |, or comma. We only strip these in the
+        // first 3 paragraphs — bylines never live deep in the body.
+        const bylineRe = /^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*([\s/,|]+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(\s[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)+\s*$/;
+        const looksLikeByline = (t: string): boolean => {
+            if (t.length > 80) return false;
+            if (/[.!?¿¡]/.test(t)) return false;
+            return bylineRe.test(t);
+        };
+
+        // NA-style dateline that's glued to the first real sentence:
+        // "Buenos Aires, 19 de junio (NA). El gobierno anunció…"
+        const datelineRe = /^\s*[A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s.\-]*?,\s*\d{1,2}\s+de\s+\w+\s*(\((NA|Reuters|EFE|AP|AFP|Télam|Telam)\))?\s*\.?\s*[—–-]?\s*/;
+        // Bare wire-service prefix: "BUENOS AIRES.-" or "(Reuters) -"
+        const wirePrefixRe = /^\s*(\(?(NA|Reuters|EFE|AP|AFP|Télam|Telam|Noticias Argentinas)\)?\s*[—–-]\s*|[A-ZÁÉÍÓÚÑ]{3,}[A-ZÁÉÍÓÚÑ\s]*\.[\s\-—–]+)/;
+
+        const cleaned: string[] = [];
+        for (let i = 0; i < texts.length; i++) {
+            let t = texts[i];
+
+            if (tweetLike(t)) continue;
+            if (i < 3 && looksLikeByline(t)) continue;
+
+            if (i === 0 || (i < 2 && cleaned.length === 0)) {
+                t = t.replace(datelineRe, '').replace(wirePrefixRe, '').trim();
+                if (!t) continue;
+            }
+
+            cleaned.push(t);
+        }
+
+        return cleaned;
+    }
 }

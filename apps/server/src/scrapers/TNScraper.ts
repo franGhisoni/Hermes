@@ -53,19 +53,36 @@ export class TNScraper extends BaseScraper {
                         document.querySelector('.article__body') ||
                         document.querySelector('article .content');
 
-                    const content = (contentElement as HTMLElement)?.innerText || '';
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
+                    let paragraphs: string[] = [];
+                    if (contentElement) {
+                        const pEls = contentElement.querySelectorAll('p');
+                        if (pEls.length > 0) {
+                            paragraphs = Array.from(pEls)
+                                .filter(p => !(p as HTMLElement).closest(embedAncestor))
+                                .map(p => (p as HTMLElement).innerText.trim())
+                                .filter(t => t.length > 0);
+                        } else {
+                            // Fallback to innerText split by blank lines
+                            paragraphs = ((contentElement as HTMLElement).innerText || '')
+                                .split(/\n\s*\n+/)
+                                .map(t => t.trim())
+                                .filter(t => t.length > 0);
+                        }
+                    }
 
                     const image = document.querySelector('figure img')?.getAttribute('src') ||
                         document.querySelector('.article-main-media img')?.getAttribute('src') ||
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-                    return { title, content, image };
+                    return { title, paragraphs, image };
                 });
 
-                if (data.title && data.content) {
+                const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                if (data.title && content) {
                     articles.push({
                         title: data.title,
-                        content: data.content,
+                        content,
                         url: link,
                         imageUrl: data.image || undefined,
                         publishedAt: new Date()

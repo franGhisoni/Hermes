@@ -79,13 +79,19 @@ export class NAScraper extends BaseScraper {
 
                     let content = '';
                     const pars = $art('article p');
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
                     if (pars.length > 1) {
                         const pTexts: string[] = [];
-                        pars.each((_, p) => { pTexts.push($art(p).text().trim()); });
-                        content = pTexts.join('\n\n');
+                        pars.each((_, p) => {
+                            if ($art(p).closest(embedAncestor).length > 0) return;
+                            pTexts.push($art(p).text().trim());
+                        });
+                        content = this.cleanParagraphs(pTexts).join('\n\n');
                     } else {
-                        content = $art('.news-body').first().text().trim() ||
+                        const raw = $art('.news-body').first().text().trim() ||
                             $art('.body').first().text().trim() || '';
+                        const paragraphs = raw.split(/\n\s*\n+/).map(t => t.trim()).filter(t => t.length > 0);
+                        content = this.cleanParagraphs(paragraphs).join('\n\n');
                     }
 
                     const image = $art('figure img').attr('src') || $art('article img').attr('src') || $art('meta[property="og:image"]').attr('content');

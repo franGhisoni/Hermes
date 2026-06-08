@@ -118,41 +118,41 @@ export class CronistaScraper extends BaseScraper {
                         document.querySelector('.paywall, .subscription-wall, [class*="paywall"], [class*="suscrib"]') !== null ||
                         /suscrib[íi]te para seguir leyendo|contenido exclusivo para suscriptores/i.test(bodyText);
 
-                    let content = '';
-                    const paragraphs = document.querySelectorAll(
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
+                    const pEls = document.querySelectorAll(
                         '.article-body p, .news-body-content p, .article__body p, [class*="article-body"] p, [class*="news-body"] p, article p'
                     );
-                    if (paragraphs.length > 0) {
-                        content = Array.from(paragraphs)
-                            .map(p => (p as HTMLElement).innerText.trim())
-                            .filter(t => t.length > 0)
-                            .join('\n\n');
-                    }
+                    const paragraphs = Array.from(pEls)
+                        .filter(p => !(p as HTMLElement).closest(embedAncestor))
+                        .map(p => (p as HTMLElement).innerText.trim())
+                        .filter(t => t.length > 0);
 
                     const image =
                         document.querySelector('figure img')?.getAttribute('src') ||
                         document.querySelector('article img')?.getAttribute('src') ||
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-                    return { title, content, image, paywalled };
+                    return { title, paragraphs, image, paywalled };
                 });
 
-                if (data.paywalled && data.content.length < 500) {
+                const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+
+                if (data.paywalled && content.length < 500) {
                     console.log(`[Cronista] Paywalled, skipping: ${link}`);
                     continue;
                 }
 
-                if (data.title && data.content) {
+                if (data.title && content) {
                     articles.push({
                         title: data.title,
-                        content: data.content,
+                        content,
                         url: link,
                         imageUrl: data.image || undefined,
                         publishedAt: new Date()
                     });
                     console.log(`[Cronista] Success: ${data.title.substring(0, 30)}...`);
                 } else {
-                    console.log(`[Cronista-Debug] Skip: ${link}. Title?: ${!!data.title}, Content length: ${data.content.length}`);
+                    console.log(`[Cronista-Debug] Skip: ${link}. Title?: ${!!data.title}, Content length: ${content.length}`);
                 }
             } catch (e) {
                 console.error(`[Cronista] Error scraping ${link}`, e);

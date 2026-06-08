@@ -32,18 +32,45 @@ export class PromptService {
         const rewrite = await this.getPromptByType('REWRITE');
         if (!rewrite) {
             await this.createPrompt('Default Rewrite', 'REWRITE',
-                `You are an expert news editor. Rewrite the following news article to be unique, engaging, and plagiarism-free while retaining all factual information.
-            
-            Style: Neutral, Professional (NYT Style).
-            Language: Spanish.
-            
-            IMPORTANT: Do NOT paraphrase or alter any text inside quotation marks (""). Quotes must be kept verbatim.
-            
-            Original Title: {{title}}
-            Original Content:
-            {{content}}
-            
-            Return the response in JSON format: { "title": "New Title", "content": "New Content" }`);
+                `Sos un editor de noticias profesional. Reescribí el siguiente artículo para que sea único, atractivo y libre de plagio, conservando TODA la información factual.
+
+ESTILO
+- Neutral, profesional, estilo NYT en español rioplatense.
+- Mantené aproximadamente la misma longitud que el original.
+
+IDIOMA — REGLA INVIOLABLE
+- La respuesta DEBE estar 100% en español. Ni una sola palabra ni un solo carácter en otro alfabeto.
+- Prohibido cualquier carácter fuera del alfabeto latino + tildes/ñ/¿¡ (NO cirílico, NO griego, NO chino, NO árabe, NO emojis decorativos).
+- Si tenés dudas sobre una palabra, escribila en español o eliminala.
+
+CITAS
+- NO parafrasees ni alteres nada que esté entre comillas ("..."). Las comillas se mantienen verbatim.
+- Si una cita atribuye al medio fuente ("le dijo a Clarín", "según informó La Nación", "en diálogo con TN", etc.), reemplazá la atribución por una neutral: "nos comentó", "afirmó", "dijo el entrevistado", "según trascendió".
+
+MEDIOS — NUNCA NOMBRAR LA FUENTE NI A LA COMPETENCIA
+- Bajo ningún concepto menciones nombres de diarios o agencias: Clarín, La Nación, Infobae, TN, C5N, Ámbito, Cronista, Página/12, Noticias Argentinas, NA, Télam, Reuters, AP, AFP, EFE.
+- Eliminá hashtags (#...) y arrobas (@usuario): son tags de redes o de medios.
+- Si un párrafo entero es un tuit citado (formato típico: arroba + nombre + handle + fecha + texto), eliminá el párrafo completo. NO lo parafrasees: borralo.
+
+DATELINES Y FIRMAS — LIMPIAR EL INICIO
+- Si la nota empieza con un patrón tipo "Buenos Aires, 19 de abril (NA)." o "(Reuters)" o "(EFE)" o "BUENOS AIRES.-" eliminá esa apertura por completo.
+- Si al inicio aparecen nombres sueltos en líneas separadas o seguidos por comas que no forman parte de la nota (firmas de redacción tipo "Rosana / Claudio / Jacqueline / Javier Blanco / Paola / Urias"), descartalos. Nunca los incorpores al texto.
+
+CORCHETES — ELIMINAR SIEMPRE
+- Cualquier texto entre corchetes [ ] que actúe como tag de autor, voz, sección o referencia interna ("[Patricia]", "[Continúa]", "[Lea también]", "[Foto]") debe eliminarse junto con los corchetes.
+- Si una oración empieza con "[Nombre]" significa que ese nombre es el autor que habla; reformulá la oración manteniendo el contenido pero sin el tag.
+
+MARCAS Y NOMBRES PROPIOS
+- Si el TÍTULO original anonimiza una marca ("un importante hipermercado", "una conocida cadena", "una automotriz líder"), MANTENÉ esa anonimización en el cuerpo aunque el original la nombre más abajo. Reemplazá la marca por la misma fórmula genérica.
+- Si el título original ya menciona la marca, podés conservarla.
+
+SALIDA
+- Devolvé un JSON estricto: { "title": "Nuevo título", "content": "Nuevo contenido" }
+- Sin markdown, sin code fences, sin comentarios.
+
+Título original: {{title}}
+Contenido original:
+{{content}}`);
         }
 
         // Interest

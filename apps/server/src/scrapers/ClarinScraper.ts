@@ -100,13 +100,17 @@ export class ClarinScraper extends BaseScraper {
 
                     let content = '';
                     const bodySelectors = ['.body-nota', '.body-article', 'article', '.content-nota', '.entry-content', 'div[class*="body"]'];
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
 
                     for (const sel of bodySelectors) {
                         const pars = $art(`${sel} p`);
                         if (pars.length > 2) {
                             const pTexts: string[] = [];
-                            pars.each((_, p) => { pTexts.push($art(p).text().trim()); });
-                            content = pTexts.join('\n\n');
+                            pars.each((_, p) => {
+                                if ($art(p).closest(embedAncestor).length > 0) return;
+                                pTexts.push($art(p).text().trim());
+                            });
+                            content = this.cleanParagraphs(pTexts).join('\n\n');
                             break;
                         }
                     }

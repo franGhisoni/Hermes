@@ -46,40 +46,76 @@ export class AIService {
             .replace('{{title}}', title)
             .replace('{{content}}', content.substring(0, contentChars));
 
-        let completion;
-        try {
-            completion = await this.openai.chat.completions.create({
-                messages: [{ role: "user", content: prompt }],
+        const runOnce = async (messages: any[]) => {
+            const completion = await this.openai.chat.completions.create({
+                messages,
                 model,
                 response_format: { type: "json_object" },
                 max_tokens: maxTokens,
             });
+            return completion.choices[0].message.content || '{}';
+        };
+
+        const parseJson = (raw: string): { title?: string; content?: string } | null => {
+            try {
+                const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(cleaned);
+            } catch (e) {
+                console.error('[AIService] Failed to parse JSON response:', e);
+                console.error('[AIService] Raw response:', raw);
+                return null;
+            }
+        };
+
+        let rawContent: string;
+        try {
+            rawContent = await runOnce([{ role: "user", content: prompt }]);
         } catch (error) {
             console.error('[AIService] API error during rewriteContent:', error);
             return { title, content };
         }
 
-        const rawContent = completion.choices[0].message.content || '{}';
-        let result: any = {};
+        let result = parseJson(rawContent);
+        if (!result) return { title, content };
 
-        try {
-            // Clean content: remove markdown code blocks if present
-            const cleanContent = rawContent.replace(/```json/g, '').replace(/```/g, '').trim();
-            result = JSON.parse(cleanContent);
-        } catch (e) {
-            console.error('[AIService] Failed to parse JSON response:', e);
-            console.error('[AIService] Raw response:', rawContent);
-            // Fallback: use regex to extract if possible, or return original
-            return {
-                title: title,
-                content: content // unexpected failure fallback
-            };
+        // Sanity check: the model occasionally hallucinates Cyrillic/Greek/CJK/Arabic
+        // tokens mid-paragraph. The prompt forbids it but is not enough on its own.
+        // If we detect non-Latin script in title or content, retry once asking the
+        // model to fix its previous answer. If the retry still has non-Latin chars
+        // we fall back to the original article instead of publishing junk.
+        const nonLatinHit = this.containsNonLatinScript(result.title) || this.containsNonLatinScript(result.content);
+        if (nonLatinHit) {
+            console.warn('[AIService] Non-Latin script detected in rewrite output, retrying once.');
+            try {
+                const retryRaw = await runOnce([
+                    { role: "user", content: prompt },
+                    { role: "assistant", content: rawContent },
+                    { role: "user", content: 'La respuesta anterior contenía caracteres fuera del alfabeto latino (cirílico, griego, CJK o árabe). Devolvé la MISMA respuesta pero 100% en español, reemplazando o eliminando cualquier carácter no latino. Mismo formato JSON: { "title": "...", "content": "..." }.' }
+                ]);
+                const retryResult = parseJson(retryRaw);
+                if (retryResult && !this.containsNonLatinScript(retryResult.title) && !this.containsNonLatinScript(retryResult.content)) {
+                    result = retryResult;
+                } else {
+                    console.error('[AIService] Retry still produced non-Latin script, falling back to original.');
+                    return { title, content };
+                }
+            } catch (error) {
+                console.error('[AIService] Retry failed during rewriteContent:', error);
+                return { title, content };
+            }
         }
 
         return {
             title: result.title || title,
             content: result.content || content
         };
+    }
+
+    private containsNonLatinScript(text: string | undefined | null): boolean {
+        if (!text) return false;
+        // Cyrillic, Greek/Coptic, Armenian, Hebrew, Arabic, CJK Unified Ideographs,
+        // Hiragana, Katakana, Hangul. Latin + tildes/ñ + standard punctuation pass.
+        return /[Ͱ-ϿЀ-ӿԀ-ԯ԰-֏֐-׿؀-ۿ぀-ゟ゠-ヿ가-힯一-鿿]/.test(text);
     }
 
     async calculateInterestScore(title: string, content: string): Promise<number> {

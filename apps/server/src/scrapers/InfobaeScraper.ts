@@ -59,23 +59,25 @@ export class InfobaeScraper extends BaseScraper {
 
                     // Infobae Body
                     // usually p elements inside .article-body or .body-article
-                    let content = '';
-                    const paragraphs = document.querySelectorAll('p.paragraph, .article-body p, #article-content p');
-                    if (paragraphs.length > 0) {
-                        content = Array.from(paragraphs).map(p => (p as HTMLElement).innerText).join('\n\n');
-                    }
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
+                    const pEls = document.querySelectorAll('p.paragraph, .article-body p, #article-content p');
+                    const paragraphs = Array.from(pEls)
+                        .filter(p => !(p as HTMLElement).closest(embedAncestor))
+                        .map(p => (p as HTMLElement).innerText.trim())
+                        .filter(t => t.length > 0);
 
                     const image = document.querySelector('figure img')?.getAttribute('src') ||
                         document.querySelector('.visual__image')?.getAttribute('src') ||
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-                    return { title, content, image };
+                    return { title, paragraphs, image };
                 });
 
-                if (data.title && data.content) {
+                const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                if (data.title && content) {
                     articles.push({
                         title: data.title,
-                        content: data.content,
+                        content,
                         url: link,
                         imageUrl: data.image || undefined,
                         publishedAt: new Date()

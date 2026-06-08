@@ -45,29 +45,32 @@ export class LaNacionScraper extends BaseScraper {
 
                     // Body selectors for La Nacion
                     const bodySelectors = ['.c-cuerpo', '.body-nota', '#cuerpo-nota', 'section.cuerpo', 'article', 'section'];
-                    let content = '';
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
+                    let paragraphs: string[] = [];
 
                     for (const sel of bodySelectors) {
                         const els = document.querySelectorAll(`${sel} p`);
                         if (els.length > 2) {
-                            content = Array.from(els).map(p => (p as HTMLElement).innerText).join('\n\n');
-                            console.log(`[Browser LaNacion] Found content with selector ${sel}, length: ${content.length}`);
+                            paragraphs = Array.from(els)
+                                .filter(p => !(p as HTMLElement).closest(embedAncestor))
+                                .map(p => (p as HTMLElement).innerText.trim())
+                                .filter(t => t.length > 0);
                             break;
                         }
                     }
-                    console.log(`[Browser LaNacion] Title found: ${!!title}, Content found: ${!!content}`);
 
                     const image = document.querySelector('figure img')?.getAttribute('src') ||
                         document.querySelector('.c-foco img')?.getAttribute('src') ||
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-                    return { title, content, image };
+                    return { title, paragraphs, image };
                 });
 
-                if (data.title && data.content) {
+                const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                if (data.title && content) {
                     articles.push({
                         title: data.title,
-                        content: data.content,
+                        content,
                         url: link,
                         imageUrl: data.image || undefined,
                         publishedAt: new Date()

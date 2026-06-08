@@ -53,36 +53,35 @@ export class AmbitoScraper extends BaseScraper {
                 const data = await page.evaluate(() => {
                     const title = (document.querySelector('h1') as HTMLElement)?.innerText || '';
 
-                    let content = '';
-                    const paragraphs = document.querySelectorAll(
+                    const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
+                    const pEls = document.querySelectorAll(
                         '.article-body p, .news-body-content p, .article__body p, [class*="article-body"] p, [class*="news-body"] p'
                     );
-                    if (paragraphs.length > 0) {
-                        content = Array.from(paragraphs)
-                            .map(p => (p as HTMLElement).innerText.trim())
-                            .filter(t => t.length > 0)
-                            .join('\n\n');
-                    }
+                    const paragraphs = Array.from(pEls)
+                        .filter(p => !(p as HTMLElement).closest(embedAncestor))
+                        .map(p => (p as HTMLElement).innerText.trim())
+                        .filter(t => t.length > 0);
 
                     const image =
                         document.querySelector('figure img')?.getAttribute('src') ||
                         document.querySelector('article img')?.getAttribute('src') ||
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-                    return { title, content, image };
+                    return { title, paragraphs, image };
                 });
 
-                if (data.title && data.content) {
+                const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                if (data.title && content) {
                     articles.push({
                         title: data.title,
-                        content: data.content,
+                        content,
                         url: link,
                         imageUrl: data.image || undefined,
                         publishedAt: new Date()
                     });
                     console.log(`[Ambito] Success: ${data.title.substring(0, 30)}...`);
                 } else {
-                    console.log(`[Ambito-Debug] Skip: ${link}. Title?: ${!!data.title}, Content length: ${data.content.length}`);
+                    console.log(`[Ambito-Debug] Skip: ${link}. Title?: ${!!data.title}, Content length: ${content.length}`);
                 }
             } catch (e) {
                 console.error(`[Ambito] Error scraping ${link}`, e);

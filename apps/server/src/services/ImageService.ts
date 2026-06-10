@@ -360,68 +360,6 @@ export class ImageService {
             .filter((url): url is string => url !== null);
     }
 
-    /**
-     * Download an external image and store it in GeneratedImage so the article
-     * references an internal /api/images/:id URL instead of hotlinking. Remote
-     * candidates routinely 403 later (hotlink protection) or disappear, which
-     * breaks already-published articles. Returns null on failure so the caller
-     * can keep the remote URL as a fallback.
-     */
-    public async rehostImage(url: string): Promise<string | null> {
-        if (!url || url.startsWith('/api/images/')) return url || null;
-        if (!url.startsWith('http')) return null;
-
-        try {
-            const fetchTimeoutMs = await this.configService.getImageFetchTimeoutMs();
-            const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
-            let response: Response;
-            try {
-                response = await fetch(url, {
-                    signal: controller.signal,
-                    redirect: 'follow',
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-                        'Referer': new URL(url).origin
-                    }
-                });
-            } finally {
-                clearTimeout(timeout);
-            }
-
-            if (!response.ok) {
-                console.warn(`[ImageService] Rehost failed: HTTP ${response.status} for ${url}`);
-                return null;
-            }
-
-            const contentType = (response.headers.get('content-type') || '').split(';')[0].trim();
-            if (!contentType.startsWith('image/')) {
-                console.warn(`[ImageService] Rehost failed: non-image content-type "${contentType}" for ${url}`);
-                return null;
-            }
-
-            const buffer = Buffer.from(await response.arrayBuffer());
-            // Editorial photos are normally < 5 MB; anything bigger is likely a
-            // raw original we don't want bloating the DB.
-            const MAX_BYTES = 15 * 1024 * 1024;
-            if (buffer.length === 0 || buffer.length > MAX_BYTES) {
-                console.warn(`[ImageService] Rehost failed: ${buffer.length} bytes for ${url}`);
-                return null;
-            }
-
-            const record = await prisma.generatedImage.create({
-                data: { data: buffer, mimeType: contentType }
-            });
-            console.log(`[ImageService] Rehosted ${url} -> /api/images/${record.id} (${buffer.length} bytes)`);
-            return `/api/images/${record.id}`;
-        } catch (error: any) {
-            const reason = error?.name === 'AbortError' ? 'timeout' : (error?.message || String(error));
-            console.warn(`[ImageService] Rehost failed for ${url}: ${reason}`);
-            return null;
-        }
-    }
-
     public async generateImage(prompt: string): Promise<string | null> {
         try {
             const model = await this.configService.getImageGenerationModel();

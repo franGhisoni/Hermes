@@ -178,18 +178,7 @@ export class ProcessorService {
             });
 
             if (bestImageResult.url) {
-                // Rehost the winner so the article doesn't hotlink a remote URL
-                // that can 403 or vanish after publishing. The remote URL stays
-                // in candidates/trace; on rehost failure we fall back to it.
-                const rehosted = await imageService.rehostImage(bestImageResult.url);
-                featureImageUrl = rehosted || bestImageResult.url;
-                if (rehosted) {
-                    const remoteScore = imageScoresDict[bestImageResult.url] ?? 0;
-                    const idx = imageCandidates.indexOf(bestImageResult.url);
-                    if (idx >= 0) imageCandidates[idx] = rehosted;
-                    delete imageScoresDict[bestImageResult.url];
-                    imageScoresDict[rehosted] = remoteScore;
-                }
+                featureImageUrl = bestImageResult.url;
                 console.log(`[Processor] AI selected: ${featureImageUrl}`);
             } else {
                 // AI rejected all search candidates → try DALL-E. Push the

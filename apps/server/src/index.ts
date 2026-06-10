@@ -624,31 +624,20 @@ app.put('/api/articles/:id/select-image', async (req, res) => {
         const currentCandidates: string[] = (article as any).imageCandidates || [];
         const currentScores: Record<string, number> = ((article as any).imageScores as Record<string, number>) || {};
 
-        // Rehost external picks so the published article serves the image from
-        // our own DB instead of hotlinking (remote URLs often 403 or rot).
-        // On rehost failure, fall back to the remote URL as before.
-        let selectedUrl = imageUrl;
-        if (imageUrl.startsWith('http')) {
-            const imageService = new ImageService();
-            const rehosted = await imageService.rehostImage(imageUrl);
-            if (rehosted) selectedUrl = rehosted;
-        }
-
-        const isNewUrl = !currentCandidates.includes(selectedUrl);
-        const updatedCandidates = isNewUrl ? [...currentCandidates, selectedUrl] : currentCandidates;
-        const inheritedScore = currentScores[imageUrl] ?? 5;
-        const updatedScores = isNewUrl ? { ...currentScores, [selectedUrl]: inheritedScore } : currentScores;
+        const isNewUrl = !currentCandidates.includes(imageUrl);
+        const updatedCandidates = isNewUrl ? [...currentCandidates, imageUrl] : currentCandidates;
+        const updatedScores = isNewUrl ? { ...currentScores, [imageUrl]: 5 } : currentScores;
 
         await prisma.article.update({
             where: { id: req.params.id },
             data: {
-                featureImageUrl: selectedUrl,
+                featureImageUrl: imageUrl,
                 imageCandidates: updatedCandidates,
                 imageScores: updatedScores
             }
         });
 
-        res.json({ success: true, featureImageUrl: selectedUrl, candidates: updatedCandidates, imageScores: updatedScores });
+        res.json({ success: true, featureImageUrl: imageUrl, candidates: updatedCandidates, imageScores: updatedScores });
     } catch (error) {
         res.status(500).json({ error: 'Failed to update' });
     }

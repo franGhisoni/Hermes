@@ -61,7 +61,6 @@ export default function Newsroom() {
             const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: url });
             setArticle(prev => prev ? {
                 ...prev,
-                // The server may rehost the pick to an internal /api/images/ URL
                 featureImageUrl: res.data.featureImageUrl ?? url,
                 imageCandidates: res.data.candidates ?? prev.imageCandidates,
                 imageScores: res.data.imageScores ?? prev.imageScores

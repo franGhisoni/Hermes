@@ -48,8 +48,8 @@ export default function Newsroom() {
                 featureImageUrl: res.data.url,
                 imageCandidates: res.data.candidates
             } : null);
-        } catch (e) {
-            alert('Failed to regenerate image');
+        } catch (e: any) {
+            alert(`No se pudo generar la imagen: ${e?.response?.data?.error || e?.message || 'error desconocido'}`);
         } finally {
             setGenerating(false);
         }
@@ -61,12 +61,13 @@ export default function Newsroom() {
             const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: url });
             setArticle(prev => prev ? {
                 ...prev,
-                featureImageUrl: url,
+                // The server may rehost the pick to an internal /api/images/ URL
+                featureImageUrl: res.data.featureImageUrl ?? url,
                 imageCandidates: res.data.candidates ?? prev.imageCandidates,
                 imageScores: res.data.imageScores ?? prev.imageScores
             } : null);
-        } catch (e) {
-            alert('Failed to update image selection');
+        } catch (e: any) {
+            alert(`No se pudo seleccionar la imagen: ${e?.response?.data?.error || e?.message || 'error desconocido'}`);
         }
     };
 
@@ -95,13 +96,13 @@ export default function Newsroom() {
             const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: customImageUrl.trim() });
             setArticle(prev => prev ? {
                 ...prev,
-                featureImageUrl: customImageUrl.trim(),
+                featureImageUrl: res.data.featureImageUrl ?? customImageUrl.trim(),
                 imageCandidates: res.data.candidates,
                 imageScores: res.data.imageScores
             } : null);
             setCustomImageUrl('');
-        } catch (e) {
-            alert('No se pudo agregar la imagen. Verificá la URL.');
+        } catch (e: any) {
+            alert(`No se pudo agregar la imagen: ${e?.response?.data?.error || e?.message || 'verificá la URL'}`);
         } finally {
             setAddingCustom(false);
         }
@@ -114,10 +115,11 @@ export default function Newsroom() {
             const res = await api.post(`/api/articles/${id}/search-images`);
             setArticle(prev => prev ? {
                 ...prev,
-                imageCandidates: res.data.candidates
+                imageCandidates: res.data.candidates,
+                imageScores: res.data.imageScores ?? prev.imageScores
             } : null);
-        } catch (e) {
-            alert('Failed to search images');
+        } catch (e: any) {
+            alert(`No se pudieron buscar imágenes: ${e?.response?.data?.error || e?.message || 'error desconocido'}`);
         } finally {
             setSearching(false);
         }

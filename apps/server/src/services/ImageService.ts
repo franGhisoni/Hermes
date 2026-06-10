@@ -36,11 +36,19 @@ export interface SearchResult {
     trace: SearchTrace;
 }
 
-// Patterns in URLs that indicate non-content images (icons, UI elements, ads)
+// Tokens in URLs that indicate non-content images (icons, UI elements, ads).
+// Matched as whole words within the URL (split on non-alphanumeric chars), NOT
+// as substrings — a plain `includes('logo')` used to false-positive on Spanish
+// slugs like "urologo", "dialogo" or "psicologo", and `'ad-'` killed every
+// "ciudad-"/"sociedad-" slug.
+const BLOCKED_URL_TOKENS = [
+    'logo', 'logos', 'favicon', 'banner', 'banners', 'icon', 'icons', 'avatar',
+    'sprite', 'widget', 'badge', 'button', 'arrow', 'nav', 'menu',
+    'ad', 'ads', 'pixel', 'tracker', 'beacon'
+];
+
+// Substring patterns that are unambiguous on their own (domains, paths).
 const BLOCKED_URL_PATTERNS = [
-    'logo', 'favicon', 'banner', 'icon', 'avatar', 'sprite',
-    'widget', 'badge', 'button', 'arrow', 'nav-', 'menu-',
-    'ad-', 'ads/', 'pixel', 'tracker', 'beacon',
     'google.com/images', 'gstatic.com/images/branding',
     // Noticias Argentinas always watermarks with blue "NA" bar
     'noticiasargentinas.com', 'noticias-argentinas.com.ar',
@@ -48,6 +56,15 @@ const BLOCKED_URL_PATTERNS = [
     'dreamstime.com', 'shutterstock.com', 'gettyimages.com', 'istockphoto.com',
     'alamy.com', '123rf.com', 'depositphotos.com', 'stock.adobe.com'
 ];
+
+function isBlockedImageUrl(url: string): boolean {
+    const lower = url.toLowerCase();
+    if (BLOCKED_URL_PATTERNS.some(pattern => lower.includes(pattern))) return true;
+    // Tokenize path + query on every non-alphanumeric character so "logo.png",
+    // "/icons/", "ad-banner" match but "urologo.jpg" and "ciudad-de-bsas" don't.
+    const tokens = lower.split(/[^a-z0-9]+/);
+    return tokens.some(token => BLOCKED_URL_TOKENS.includes(token));
+}
 
 export class ImageService {
     private openai: OpenAI;
@@ -81,8 +98,22 @@ export class ImageService {
             const executions: SearchExecution[] = [];
             const sourceByUrl: Record<string, string> = {};
 
-            for (const query of queries) {
-                const data = await this.provider.search(query, { minWidth, minHeight });
+            // Run all queries concurrently — the sequential version could take
+            // queries × (2 variants × 15s) and blow past reverse-proxy timeouts
+            // on the manual /search-images endpoint. Results are still merged
+            // in the original query order, so ranking stays deterministic.
+            const settled = await Promise.allSettled(
+                queries.map(query => this.provider.search(query, { minWidth, minHeight }))
+            );
+
+            settled.forEach((outcome, i) => {
+                const query = queries[i];
+                if (outcome.status === 'rejected') {
+                    console.error(`[ImageService] Query "${query}" failed:`, outcome.reason);
+                    executions.push({ query, providerUrl: '', resultCount: 0 });
+                    return;
+                }
+                const data = outcome.value;
                 executions.push({
                     query,
                     providerUrl: data.url,
@@ -96,12 +127,9 @@ export class ImageService {
                         sourceByUrl[imageUrl] = data.engineByUrl[imageUrl] || this.provider.name;
                     }
                 }
-            }
-
-            const filtered = images.filter((imgUrl: string) => {
-                const lower = imgUrl.toLowerCase();
-                return !BLOCKED_URL_PATTERNS.some(pattern => lower.includes(pattern));
             });
+
+            const filtered = images.filter((imgUrl: string) => !isBlockedImageUrl(imgUrl));
 
             // Validate every filtered candidate; the AI scorer ranks the rest.
             const validated = await this.validateImageUrls(filtered);
@@ -287,36 +315,111 @@ export class ImageService {
      */
     private async validateImageUrls(urls: string[]): Promise<string[]> {
         const fetchTimeoutMs = await this.configService.getImageFetchTimeoutMs();
+
+        const probe = async (url: string, method: 'HEAD' | 'GET'): Promise<boolean> => {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
+            try {
+                const response = await fetch(url, {
+                    method,
+                    signal: controller.signal,
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        // Ask for the first byte only so the GET fallback doesn't
+                        // download whole images during validation.
+                        ...(method === 'GET' ? { 'Range': 'bytes=0-0' } : {})
+                    }
+                });
+                if (!response.ok) return false;
+                const contentType = response.headers.get('content-type') || '';
+                if (!contentType.startsWith('image/')) return false;
+                if (method === 'GET') {
+                    // Drain/cancel the body so the socket is released.
+                    await response.body?.cancel().catch(() => undefined);
+                }
+                return true;
+            } catch {
+                return false;
+            } finally {
+                clearTimeout(timeout);
+            }
+        };
+
         const results = await Promise.allSettled(
             urls.map(async (url) => {
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
-
-                    const response = await fetch(url, {
-                        method: 'HEAD',
-                        signal: controller.signal,
-                        headers: {
-                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                        }
-                    });
-                    clearTimeout(timeout);
-
-                    if (!response.ok) return null;
-
-                    const contentType = response.headers.get('content-type') || '';
-                    if (!contentType.startsWith('image/')) return null;
-
-                    return url;
-                } catch {
-                    return null;
-                }
+                // Many CDNs reject HEAD (405/403) but happily serve GET — retry
+                // with a 1-byte ranged GET before discarding the candidate.
+                if (await probe(url, 'HEAD')) return url;
+                if (await probe(url, 'GET')) return url;
+                return null;
             })
         );
 
         return results
             .map(r => r.status === 'fulfilled' ? r.value : null)
             .filter((url): url is string => url !== null);
+    }
+
+    /**
+     * Download an external image and store it in GeneratedImage so the article
+     * references an internal /api/images/:id URL instead of hotlinking. Remote
+     * candidates routinely 403 later (hotlink protection) or disappear, which
+     * breaks already-published articles. Returns null on failure so the caller
+     * can keep the remote URL as a fallback.
+     */
+    public async rehostImage(url: string): Promise<string | null> {
+        if (!url || url.startsWith('/api/images/')) return url || null;
+        if (!url.startsWith('http')) return null;
+
+        try {
+            const fetchTimeoutMs = await this.configService.getImageFetchTimeoutMs();
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), fetchTimeoutMs);
+            let response: Response;
+            try {
+                response = await fetch(url, {
+                    signal: controller.signal,
+                    redirect: 'follow',
+                    headers: {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+                        'Referer': new URL(url).origin
+                    }
+                });
+            } finally {
+                clearTimeout(timeout);
+            }
+
+            if (!response.ok) {
+                console.warn(`[ImageService] Rehost failed: HTTP ${response.status} for ${url}`);
+                return null;
+            }
+
+            const contentType = (response.headers.get('content-type') || '').split(';')[0].trim();
+            if (!contentType.startsWith('image/')) {
+                console.warn(`[ImageService] Rehost failed: non-image content-type "${contentType}" for ${url}`);
+                return null;
+            }
+
+            const buffer = Buffer.from(await response.arrayBuffer());
+            // Editorial photos are normally < 5 MB; anything bigger is likely a
+            // raw original we don't want bloating the DB.
+            const MAX_BYTES = 15 * 1024 * 1024;
+            if (buffer.length === 0 || buffer.length > MAX_BYTES) {
+                console.warn(`[ImageService] Rehost failed: ${buffer.length} bytes for ${url}`);
+                return null;
+            }
+
+            const record = await prisma.generatedImage.create({
+                data: { data: buffer, mimeType: contentType }
+            });
+            console.log(`[ImageService] Rehosted ${url} -> /api/images/${record.id} (${buffer.length} bytes)`);
+            return `/api/images/${record.id}`;
+        } catch (error: any) {
+            const reason = error?.name === 'AbortError' ? 'timeout' : (error?.message || String(error));
+            console.warn(`[ImageService] Rehost failed for ${url}: ${reason}`);
+            return null;
+        }
     }
 
     public async generateImage(prompt: string): Promise<string | null> {

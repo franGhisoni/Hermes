@@ -416,7 +416,11 @@ export class SchedulerService {
                 article.originalImageUrl || undefined,
                 imageMinScore
             );
-            if (result.url) featureImageUrl = result.url;
+            if (result.url) {
+                // Rehost so the republished dispatch doesn't hotlink a remote
+                // URL that can 403 or vanish; fall back to the remote on failure.
+                featureImageUrl = (await imageService.rehostImage(result.url)) || result.url;
+            }
         }
 
         if (!featureImageUrl) {

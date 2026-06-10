@@ -67,12 +67,22 @@ export class SearxngProvider implements ImageSearchProvider {
             engines: 'google images,duckduckgo images'
         });
 
-        if (preferredBroad.results.length > 0) {
-            console.warn(`[SearxngProvider] "${query}" used preferred-broad retry (${primary.results.length} default -> ${preferredBroad.results.length} preferred results).`);
-            return preferredBroad;
+        if (preferredBroad.results.length === 0) {
+            return primary;
         }
 
-        return primary;
+        // Merge instead of replace: the degraded primary batch may still hold a
+        // few good Google/DDG hits that the broad retry doesn't return. Preferred
+        // engines go first so downstream per-query caps favor them.
+        const merged: string[] = [];
+        const engineByUrl: Record<string, string> = {};
+        for (const url of [...preferredBroad.results, ...primary.results]) {
+            if (engineByUrl[url]) continue;
+            engineByUrl[url] = preferredBroad.engineByUrl[url] || primary.engineByUrl[url];
+            merged.push(url);
+        }
+        console.warn(`[SearxngProvider] "${query}" merged preferred-broad retry (${primary.results.length} default + ${preferredBroad.results.length} preferred -> ${merged.length}).`);
+        return { url: preferredBroad.url, results: merged, engineByUrl };
     }
 
     private async searchVariant(query: string, options: ImageSearchOptions, variant: SearxngSearchVariant): Promise<ProviderSearchResult> {

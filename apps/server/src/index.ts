@@ -601,11 +601,11 @@ app.post('/api/articles/:id/regenerate-image', async (req, res) => {
 
             res.json({ url: newImage, candidates: updatedCandidates });
         } else {
-            res.status(500).json({ error: 'Generation failed' });
+            res.status(500).json({ error: 'La generación de imagen falló (ver logs del servidor: OpenAI images).' });
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
-        res.status(500).json({ error: 'Internal Error' });
+        res.status(500).json({ error: `Error interno: ${error?.message || 'desconocido'}` });
     }
 });
 
@@ -622,22 +622,33 @@ app.put('/api/articles/:id/select-image', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Article not found' });
 
         const currentCandidates: string[] = (article as any).imageCandidates || [];
-        const isNewUrl = !currentCandidates.includes(imageUrl);
-
-        const updatedCandidates = isNewUrl ? [...currentCandidates, imageUrl] : currentCandidates;
         const currentScores: Record<string, number> = ((article as any).imageScores as Record<string, number>) || {};
-        const updatedScores = isNewUrl ? { ...currentScores, [imageUrl]: 5 } : currentScores;
+
+        // Rehost external picks so the published article serves the image from
+        // our own DB instead of hotlinking (remote URLs often 403 or rot).
+        // On rehost failure, fall back to the remote URL as before.
+        let selectedUrl = imageUrl;
+        if (imageUrl.startsWith('http')) {
+            const imageService = new ImageService();
+            const rehosted = await imageService.rehostImage(imageUrl);
+            if (rehosted) selectedUrl = rehosted;
+        }
+
+        const isNewUrl = !currentCandidates.includes(selectedUrl);
+        const updatedCandidates = isNewUrl ? [...currentCandidates, selectedUrl] : currentCandidates;
+        const inheritedScore = currentScores[imageUrl] ?? 5;
+        const updatedScores = isNewUrl ? { ...currentScores, [selectedUrl]: inheritedScore } : currentScores;
 
         await prisma.article.update({
             where: { id: req.params.id },
             data: {
-                featureImageUrl: imageUrl,
+                featureImageUrl: selectedUrl,
                 imageCandidates: updatedCandidates,
                 imageScores: updatedScores
             }
         });
 
-        res.json({ success: true, candidates: updatedCandidates, imageScores: updatedScores });
+        res.json({ success: true, featureImageUrl: selectedUrl, candidates: updatedCandidates, imageScores: updatedScores });
     } catch (error) {
         res.status(500).json({ error: 'Failed to update' });
     }
@@ -650,31 +661,56 @@ app.post('/api/articles/:id/search-images', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Not found' });
 
         const imageService = new ImageService();
+
+        // Same smart-query pass the automatic pipeline uses — the manual button
+        // used to run with regex-only queries, making it strictly worse exactly
+        // when the editor asks for help.
+        const smartQueryResult = await aiService.generateImageSearchQueries({
+            title: article.originalTitle,
+            content: article.originalContent,
+            rewrittenTitle: article.rewrittenTitle || undefined,
+            originalImageUrl: article.originalImageUrl || undefined
+        });
+
         const { images } = await imageService.searchImages({
             title: article.originalTitle,
             content: article.originalContent,
-            rewrittenTitle: article.rewrittenTitle || undefined
+            rewrittenTitle: article.rewrittenTitle || undefined,
+            smartQueries: smartQueryResult.queries
         });
 
-        // Actually findOrGenerate calls both. We might want just search.
-        // But findOrGenerate is fine.
-
-        // Update DB
-        const currentCandidates = (article as any).imageCandidates || [];
-        // Filter duplicates
+        const currentCandidates: string[] = (article as any).imageCandidates || [];
         const newCandidates = images.filter(img => !currentCandidates.includes(img));
         const updatedCandidates = [...currentCandidates, ...newCandidates];
 
+        // Score the fresh candidates so they don't show up unranked in the carousel.
+        const currentScores: Record<string, number> = ((article as any).imageScores as Record<string, number>) || {};
+        let updatedScores = currentScores;
+        if (newCandidates.length > 0) {
+            const imageMinScore = await configService.getImageMinScore();
+            const scored = await aiService.selectBestImage(
+                article.originalTitle,
+                article.originalContent,
+                newCandidates,
+                article.originalImageUrl || undefined,
+                imageMinScore
+            );
+            updatedScores = { ...currentScores };
+            newCandidates.forEach((url, i) => {
+                updatedScores[url] = scored.scores[i] ?? 0;
+            });
+        }
+
         await prisma.article.update({
             where: { id: article.id },
-            data: { imageCandidates: updatedCandidates }
+            data: { imageCandidates: updatedCandidates, imageScores: updatedScores }
         });
 
-        res.json({ candidates: updatedCandidates });
+        res.json({ candidates: updatedCandidates, imageScores: updatedScores });
 
-    } catch (error) {
+    } catch (error: any) {
         console.error(error);
-        res.status(500).json({ error: 'Search failed' });
+        res.status(500).json({ error: `Search failed: ${error?.message || 'unknown error'}` });
     }
 });
 

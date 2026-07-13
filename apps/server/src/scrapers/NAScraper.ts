@@ -23,9 +23,13 @@ export class NAScraper extends BaseScraper {
 
             console.log(`[NA] Fetching section page: ${this.baseUrl}`);
 
+            // NA started returning 403 for bot User-Agents (Googlebot/facebookexternalhit).
+            // A real desktop Chrome UA is served normally (200), so use that instead.
             const fetchOptions = {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                    'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7'
                 }
             };
 
@@ -52,7 +56,7 @@ export class NAScraper extends BaseScraper {
                 const fullUrl = href.startsWith('http') ? href : `https://noticiasargentinas.com${href}`;
 
                 // NA articles usually have /politica/, /economia/, etc.
-                if (href.includes('/politica/') || href.includes('/economia/') || href.includes('/sociedad/') || href.includes('/deportes/') || href.includes('/internacional/') || href.includes('/espectaculos/')) {
+                if (href.includes('/politica/') || href.includes('/economia/') || href.includes('/sociedad/') || href.includes('/deportes/') || href.includes('/internacional/') || href.includes('/internacionales/') || href.includes('/espectaculos/')) {
                     if (href.length > 30 && !href.match(/\/(tag|tema|seccion)\//)) {
                         if (!seenUrls.has(fullUrl)) {
                             seenUrls.add(fullUrl);

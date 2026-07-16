@@ -3,6 +3,9 @@ import { PromptService } from './PromptService';
 import { ConfigService } from './ConfigService';
 
 export class AIService {
+    private static readonly MIN_REWRITE_LENGTH_RATIO = 0.6;
+    private static readonly MAX_REWRITE_LENGTH_RATIO = 1.4;
+
     private openai: OpenAI;
     private promptService: PromptService;
     private configService: ConfigService;
@@ -41,10 +44,11 @@ export class AIService {
         const model = await this.configService.getRewriteModel();
         const maxTokens = await this.configService.getRewriteMaxTokens();
 
+        const sourceContent = content.substring(0, contentChars);
         const prompt = promptTemplate
             .replace('{{style}}', style)
             .replace('{{title}}', title)
-            .replace('{{content}}', content.substring(0, contentChars));
+            .replace('{{content}}', sourceContent);
 
         const runOnce = async (messages: any[]) => {
             const completion = await this.openai.chat.completions.create({
@@ -105,10 +109,58 @@ export class AIService {
             }
         }
 
+        const lengthIssue = this.getRewriteLengthIssue(sourceContent, result.content);
+        if (lengthIssue) {
+            console.warn(`[AIService] Rewrite ${lengthIssue}, retrying once.`);
+            try {
+                const retryRaw = await runOnce([
+                    { role: "user", content: prompt },
+                    { role: "assistant", content: JSON.stringify(result) },
+                    {
+                        role: "user",
+                        content: `La respuesta anterior ${lengthIssue}. Reescribi nuevamente el articulo COMPLETO, sin resumirlo ni omitir informacion. El contenido debe conservar una longitud similar al original (${this.normalizedLength(sourceContent)} caracteres). Mismo formato JSON: { "title": "...", "content": "..." }.`
+                    }
+                ]);
+                const retryResult = parseJson(retryRaw);
+                const retryLengthIssue = this.getRewriteLengthIssue(sourceContent, retryResult?.content);
+                const retryHasNonLatin = this.containsNonLatinScript(retryResult?.title) || this.containsNonLatinScript(retryResult?.content);
+
+                if (retryResult && !retryLengthIssue && !retryHasNonLatin) {
+                    result = retryResult;
+                } else {
+                    const failedCheck = retryLengthIssue || (retryHasNonLatin ? 'contiene caracteres fuera del alfabeto latino' : 'es invalida');
+                    console.error(`[AIService] Rewrite retry ${failedCheck}, falling back to original.`);
+                    return { title, content };
+                }
+            } catch (error) {
+                console.error('[AIService] Length retry failed during rewriteContent:', error);
+                return { title, content };
+            }
+        }
+
         return {
             title: result.title || title,
             content: result.content || content
         };
+    }
+
+    private getRewriteLengthIssue(source: string, rewritten: string | undefined | null): string | null {
+        const sourceLength = this.normalizedLength(source);
+        const rewrittenLength = this.normalizedLength(rewritten || '');
+        if (sourceLength === 0) return null;
+
+        const ratio = rewrittenLength / sourceLength;
+        if (ratio < AIService.MIN_REWRITE_LENGTH_RATIO) {
+            return `quedo demasiado corta (${Math.round(ratio * 100)}% del original)`;
+        }
+        if (ratio > AIService.MAX_REWRITE_LENGTH_RATIO) {
+            return `quedo demasiado larga (${Math.round(ratio * 100)}% del original)`;
+        }
+        return null;
+    }
+
+    private normalizedLength(text: string): number {
+        return text.replace(/\s+/g, ' ').trim().length;
     }
 
     private containsNonLatinScript(text: string | undefined | null): boolean {

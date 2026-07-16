@@ -174,6 +174,63 @@ export abstract class BaseScraper {
     // Updated signature: pass the specific URL to scrape (homepage or section)
     protected abstract performScrape(page: Page, url: string): Promise<ScrapedArticle[]>;
 
+    // Returns the first candidate that parses to a valid Date.
+    protected parseDateCandidates(candidates: Array<string | null | undefined>): Date | null {
+        for (const raw of candidates) {
+            if (!raw) continue;
+            const d = new Date(raw);
+            if (!isNaN(d.getTime())) return d;
+        }
+        return null;
+    }
+
+    // Scans JSON-LD script blocks for a `datePublished` field (NewsArticle schema).
+    protected jsonLdDatePublished(scriptTexts: string[]): string | null {
+        for (const text of scriptTexts) {
+            try {
+                const json = JSON.parse(text);
+                const nodes = Array.isArray(json) ? json : (json['@graph'] || [json]);
+                for (const node of nodes) {
+                    if (node && typeof node.datePublished === 'string') return node.datePublished;
+                }
+            } catch { /* malformed JSON-LD, try next block */ }
+        }
+        return null;
+    }
+
+    // Extracts the real publication date from the currently loaded article page
+    // (meta tags, <time datetime>, JSON-LD). Returns null if none found.
+    protected async extractPublishedDate(page: Page): Promise<Date | null> {
+        try {
+            const result = await page.evaluate(() => {
+                const meta = (sel: string) => document.querySelector(sel)?.getAttribute('content') || null;
+                const candidate =
+                    meta('meta[property="article:published_time"]') ||
+                    meta('meta[itemprop="datePublished"]') ||
+                    meta('meta[name="date"]') ||
+                    meta('meta[name="DC.date.issued"]') ||
+                    document.querySelector('time[datetime]')?.getAttribute('datetime') ||
+                    null;
+                const jsonLd = Array.from(document.querySelectorAll('script[type="application/ld+json"]'))
+                    .map(s => s.textContent || '');
+                return { candidate, jsonLd };
+            });
+            return this.parseDateCandidates([result.candidate, this.jsonLdDatePublished(result.jsonLd)]);
+        } catch {
+            return null;
+        }
+    }
+
+    // True if the article was published on the same calendar day the scrape is
+    // running, in Argentina time. Articles with no detectable date are kept —
+    // we only discard when we positively know the note is from another day.
+    protected isFromToday(date: Date | null): boolean {
+        if (!date) return true;
+        const tz = 'America/Argentina/Buenos_Aires';
+        const dayOf = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: tz });
+        return dayOf(date) === dayOf(new Date());
+    }
+
     // Shared paragraph-level cleanup applied AFTER raw <p> extraction in every
     // scraper. Strips the kinds of noise the rewriter prompt cannot reliably
     // delete on its own: tweet captions, byline-only paragraphs at the head,

@@ -54,6 +54,12 @@ export class InfobaeScraper extends BaseScraper {
             try {
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
+                const publishedAt = await this.extractPublishedDate(page);
+                if (!this.isFromToday(publishedAt)) {
+                    console.log(`[Infobae] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
+                    continue;
+                }
+
                 const data = await page.evaluate(() => {
                     const title = document.querySelector('h1')?.innerText || '';
 
@@ -80,7 +86,7 @@ export class InfobaeScraper extends BaseScraper {
                         content,
                         url: link,
                         imageUrl: data.image || undefined,
-                        publishedAt: new Date()
+                        publishedAt: publishedAt ?? new Date()
                     });
                     console.log(`[Infobae] Success: ${data.title.substring(0, 30)}...`);
                 }

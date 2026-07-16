@@ -126,6 +126,17 @@ export class ClarinScraper extends BaseScraper {
                     const artHtml = await artRes.text();
                     const $art = cheerio.load(artHtml);
 
+                    const publishedAt = this.parseDateCandidates([
+                        $art('meta[property="article:published_time"]').attr('content'),
+                        $art('meta[itemprop="datePublished"]').attr('content'),
+                        $art('time[datetime]').first().attr('datetime'),
+                        this.jsonLdDatePublished($art('script[type="application/ld+json"]').map((_, s) => $art(s).text()).get())
+                    ]);
+                    if (!this.isFromToday(publishedAt)) {
+                        console.log(`[Clarin] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
+                        continue;
+                    }
+
                     const title = $art('h1').first().text().trim() ||
                         $art('.title').first().text().trim() ||
                         $art('article h1').first().text().trim();
@@ -157,7 +168,7 @@ export class ClarinScraper extends BaseScraper {
                             content,
                             url: link,
                             imageUrl: image || undefined,
-                            publishedAt: new Date(),
+                            publishedAt: publishedAt ?? new Date(),
                             section: sectionName
                         });
                         console.log(`[Clarin] Success: ${title.substring(0, 30)}...`);

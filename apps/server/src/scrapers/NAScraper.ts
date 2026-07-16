@@ -79,6 +79,17 @@ export class NAScraper extends BaseScraper {
                     const artHtml = await artRes.text();
                     const $art = cheerio.load(artHtml);
 
+                    const publishedAt = this.parseDateCandidates([
+                        $art('meta[property="article:published_time"]').attr('content'),
+                        $art('meta[itemprop="datePublished"]').attr('content'),
+                        $art('time[datetime]').first().attr('datetime'),
+                        this.jsonLdDatePublished($art('script[type="application/ld+json"]').map((_, s) => $art(s).text()).get())
+                    ]);
+                    if (!this.isFromToday(publishedAt)) {
+                        console.log(`[NA] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
+                        continue;
+                    }
+
                     const title = $art('h1').first().text().trim() || $art('article h1').first().text().trim();
 
                     let content = '';
@@ -106,7 +117,7 @@ export class NAScraper extends BaseScraper {
                             content,
                             url: link,
                             imageUrl: image || undefined,
-                            publishedAt: new Date(),
+                            publishedAt: publishedAt ?? new Date(),
                             section: sectionName
                         });
                         console.log(`[NA] Success: ${title.substring(0, 30)}...`);

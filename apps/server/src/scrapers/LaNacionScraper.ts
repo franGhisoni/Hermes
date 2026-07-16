@@ -40,6 +40,12 @@ export class LaNacionScraper extends BaseScraper {
             try {
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
+                const publishedAt = await this.extractPublishedDate(page);
+                if (!this.isFromToday(publishedAt)) {
+                    console.log(`[LaNacion] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
+                    continue;
+                }
+
                 const data = await page.evaluate(() => {
                     const title = document.querySelector('h1')?.innerText || '';
 
@@ -73,7 +79,7 @@ export class LaNacionScraper extends BaseScraper {
                         content,
                         url: link,
                         imageUrl: data.image || undefined,
-                        publishedAt: new Date()
+                        publishedAt: publishedAt ?? new Date()
                     });
                     console.log(`[LaNacion] Success: ${data.title.substring(0, 30)}...`);
                 }

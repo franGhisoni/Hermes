@@ -50,6 +50,12 @@ export class AmbitoScraper extends BaseScraper {
             try {
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
+                const publishedAt = await this.extractPublishedDate(page);
+                if (!this.isFromToday(publishedAt)) {
+                    console.log(`[Ambito] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
+                    continue;
+                }
+
                 const data = await page.evaluate(() => {
                     const title = (document.querySelector('h1') as HTMLElement)?.innerText || '';
 
@@ -77,7 +83,7 @@ export class AmbitoScraper extends BaseScraper {
                         content,
                         url: link,
                         imageUrl: data.image || undefined,
-                        publishedAt: new Date()
+                        publishedAt: publishedAt ?? new Date()
                     });
                     console.log(`[Ambito] Success: ${data.title.substring(0, 30)}...`);
                 } else {

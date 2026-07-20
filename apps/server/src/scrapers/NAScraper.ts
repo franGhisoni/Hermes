@@ -6,6 +6,21 @@ export class NAScraper extends BaseScraper {
     name = 'NA';
     baseUrl = 'https://noticiasargentinas.com';
 
+    // Section landing pages expose only a curated subset. The category search
+    // endpoint is the complete chronological feed and is therefore the right
+    // source for scheduled ingestion. More sections can be added as their
+    // category IDs are verified.
+    private readonly categorySearchBySection: Record<string, string> = {
+        politica: '65552e7fcb2fb1ac7bf231cd'
+    };
+
+    private getListingUrl(): string {
+        const url = new URL(this.baseUrl);
+        const section = url.pathname.split('/').filter(Boolean).pop()?.toLowerCase();
+        const category = section ? this.categorySearchBySection[section] : undefined;
+        return category ? `https://noticiasargentinas.com/search?category=${category}` : this.baseUrl;
+    }
+
     // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         this.resetDiagnostics(limit);
@@ -22,7 +37,8 @@ export class NAScraper extends BaseScraper {
                 sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
             }
 
-            console.log(`[NA] Fetching section page: ${this.baseUrl}`);
+            const listingUrl = this.getListingUrl();
+            console.log(`[NA] Fetching section page: ${listingUrl}`);
 
             // NA started returning 403 for bot User-Agents (Googlebot/facebookexternalhit).
             // A real desktop Chrome UA is served normally (200), so use that instead.
@@ -34,11 +50,11 @@ export class NAScraper extends BaseScraper {
                 }
             };
 
-            const response = await fetch(this.baseUrl, fetchOptions);
+            const response = await fetch(listingUrl, fetchOptions);
 
             if (!response.ok) {
                 if (response.status === 404) {
-                    console.log(`[NA] Section not found (404) for ${this.baseUrl}. Skipping.`);
+                    console.log(`[NA] Section not found (404) for ${listingUrl}. Skipping.`);
                     return [];
                 }
                 throw new Error(`Failed to fetch section page: ${response.status} ${response.statusText}`);

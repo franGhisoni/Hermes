@@ -10,7 +10,8 @@ export class InfobaeScraper extends BaseScraper {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         // Extract links
-        const articleLinks = await page.evaluate((currentUrl) => {
+        type ArticleCandidate = { url: string; publishedAt?: Date };
+        let articleLinks: ArticleCandidate[] = (await page.evaluate((currentUrl) => {
             const seen = new Set<string>();
             const links: string[] = [];
             // Infer section from current URL if possible, e.g. /politica/
@@ -44,20 +45,57 @@ export class InfobaeScraper extends BaseScraper {
                 }
             });
             return links;
-        }, page.url());
+        }, page.url())).map(url => ({ url }));
+        let candidateCount = articleLinks.length;
+
+        // Infobae exposes a per-section RSS feed with a much larger, ordered
+        // inventory than the curated landing page. Its pubDate is also more
+        // reliable than the article-page markup for deciding "today".
+        try {
+            const section = new URL(url).pathname.split('/').filter(Boolean).pop();
+            const rssUrl = await page.evaluate(() =>
+                (document.querySelector('link[type="application/rss+xml"]') as HTMLLinkElement | null)?.href || null
+            );
+            if (section && rssUrl) {
+                await page.goto(rssUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                const rssItems = await page.evaluate((sectionName) => {
+                    const text = document.body.innerText || '';
+                    const itemPattern = /<item>[\s\S]*?<link>(https:\/\/www\.infobae\.com\/[^<]+)<\/link>[\s\S]*?<pubDate>([^<]+)<\/pubDate>[\s\S]*?<\/item>/g;
+                    const items: Array<{ url: string; publishedAt: string }> = [];
+                    let match: RegExpExecArray | null;
+                    while ((match = itemPattern.exec(text)) !== null) {
+                        if (new URL(match[1]).pathname.startsWith(`/${sectionName}/`)) {
+                            items.push({ url: match[1], publishedAt: match[2] });
+                        }
+                    }
+                    return items;
+                }, section);
+                if (rssItems.length > 0) {
+                    candidateCount = rssItems.length;
+                    articleLinks = rssItems.map(item => ({ url: item.url, publishedAt: new Date(item.publishedAt) }));
+                    const currentItems = articleLinks.filter(item => this.isFromToday(item.publishedAt!));
+                    const skippedByDate = articleLinks.length - currentItems.length;
+                    for (let i = 0; i < skippedByDate; i++) this.recordDateSkip();
+                    articleLinks = currentItems;
+                    console.log(`[Infobae] Found ${rssItems.length} articles in RSS.`);
+                }
+            }
+        } catch (error) {
+            console.warn('[Infobae] RSS lookup failed; using section page links:', error);
+        }
 
         const articles: ScrapedArticle[] = [];
-        this.recordCandidates(articleLinks.length);
+        this.recordCandidates(candidateCount);
 
-        for (const link of articleLinks) {
+        for (const candidate of articleLinks) {
             if (articles.length >= this.requestedLimit) break;
-            if (!link) continue;
+            const link = candidate.url;
             console.log(`[Infobae] Visiting ${link}`);
             try {
                 this.recordVisit();
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
-                const publishedAt = await this.extractPublishedDate(page);
+                const publishedAt = candidate.publishedAt ?? await this.extractPublishedDate(page);
                 if (!this.isFromToday(publishedAt)) {
                     this.recordDateSkip();
                     console.log(`[Infobae] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);

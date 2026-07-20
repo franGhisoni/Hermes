@@ -26,11 +26,20 @@ export class CronistaScraper extends BaseScraper {
                 (btn as HTMLElement | undefined)?.click();
             });
 
-            // Wait for the email input to be present and visible.
-            await page.waitForSelector('input#email', { visible: true, timeout: 10000 });
+            // The form markup changes frequently. Login is optional for the
+            // public articles, so do not let an unavailable login form become
+            // a scraper failure or delay every run by ten seconds.
+            const emailSelector = 'input#email, input[type="email"], input[name="email"]';
+            const passwordSelector = 'input#password, input[type="password"], input[name="password"]';
+            const emailInput = await page.waitForSelector(emailSelector, { visible: true, timeout: 3000 }).catch(() => null);
+            const passwordInput = await page.waitForSelector(passwordSelector, { visible: true, timeout: 3000 }).catch(() => null);
+            if (!emailInput || !passwordInput) {
+                console.warn('[Cronista] Login form unavailable; continuing with public articles.');
+                return false;
+            }
 
-            await page.type('input#email', user, { delay: 30 });
-            await page.type('input#password', pass, { delay: 30 });
+            await emailInput.type(user, { delay: 30 });
+            await passwordInput.type(pass, { delay: 30 });
 
             // Submit and wait for navigation away from /ingresa/.
             await Promise.all([
@@ -43,8 +52,10 @@ export class CronistaScraper extends BaseScraper {
             console.log(`[Cronista] Login ${ok ? 'OK' : 'likely failed'} (url=${currentUrl})`);
             return ok;
         } catch (e) {
-            this.recordFailure(e);
-            console.error('[Cronista] Login error:', e);
+            // Authentication is a best-effort enhancement. Article failures are
+            // recorded separately, so this must not turn an otherwise valid
+            // public scrape into a misleading failure in the admin diagnostics.
+            console.warn('[Cronista] Login unavailable; continuing with public articles:', e);
             return false;
         }
     }

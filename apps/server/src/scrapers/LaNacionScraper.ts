@@ -11,9 +11,10 @@ export class LaNacionScraper extends BaseScraper {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         // Extract links
-        const articleLinks = await page.evaluate(() => {
+        const articleLinks = await page.evaluate((currentUrl) => {
             const seen = new Set<string>();
             const links: string[] = [];
+            const requestedSection = new URL(currentUrl).pathname.split('/').filter(Boolean).pop();
 
             document.querySelectorAll('a').forEach(a => {
                 const href = a.getAttribute('href');
@@ -23,6 +24,7 @@ export class LaNacionScraper extends BaseScraper {
                 // avoiding generic tags or categories if they don't match the pattern
                 if (href.match(/-nid\d+/)) {
                     const fullUrl = href.startsWith('http') ? href : `https://www.lanacion.com.ar${href}`;
+                    if (requestedSection && !new URL(fullUrl).pathname.startsWith(`/${requestedSection}/`)) return;
                     if (!seen.has(fullUrl)) {
                         seen.add(fullUrl);
                         links.push(fullUrl);
@@ -30,7 +32,7 @@ export class LaNacionScraper extends BaseScraper {
                 }
             });
             return links;
-        });
+        }, url);
 
         const articles: ScrapedArticle[] = [];
         this.recordCandidates(articleLinks.length);
@@ -43,7 +45,7 @@ export class LaNacionScraper extends BaseScraper {
                 this.recordVisit();
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
-                const publishedAt = await this.extractPublishedDate(page);
+                const publishedAt = await this.extractPublishedDate(page) ?? this.dateFromUrl(link);
                 if (!this.isFromToday(publishedAt)) {
                     this.recordDateSkip();
                     console.log(`[LaNacion] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);

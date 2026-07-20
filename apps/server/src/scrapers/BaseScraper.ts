@@ -228,6 +228,25 @@ export abstract class BaseScraper {
         return null;
     }
 
+    // Some publishers omit date metadata on the rendered article, but encode a
+    // reliable publication date in the URL. This prevents old links from being
+    // ingested as if they were new merely because metadata is absent.
+    protected dateFromUrl(url: string): Date | null {
+        try {
+            const path = new URL(url).pathname;
+            const isoMatch = path.match(/\/(\d{4})\/(\d{2})\/(\d{2})(?:\/|$)/);
+            if (isoMatch) return new Date(`${isoMatch[1]}-${isoMatch[2]}-${isoMatch[3]}T12:00:00-03:00`);
+
+            const laNacionMatch = path.match(/-nid(\d{2})(\d{2})(\d{4})\/?$/i);
+            if (laNacionMatch) {
+                return new Date(`${laNacionMatch[3]}-${laNacionMatch[2]}-${laNacionMatch[1]}T12:00:00-03:00`);
+            }
+        } catch {
+            // Keep the caller's metadata result when the URL is malformed.
+        }
+        return null;
+    }
+
     // Scans JSON-LD script blocks for a `datePublished` field (NewsArticle schema).
     protected jsonLdDatePublished(scriptTexts: string[]): string | null {
         for (const text of scriptTexts) {

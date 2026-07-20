@@ -31,6 +31,7 @@ export class NAScraper extends BaseScraper {
 
         try {
             const urlObj = new URL(this.baseUrl);
+            const requestedSection = urlObj.pathname.split('/').filter(Boolean).pop()?.toLowerCase();
             let sectionName = 'Portada';
             if (urlObj.pathname && urlObj.pathname !== '/') {
                 const segment = urlObj.pathname.split('/').filter(p => p).pop() || 'Portada';
@@ -71,13 +72,20 @@ export class NAScraper extends BaseScraper {
                 if (!href) return;
 
                 const fullUrl = href.startsWith('http') ? href : `https://noticiasargentinas.com${href}`;
+                const normalizedUrl = new URL(fullUrl);
+                // Story-mode links are alternate renderings of the same article and
+                // otherwise bypass URL deduplication because of the query string.
+                normalizedUrl.search = '';
+                normalizedUrl.hash = '';
+                const canonicalUrl = normalizedUrl.toString();
 
                 // NA articles usually have /politica/, /economia/, etc.
-                if (href.includes('/politica/') || href.includes('/economia/') || href.includes('/sociedad/') || href.includes('/deportes/') || href.includes('/internacional/') || href.includes('/internacionales/') || href.includes('/espectaculos/')) {
+                const belongsToRequestedSection = !requestedSection || canonicalUrl.includes(`/${requestedSection}/`);
+                if (belongsToRequestedSection && (href.includes('/politica/') || href.includes('/economia/') || href.includes('/sociedad/') || href.includes('/deportes/') || href.includes('/internacional/') || href.includes('/internacionales/') || href.includes('/espectaculos/'))) {
                     if (href.length > 30 && !href.match(/\/(tag|tema|seccion)\//)) {
-                        if (!seenUrls.has(fullUrl)) {
-                            seenUrls.add(fullUrl);
-                            links.push(fullUrl);
+                        if (!seenUrls.has(canonicalUrl)) {
+                            seenUrls.add(canonicalUrl);
+                            links.push(canonicalUrl);
                         }
                     }
                 }

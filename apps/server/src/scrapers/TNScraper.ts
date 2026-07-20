@@ -10,9 +10,10 @@ export class TNScraper extends BaseScraper {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         // Extract links
-        const articleLinks = await page.evaluate(() => {
+        const articleLinks = await page.evaluate((currentUrl) => {
             const seen = new Set<string>();
             const links: string[] = [];
+            const requestedSection = new URL(currentUrl).pathname.split('/').filter(Boolean).pop();
 
             document.querySelectorAll('a').forEach(a => {
                 const href = a.getAttribute('href');
@@ -23,7 +24,7 @@ export class TNScraper extends BaseScraper {
 
                 // Basic validation: match standard TN article structure
                 // usually /section/date/...
-                if (fullUrl.includes('/politica/') || fullUrl.includes('/economia/') || fullUrl.includes('/sociedad/') || fullUrl.includes('/deportes/')) {
+                if (requestedSection && fullUrl.includes(`/${requestedSection}/`)) {
                     if (fullUrl.length > 50) { // Avoid short section links
                         if (!seen.has(fullUrl)) {
                             seen.add(fullUrl);
@@ -33,7 +34,7 @@ export class TNScraper extends BaseScraper {
                 }
             });
             return links; // BaseScraper handles limit
-        });
+        }, url);
 
         const articles: ScrapedArticle[] = [];
         this.recordCandidates(articleLinks.length);
@@ -46,7 +47,7 @@ export class TNScraper extends BaseScraper {
                 this.recordVisit();
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
-                const publishedAt = await this.extractPublishedDate(page);
+                const publishedAt = await this.extractPublishedDate(page) ?? this.dateFromUrl(link);
                 if (!this.isFromToday(publishedAt)) {
                     this.recordDateSkip();
                     console.log(`[TN] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);

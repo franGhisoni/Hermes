@@ -111,18 +111,41 @@ export class CronistaScraper extends BaseScraper {
             if (articles.length >= this.requestedLimit) break;
             if (!link) continue;
             console.log(`[Cronista] Visiting ${link}`);
+            let fallbackPage: Page | null = null;
             try {
                 this.recordVisit();
-                await page.goto(link, { waitUntil: 'domcontentloaded' });
+                let articlePage: Page = page;
+                try {
+                    await articlePage.goto(link, { waitUntil: 'domcontentloaded' });
+                } catch (navigationError: any) {
+                    // Cronista occasionally aborts Chromium navigation for an
+                    // otherwise public, 200-response article. Reuse the HTML
+                    // through Node's fetch instead of discarding that article.
+                    if (!String(navigationError?.message || navigationError).includes('ERR_ABORTED')) throw navigationError;
 
-                const publishedAt = await this.extractPublishedDate(page);
+                    console.warn(`[Cronista] Browser navigation aborted; retrying with fetch: ${link}`);
+                    const response = await fetch(link, {
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                            'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7'
+                        }
+                    });
+                    if (!response.ok) throw new Error(`Fallback fetch returned ${response.status}`);
+                    // The original page can still be navigating after ERR_ABORTED;
+                    // use an isolated page so setContent/evaluate are stable.
+                    fallbackPage = await page.browser().newPage();
+                    articlePage = fallbackPage;
+                    await articlePage.setContent(await response.text(), { waitUntil: 'domcontentloaded' });
+                }
+
+                const publishedAt = await this.extractPublishedDate(articlePage);
                 if (!this.isFromToday(publishedAt)) {
                     this.recordDateSkip();
                     console.log(`[Cronista] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                     continue;
                 }
 
-                const data = await page.evaluate(() => {
+                const data = await articlePage.evaluate(() => {
                     const title = (document.querySelector('h1') as HTMLElement)?.innerText || '';
 
                     // Detect paywall — Cronista often inserts a "suscribite" wall.
@@ -173,6 +196,8 @@ export class CronistaScraper extends BaseScraper {
             } catch (e) {
                 this.recordFailure(e);
                 console.error(`[Cronista] Error scraping ${link}`, e);
+            } finally {
+                await fallbackPage?.close().catch(() => undefined);
             }
         }
 

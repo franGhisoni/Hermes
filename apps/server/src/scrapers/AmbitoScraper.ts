@@ -9,7 +9,7 @@ export class AmbitoScraper extends BaseScraper {
         console.log(`[Ambito] Navigating to ${url}`);
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        const articleLinks = await page.evaluate((currentUrl) => {
+        let articleLinks = await page.evaluate((currentUrl) => {
             const seen = new Set<string>();
             const links: string[] = [];
             const sectionMatch = currentUrl.match(/ambito\.com\/([^/]+)/);
@@ -41,6 +41,33 @@ export class AmbitoScraper extends BaseScraper {
             });
             return links;
         }, page.url());
+
+        const sectionPageLinksCount = articleLinks.length;
+
+        // The section landing page is editorially curated and currently exposes
+        // only 12 political notes. Ambito's official RSS contains the complete
+        // chronological section feed (20 entries), so prefer it when available.
+        try {
+            const section = new URL(url).pathname.split('/').filter(Boolean).pop();
+            if (section) {
+                const rssUrl = `https://www.ambito.com/rss/pages/${section}.xml`;
+                await page.goto(rssUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                const rssLinks = await page.evaluate((sectionName) => {
+                    const escaped = sectionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const pattern = new RegExp(`https://www\\.ambito\\.com/${escaped}/[^\\s<]+-n\\d+/?`, 'g');
+                    const matches = (document.body.innerText || '').match(pattern) || [];
+                    return Array.from(new Set(matches));
+                }, section);
+
+                if (rssLinks.length > 0) {
+                    articleLinks = rssLinks;
+                    console.log(`[Ambito] Found ${rssLinks.length} articles in RSS (section page had ${sectionPageLinksCount}).`);
+                }
+            }
+        } catch (error) {
+            // Keep the landing-page links if RSS is temporarily unavailable.
+            console.warn('[Ambito] RSS lookup failed; using section page links:', error);
+        }
 
         const articles: ScrapedArticle[] = [];
         this.recordCandidates(articleLinks.length);

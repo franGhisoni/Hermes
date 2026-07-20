@@ -65,6 +65,23 @@ export interface ScrapeRun {
     finishedAt?: string | null;
     durationMs?: number | null;
     errorMessage?: string | null;
+    diagnostics?: {
+        candidatesDetected: number;
+        candidatesVisited: number;
+        accepted: number;
+        skippedByDate: number;
+        skippedByContent: number;
+        requestFailures: number;
+        lastFailure?: string;
+        processing?: {
+            attempted: number;
+            saved: number;
+            duplicateUrl: number;
+            duplicateSemantic: number;
+            failures: number;
+            lastFailure?: string;
+        };
+    } | null;
     cancelRequested: boolean;
     cancelledAt?: string | null;
 }

@@ -43,6 +43,7 @@ export class CronistaScraper extends BaseScraper {
             console.log(`[Cronista] Login ${ok ? 'OK' : 'likely failed'} (url=${currentUrl})`);
             return ok;
         } catch (e) {
+            this.recordFailure(e);
             console.error('[Cronista] Login error:', e);
             return false;
         }
@@ -102,15 +103,21 @@ export class CronistaScraper extends BaseScraper {
         }, page.url());
 
         const articles: ScrapedArticle[] = [];
+        this.recordCandidates(articleLinks.length);
 
         for (const link of articleLinks) {
+            // The old limit was applied only by BaseScraper after every link was
+            // visited. On busy pages that meant minutes of unnecessary work.
+            if (articles.length >= this.requestedLimit) break;
             if (!link) continue;
             console.log(`[Cronista] Visiting ${link}`);
             try {
+                this.recordVisit();
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
                 const publishedAt = await this.extractPublishedDate(page);
                 if (!this.isFromToday(publishedAt)) {
+                    this.recordDateSkip();
                     console.log(`[Cronista] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                     continue;
                 }
@@ -144,6 +151,7 @@ export class CronistaScraper extends BaseScraper {
                 const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
 
                 if (data.paywalled && content.length < 500) {
+                    this.recordContentSkip();
                     console.log(`[Cronista] Paywalled, skipping: ${link}`);
                     continue;
                 }
@@ -156,11 +164,14 @@ export class CronistaScraper extends BaseScraper {
                         imageUrl: data.image || undefined,
                         publishedAt: publishedAt ?? new Date()
                     });
+                    this.recordAccepted();
                     console.log(`[Cronista] Success: ${data.title.substring(0, 30)}...`);
                 } else {
+                    this.recordContentSkip();
                     console.log(`[Cronista-Debug] Skip: ${link}. Title?: ${!!data.title}, Content length: ${content.length}`);
                 }
             } catch (e) {
+                this.recordFailure(e);
                 console.error(`[Cronista] Error scraping ${link}`, e);
             }
         }

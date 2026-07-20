@@ -4,6 +4,19 @@ import { ScrapedArticle } from '../scrapers/BaseScraper';
 import { ImageService } from './ImageService';
 import { ConfigService } from './ConfigService';
 
+export interface ProcessingDiagnostics {
+    attempted: number;
+    saved: number;
+    duplicateUrl: number;
+    duplicateSemantic: number;
+    failures: number;
+    lastFailure?: string;
+}
+
+type ProcessArticleResult = {
+    outcome: 'saved' | 'duplicateUrl' | 'duplicateSemantic';
+};
+
 export class ProcessorService {
     private aiService: AIService;
     private articleService: ArticleService;
@@ -26,19 +39,33 @@ export class ProcessorService {
         console.log(`[Processor] Processing ${articles.length} articles from ${sourceName}...`);
 
         const processedArticles = [];
+        const diagnostics: ProcessingDiagnostics = {
+            attempted: articles.length,
+            saved: 0,
+            duplicateUrl: 0,
+            duplicateSemantic: 0,
+            failures: 0
+        };
 
         for (const article of articles) {
             try {
-                const savedArticle = await this.processSingleArticle(source.id, article);
-                if (savedArticle) {
-                    processedArticles.push(savedArticle);
+                const result = await this.processSingleArticle(source.id, article);
+                if (result.outcome === 'saved') {
+                    diagnostics.saved++;
+                    processedArticles.push(result);
+                } else if (result.outcome === 'duplicateUrl') {
+                    diagnostics.duplicateUrl++;
+                } else {
+                    diagnostics.duplicateSemantic++;
                 }
-            } catch (error) {
+            } catch (error: unknown) {
+                diagnostics.failures++;
+                diagnostics.lastFailure = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
                 console.error(`[Processor] Error processing article ${article.title}:`, error);
             }
         }
 
-        return processedArticles;
+        return { processedArticles, diagnostics };
     }
 
     private async processSingleArticle(sourceId: string, article: ScrapedArticle) {
@@ -48,7 +75,7 @@ export class ProcessorService {
         const existing = await this.articleService.findByUrl(article.url);
         if (existing) {
             console.log(`[Processor] ⏭️ Article already exists (URL match). Skipping: ${article.title}`);
-            return;
+            return { outcome: 'duplicateUrl' } satisfies ProcessArticleResult;
         }
 
         // 1. Generate Embedding
@@ -71,7 +98,7 @@ export class ProcessorService {
                     console.log(`[Processor] 📸 Harvesting image from duplicate...`);
                     await this.articleService.addImageCandidate(duplicate.id, article.imageUrl);
                 }
-                return;
+                return { outcome: 'duplicateSemantic' } satisfies ProcessArticleResult;
             }
         }
 
@@ -257,7 +284,7 @@ export class ProcessorService {
         });
 
         console.log(`[Processor] ✅ Saved new article: ${rewritten.title}`);
-        return newArticle;
+        return { outcome: 'saved' } satisfies ProcessArticleResult;
     }
 
     private areTitlesFactuallyDifferent(titleA: string, titleB: string): boolean {

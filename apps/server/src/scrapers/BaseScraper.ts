@@ -16,11 +16,54 @@ export interface ScrapedArticle {
     section?: string;
 }
 
+export interface ScrapeDiagnostics {
+    candidatesDetected: number;
+    candidatesVisited: number;
+    accepted: number;
+    skippedByDate: number;
+    skippedByContent: number;
+    requestFailures: number;
+    lastFailure?: string;
+}
+
 export abstract class BaseScraper {
     abstract name: string;
     abstract baseUrl: string;
+    private diagnostics: ScrapeDiagnostics = this.newDiagnostics();
+    protected requestedLimit = Infinity;
+
+    private newDiagnostics(): ScrapeDiagnostics {
+        return {
+            candidatesDetected: 0,
+            candidatesVisited: 0,
+            accepted: 0,
+            skippedByDate: 0,
+            skippedByContent: 0,
+            requestFailures: 0
+        };
+    }
+
+    public getDiagnostics(): ScrapeDiagnostics {
+        return { ...this.diagnostics };
+    }
+
+    protected resetDiagnostics(limit: number) {
+        this.diagnostics = this.newDiagnostics();
+        this.requestedLimit = limit;
+    }
+
+    protected recordCandidates(count: number) { this.diagnostics.candidatesDetected = count; }
+    protected recordVisit() { this.diagnostics.candidatesVisited++; }
+    protected recordDateSkip() { this.diagnostics.skippedByDate++; }
+    protected recordContentSkip() { this.diagnostics.skippedByContent++; }
+    protected recordAccepted() { this.diagnostics.accepted++; }
+    protected recordFailure(error: unknown) {
+        this.diagnostics.requestFailures++;
+        this.diagnostics.lastFailure = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+    }
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        this.resetDiagnostics(limit);
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
         const browser = await puppeteerExtra.launch({
             headless: true, // Set to false for debugging
@@ -156,6 +199,7 @@ export abstract class BaseScraper {
                     console.log(`[${this.name}] Added ${sectionCount} articles from ${target.section}. Total unique so far: ${allArticles.length}`);
 
                 } catch (err) {
+                    this.recordFailure(err);
                     console.error(`[${this.name}] Error scraping section ${target.url}:`, err);
                     // Continue to next section
                 }

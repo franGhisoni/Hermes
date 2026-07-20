@@ -8,6 +8,7 @@ export class NAScraper extends BaseScraper {
 
     // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        this.resetDiagnostics(limit);
         console.log(`[NA] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 
         const allArticles: ScrapedArticle[] = [];
@@ -67,15 +68,20 @@ export class NAScraper extends BaseScraper {
             });
 
             console.log(`[NA] Found ${links.length} potential articles. Scraping up to ${limit}...`);
+            this.recordCandidates(links.length);
 
             for (const link of links) {
                 if (allArticles.length >= limit) break;
 
                 try {
+                    this.recordVisit();
                     console.log(`[NA] Fetching ${link}`);
                     const artRes = await fetch(link, fetchOptions);
 
-                    if (!artRes.ok) continue;
+                    if (!artRes.ok) {
+                        this.recordFailure(new Error(`Article request returned ${artRes.status}`));
+                        continue;
+                    }
                     const artHtml = await artRes.text();
                     const $art = cheerio.load(artHtml);
 
@@ -86,6 +92,7 @@ export class NAScraper extends BaseScraper {
                         this.jsonLdDatePublished($art('script[type="application/ld+json"]').map((_, s) => $art(s).text()).get())
                     ]);
                     if (!this.isFromToday(publishedAt)) {
+                        this.recordDateSkip();
                         console.log(`[NA] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                         continue;
                     }
@@ -120,12 +127,15 @@ export class NAScraper extends BaseScraper {
                             publishedAt: publishedAt ?? new Date(),
                             section: sectionName
                         });
+                        this.recordAccepted();
                         console.log(`[NA] Success: ${title.substring(0, 30)}...`);
                     } else {
+                        this.recordContentSkip();
                         console.log(`[NA-Debug] Skip: ${link}. Title?: ${!!title}, Content length: ${content.length}`);
                     }
 
                 } catch (e) {
+                    this.recordFailure(e);
                     console.error(`[NA] Error processing article ${link}:`, e);
                 }
             }
@@ -134,6 +144,7 @@ export class NAScraper extends BaseScraper {
             return allArticles;
 
         } catch (error) {
+            this.recordFailure(error);
             console.error(`[NA] Native fetch scrape failed:`, error);
             throw error;
         }

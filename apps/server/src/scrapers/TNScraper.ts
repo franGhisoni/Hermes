@@ -36,15 +36,19 @@ export class TNScraper extends BaseScraper {
         });
 
         const articles: ScrapedArticle[] = [];
+        this.recordCandidates(articleLinks.length);
 
         for (const link of articleLinks) {
+            if (articles.length >= this.requestedLimit) break;
             if (!link) continue;
             console.log(`[TN] Visiting ${link}`);
             try {
+                this.recordVisit();
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
                 const publishedAt = await this.extractPublishedDate(page);
                 if (!this.isFromToday(publishedAt)) {
+                    this.recordDateSkip();
                     console.log(`[TN] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                     continue;
                 }
@@ -93,9 +97,11 @@ export class TNScraper extends BaseScraper {
                         imageUrl: data.image || undefined,
                         publishedAt: publishedAt ?? new Date()
                     });
+                    this.recordAccepted();
                     console.log(`[TN] Success: ${data.title.substring(0, 30)}...`);
-                }
+                } else this.recordContentSkip();
             } catch (e) {
+                this.recordFailure(e);
                 console.error(`Error scraping ${link}`, e);
             }
         }

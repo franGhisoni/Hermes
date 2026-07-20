@@ -816,6 +816,20 @@ function ScrapeRunsPanel({
                                             {run.errorMessage}
                                         </div>
                                     )}
+                                    {run.diagnostics && (
+                                        <details className="mt-1 max-w-[260px] text-[10px] text-editorial-text/65">
+                                            <summary className="cursor-pointer select-none">Diagnóstico</summary>
+                                            <div className="mt-1 leading-4">
+                                                {run.diagnostics.candidatesDetected} enlaces · {run.diagnostics.candidatesVisited} visitados · {run.diagnostics.accepted} válidos<br />
+                                                {run.diagnostics.skippedByDate} por fecha · {run.diagnostics.skippedByContent} por contenido · {run.diagnostics.requestFailures} fallas
+                                                {run.diagnostics.lastFailure && <><br />{run.diagnostics.lastFailure}</>}
+                                                {run.diagnostics.processing && <>
+                                                    <br />Proceso: {run.diagnostics.processing.saved} nuevas · {run.diagnostics.processing.duplicateUrl} URL repetidas · {run.diagnostics.processing.duplicateSemantic} similares · {run.diagnostics.processing.failures} fallas
+                                                    {run.diagnostics.processing.lastFailure && <><br />{run.diagnostics.processing.lastFailure}</>}
+                                                </>}
+                                            </div>
+                                        </details>
+                                    )}
                                 </td>
                                 <td className="py-2 pr-3">{run.trigger === 'SCHEDULED' ? 'Auto' : 'Manual'}</td>
                                 <td className="py-2 pr-3 text-right font-mono">{formatDuration(run.durationMs)}</td>

@@ -123,6 +123,9 @@ model ScrapeRun {
   finishedAt     DateTime?
   durationMs     Int?
   errorMessage   String?
+  // Evidence collected by the scraper (candidate links, date/content rejects,
+  // navigation failures). This turns an EMPTY run into an actionable signal.
+  diagnostics    Json?
   cancelRequested Boolean         @default(false)
   cancelledAt     DateTime?
 

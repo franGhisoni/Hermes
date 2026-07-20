@@ -194,7 +194,8 @@ export class QueueService {
                 status: ScrapeRunStatus,
                 scrapedCount: number,
                 processedCount: number,
-                errorMessage?: string
+                errorMessage?: string,
+                diagnostics?: any
             ) => {
                 const finishedAt = new Date();
                 await prisma.scrapeRun.update({
@@ -205,7 +206,8 @@ export class QueueService {
                         processedCount,
                         finishedAt,
                         durationMs: finishedAt.getTime() - startedAt.getTime(),
-                        errorMessage: errorMessage ? errorMessage.slice(0, 1000) : null
+                        errorMessage: errorMessage ? errorMessage.slice(0, 1000) : null,
+                        diagnostics: diagnostics || undefined
                     }
                 });
             };
@@ -233,13 +235,14 @@ export class QueueService {
                 return;
             }
 
+            let scraper: any;
             try {
                 if (await isCancellationRequested()) {
                     await finishRun(ScrapeRunStatus.CANCELLED, 0, 0, 'Cancelado antes de iniciar el scraper.');
                     return [];
                 }
 
-                const scraper = new ScraperClass();
+                scraper = new ScraperClass();
                 // If the job url is a path (e.g. /politica), append it to the base URL
                 if (job.data.url) {
                     const isFullPath = job.data.url.startsWith('http');
@@ -248,6 +251,7 @@ export class QueueService {
 
                 console.log(`[Worker] Starting scrape for ${job.data.source} with limit ${limit}...`);
                 const articles = await scraper.scrape(limit);
+                const diagnostics = scraper.getDiagnostics?.();
                 console.log(`[Worker] Scraped ${articles.length} articles from ${job.data.source}.`);
 
                 if (await isCancellationRequested()) {
@@ -261,31 +265,39 @@ export class QueueService {
                         source: 'SCRAPER',
                         title: `${job.data.source}: scraping vacío`,
                         message: `No se extrajeron artículos${job.data.url ? ` de ${job.data.url}` : ''}. Puede haber un bloqueo del sitio o cambios en su HTML.`,
-                        metadata: { source: job.data.source, url: job.data.url, limit }
+                        metadata: { source: job.data.source, url: job.data.url, limit, diagnostics }
                     });
                 }
 
                 let processedCount = 0;
+                let processingDiagnostics: any;
                 if (articles.length > 0) {
                     // Pipeline Integration
                     console.log('[Worker] Invoking processScrapedArticles...');
                     const processor = new ProcessorService();
-                    const processedArticles = await processor.processScrapedArticles(job.data.source, articles);
-                    processedCount = processedArticles.length;
+                    const processing = await processor.processScrapedArticles(job.data.source, articles);
+                    processedCount = processing.processedArticles.length;
+                    processingDiagnostics = processing.diagnostics;
                     console.log('[Worker] Processing complete.');
                 }
+
+                const runDiagnostics = processingDiagnostics
+                    ? { ...diagnostics, processing: processingDiagnostics }
+                    : diagnostics;
 
                 await finishRun(
                     articles.length === 0 ? ScrapeRunStatus.EMPTY : ScrapeRunStatus.SUCCESS,
                     articles.length,
-                    processedCount
+                    processedCount,
+                    undefined,
+                    runDiagnostics
                 );
 
                 return articles;
 
             } catch (err: any) {
                 console.error(`[Worker] Error scraping ${job.data.source}:`, err);
-                await finishRun(ScrapeRunStatus.ERROR, 0, 0, err?.message || String(err) || 'Unknown scraping error');
+                await finishRun(ScrapeRunStatus.ERROR, 0, 0, err?.message || String(err) || 'Unknown scraping error', scraper?.getDiagnostics?.());
                 await notificationService.emit({
                     level: 'ERROR',
                     source: 'SCRAPER',

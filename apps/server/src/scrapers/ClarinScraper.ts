@@ -8,6 +8,7 @@ export class ClarinScraper extends BaseScraper {
 
     // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        this.resetDiagnostics(limit);
         console.log(`[Clarin] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 
         const allArticles: ScrapedArticle[] = [];
@@ -109,10 +110,12 @@ export class ClarinScraper extends BaseScraper {
                 sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
             }
 
+            this.recordCandidates(links.length);
             for (const link of links) {
                 if (allArticles.length >= limit) break;
 
                 try {
+                    this.recordVisit();
                     console.log(`[Clarin] Fetching ${link}`);
                     const artRes = await fetch(link, {
                         headers: {
@@ -122,7 +125,10 @@ export class ClarinScraper extends BaseScraper {
                         }
                     });
 
-                    if (!artRes.ok) continue;
+                    if (!artRes.ok) {
+                        this.recordFailure(new Error(`Article request returned ${artRes.status}`));
+                        continue;
+                    }
                     const artHtml = await artRes.text();
                     const $art = cheerio.load(artHtml);
 
@@ -133,6 +139,7 @@ export class ClarinScraper extends BaseScraper {
                         this.jsonLdDatePublished($art('script[type="application/ld+json"]').map((_, s) => $art(s).text()).get())
                     ]);
                     if (!this.isFromToday(publishedAt)) {
+                        this.recordDateSkip();
                         console.log(`[Clarin] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                         continue;
                     }
@@ -171,12 +178,15 @@ export class ClarinScraper extends BaseScraper {
                             publishedAt: publishedAt ?? new Date(),
                             section: sectionName
                         });
+                        this.recordAccepted();
                         console.log(`[Clarin] Success: ${title.substring(0, 30)}...`);
                     } else {
+                        this.recordContentSkip();
                         console.log(`[Clarin-Debug] Skip: ${link}. Title?: ${!!title}, Content length: ${content.length}`);
                     }
 
                 } catch (e) {
+                    this.recordFailure(e);
                     console.error(`[Clarin] Error processing article ${link}:`, e);
                 }
             }
@@ -185,6 +195,7 @@ export class ClarinScraper extends BaseScraper {
             return allArticles;
 
         } catch (error) {
+            this.recordFailure(error);
             console.error(`[Clarin] RSS feed scrape failed:`, error);
             throw error;
         }

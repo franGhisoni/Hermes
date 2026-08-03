@@ -166,12 +166,15 @@ export class CronistaScraper extends BaseScraper {
                         /suscrib[íi]te para seguir leyendo|contenido exclusivo para suscriptores/i.test(bodyText);
 
                     const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
-                    const pEls = document.querySelectorAll(
-                        '.article-body p, .news-body-content p, .article__body p, [class*="article-body"] p, [class*="news-body"] p, article p'
+                    const contentEls = document.querySelectorAll(
+                        '.article-body p, .article-body li, .news-body-content p, .news-body-content li, .article__body p, .article__body li, [class*="article-body"] p, [class*="news-body"] p, article p'
                     );
-                    const paragraphs = Array.from(pEls)
-                        .filter(p => !(p as HTMLElement).closest(embedAncestor))
-                        .map(p => (p as HTMLElement).innerText.trim())
+                    const paragraphs = Array.from(contentEls)
+                        .filter(element => !(element as HTMLElement).closest(embedAncestor))
+                        .map(element => {
+                            const text = (element as HTMLElement).innerText.trim();
+                            return element.tagName === 'LI' ? `- ${text}` : text;
+                        })
                         .filter(t => t.length > 0);
 
                     const image =

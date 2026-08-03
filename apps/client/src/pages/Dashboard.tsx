@@ -77,7 +77,12 @@ export default function Dashboard() {
     const fetchSources = async () => {
         try {
             const res = await api.get('/api/config/sources');
-            setDbSources(res.data);
+            const sources: { name: string }[] = res.data;
+            setDbSources(
+                sources.some(source => source.name === 'Pagina12')
+                    ? sources
+                    : [...sources, { name: 'Pagina12' }]
+            );
         } catch (error) {
             console.error('Error fetching sources:', error);
         }

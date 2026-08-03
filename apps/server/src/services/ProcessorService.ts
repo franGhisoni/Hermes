@@ -11,10 +11,26 @@ export interface ProcessingDiagnostics {
     duplicateSemantic: number;
     failures: number;
     lastFailure?: string;
+    items: ProcessingDiagnosticItem[];
+}
+
+export type ProcessingDiagnosticOutcome = 'saved' | 'duplicateUrl' | 'duplicateSemantic' | 'failed';
+
+export interface ProcessingDiagnosticItem {
+    url: string;
+    title: string;
+    outcome: ProcessingDiagnosticOutcome;
+    reason: string;
+    matchedArticleId?: string;
+    matchedArticleTitle?: string;
 }
 
 type ProcessArticleResult = {
     outcome: 'saved' | 'duplicateUrl' | 'duplicateSemantic';
+    reason: string;
+    articleId?: string;
+    matchedArticleId?: string;
+    matchedArticleTitle?: string;
 };
 
 export class ProcessorService {
@@ -44,7 +60,8 @@ export class ProcessorService {
             saved: 0,
             duplicateUrl: 0,
             duplicateSemantic: 0,
-            failures: 0
+            failures: 0,
+            items: []
         };
 
         for (const article of articles) {
@@ -58,9 +75,24 @@ export class ProcessorService {
                 } else {
                     diagnostics.duplicateSemantic++;
                 }
+                diagnostics.items.push({
+                    url: article.url,
+                    title: article.title,
+                    outcome: result.outcome,
+                    reason: result.reason,
+                    matchedArticleId: result.matchedArticleId,
+                    matchedArticleTitle: result.matchedArticleTitle
+                });
             } catch (error: unknown) {
                 diagnostics.failures++;
-                diagnostics.lastFailure = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+                const message = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+                diagnostics.lastFailure = message;
+                diagnostics.items.push({
+                    url: article.url,
+                    title: article.title,
+                    outcome: 'failed',
+                    reason: message
+                });
                 console.error(`[Processor] Error processing article ${article.title}:`, error);
             }
         }
@@ -75,7 +107,12 @@ export class ProcessorService {
         const existing = await this.articleService.findByUrl(article.url);
         if (existing) {
             console.log(`[Processor] ⏭️ Article already exists (URL match). Skipping: ${article.title}`);
-            return { outcome: 'duplicateUrl' } satisfies ProcessArticleResult;
+            return {
+                outcome: 'duplicateUrl',
+                reason: 'La URL ya existe en la base de datos.',
+                matchedArticleId: existing.id,
+                matchedArticleTitle: existing.originalTitle
+            } satisfies ProcessArticleResult;
         }
 
         // 1. Generate Embedding
@@ -98,7 +135,12 @@ export class ProcessorService {
                     console.log(`[Processor] 📸 Harvesting image from duplicate...`);
                     await this.articleService.addImageCandidate(duplicate.id, article.imageUrl);
                 }
-                return { outcome: 'duplicateSemantic' } satisfies ProcessArticleResult;
+                return {
+                    outcome: 'duplicateSemantic',
+                    reason: `Contenido similar a "${duplicate.originalTitle}".`,
+                    matchedArticleId: duplicate.id,
+                    matchedArticleTitle: duplicate.originalTitle
+                } satisfies ProcessArticleResult;
             }
         }
 
@@ -284,7 +326,11 @@ export class ProcessorService {
         });
 
         console.log(`[Processor] ✅ Saved new article: ${rewritten.title}`);
-        return { outcome: 'saved' } satisfies ProcessArticleResult;
+        return {
+            outcome: 'saved',
+            reason: 'Nota guardada como nueva.',
+            articleId: newArticle.id
+        } satisfies ProcessArticleResult;
     }
 
     private areTitlesFactuallyDifferent(titleA: string, titleB: string): boolean {

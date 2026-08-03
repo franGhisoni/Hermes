@@ -92,18 +92,18 @@ export class NAScraper extends BaseScraper {
             });
 
             console.log(`[NA] Found ${links.length} potential articles. Scraping up to ${limit}...`);
-            this.recordCandidates(links.length);
+            this.recordCandidates(links);
 
             for (const link of links) {
                 if (allArticles.length >= limit) break;
 
                 try {
-                    this.recordVisit();
+                    this.recordVisit(link);
                     console.log(`[NA] Fetching ${link}`);
                     const artRes = await fetch(link, fetchOptions);
 
                     if (!artRes.ok) {
-                        this.recordFailure(new Error(`Article request returned ${artRes.status}`));
+                        this.recordFailure(new Error(`Article request returned ${artRes.status}`), link);
                         continue;
                     }
                     const artHtml = await artRes.text();
@@ -116,7 +116,7 @@ export class NAScraper extends BaseScraper {
                         this.jsonLdDatePublished($art('script[type="application/ld+json"]').map((_, s) => $art(s).text()).get())
                     ]);
                     if (!this.isFromToday(publishedAt)) {
-                        this.recordDateSkip();
+                        this.recordDateSkip(link, publishedAt);
                         console.log(`[NA] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                         continue;
                     }
@@ -151,15 +151,15 @@ export class NAScraper extends BaseScraper {
                             publishedAt: publishedAt ?? new Date(),
                             section: sectionName
                         });
-                        this.recordAccepted();
+                        this.recordAccepted(link, title, publishedAt, content.length);
                         console.log(`[NA] Success: ${title.substring(0, 30)}...`);
                     } else {
-                        this.recordContentSkip();
+                        this.recordContentSkip(link, title, `Contenido insuficiente: ${content.length} caracteres extraídos.`);
                         console.log(`[NA-Debug] Skip: ${link}. Title?: ${!!title}, Content length: ${content.length}`);
                     }
 
                 } catch (e) {
-                    this.recordFailure(e);
+                    this.recordFailure(e, link);
                     console.error(`[NA] Error processing article ${link}:`, e);
                 }
             }

@@ -46,7 +46,7 @@ export class InfobaeScraper extends BaseScraper {
             });
             return links;
         }, page.url())).map(url => ({ url }));
-        let candidateCount = articleLinks.length;
+        let candidatesRecorded = false;
 
         // Infobae exposes a per-section RSS feed with a much larger, ordered
         // inventory than the curated landing page. Its pubDate is also more
@@ -71,11 +71,14 @@ export class InfobaeScraper extends BaseScraper {
                     return items;
                 }, section);
                 if (rssItems.length > 0) {
-                    candidateCount = rssItems.length;
                     articleLinks = rssItems.map(item => ({ url: item.url, publishedAt: new Date(item.publishedAt) }));
-                    const currentItems = articleLinks.filter(item => this.isFromToday(item.publishedAt!));
-                    const skippedByDate = articleLinks.length - currentItems.length;
-                    for (let i = 0; i < skippedByDate; i++) this.recordDateSkip();
+                    this.recordCandidates(articleLinks);
+                    candidatesRecorded = true;
+                    const currentItems = articleLinks.filter(item => {
+                        if (this.isFromToday(item.publishedAt!)) return true;
+                        this.recordDateSkip(item.url, item.publishedAt);
+                        return false;
+                    });
                     articleLinks = currentItems;
                     console.log(`[Infobae] Found ${rssItems.length} articles in RSS.`);
                 }
@@ -85,19 +88,19 @@ export class InfobaeScraper extends BaseScraper {
         }
 
         const articles: ScrapedArticle[] = [];
-        this.recordCandidates(candidateCount);
+        if (!candidatesRecorded) this.recordCandidates(articleLinks);
 
         for (const candidate of articleLinks) {
             if (articles.length >= this.requestedLimit) break;
             const link = candidate.url;
             console.log(`[Infobae] Visiting ${link}`);
             try {
-                this.recordVisit();
+                this.recordVisit(link);
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
                 const publishedAt = candidate.publishedAt ?? await this.extractPublishedDate(page);
                 if (!this.isFromToday(publishedAt)) {
-                    this.recordDateSkip();
+                    this.recordDateSkip(link, publishedAt);
                     console.log(`[Infobae] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                     continue;
                 }
@@ -130,11 +133,11 @@ export class InfobaeScraper extends BaseScraper {
                         imageUrl: data.image || undefined,
                         publishedAt: publishedAt ?? new Date()
                     });
-                    this.recordAccepted();
+                    this.recordAccepted(link, data.title, publishedAt, content.length);
                     console.log(`[Infobae] Success: ${data.title.substring(0, 30)}...`);
-                } else this.recordContentSkip();
+                } else this.recordContentSkip(link, data.title, `Contenido insuficiente: ${content.length} caracteres extraídos.`);
             } catch (e) {
-                this.recordFailure(e);
+                this.recordFailure(e, link);
                 console.error(`Error scraping ${link}`, e);
             }
         }

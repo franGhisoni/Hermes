@@ -114,7 +114,7 @@ export class CronistaScraper extends BaseScraper {
         }, page.url());
 
         const articles: ScrapedArticle[] = [];
-        this.recordCandidates(articleLinks.length);
+        this.recordCandidates(articleLinks);
 
         for (const link of articleLinks) {
             // The old limit was applied only by BaseScraper after every link was
@@ -124,7 +124,7 @@ export class CronistaScraper extends BaseScraper {
             console.log(`[Cronista] Visiting ${link}`);
             let fallbackPage: Page | null = null;
             try {
-                this.recordVisit();
+                this.recordVisit(link);
                 let articlePage: Page = page;
                 try {
                     await articlePage.goto(link, { waitUntil: 'domcontentloaded' });
@@ -151,7 +151,7 @@ export class CronistaScraper extends BaseScraper {
 
                 const publishedAt = await this.extractPublishedDate(articlePage);
                 if (!this.isFromToday(publishedAt)) {
-                    this.recordDateSkip();
+                    this.recordDateSkip(link, publishedAt);
                     console.log(`[Cronista] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                     continue;
                 }
@@ -185,7 +185,7 @@ export class CronistaScraper extends BaseScraper {
                 const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
 
                 if (data.paywalled && content.length < 500) {
-                    this.recordContentSkip();
+                    this.recordContentSkip(link, data.title, `Nota bloqueada por suscripción; solo se extrajeron ${content.length} caracteres.`);
                     console.log(`[Cronista] Paywalled, skipping: ${link}`);
                     continue;
                 }
@@ -198,14 +198,14 @@ export class CronistaScraper extends BaseScraper {
                         imageUrl: data.image || undefined,
                         publishedAt: publishedAt ?? new Date()
                     });
-                    this.recordAccepted();
+                    this.recordAccepted(link, data.title, publishedAt, content.length);
                     console.log(`[Cronista] Success: ${data.title.substring(0, 30)}...`);
                 } else {
-                    this.recordContentSkip();
+                    this.recordContentSkip(link, data.title, `Contenido insuficiente: ${content.length} caracteres extraídos.`);
                     console.log(`[Cronista-Debug] Skip: ${link}. Title?: ${!!data.title}, Content length: ${content.length}`);
                 }
             } catch (e) {
-                this.recordFailure(e);
+                this.recordFailure(e, link);
                 console.error(`[Cronista] Error scraping ${link}`, e);
             } finally {
                 await fallbackPage?.close().catch(() => undefined);

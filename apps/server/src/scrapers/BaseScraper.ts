@@ -24,6 +24,25 @@ export interface ScrapeDiagnostics {
     skippedByContent: number;
     requestFailures: number;
     lastFailure?: string;
+    items: ScrapeDiagnosticItem[];
+}
+
+export type ScrapeDiagnosticStatus =
+    | 'detected'
+    | 'visited'
+    | 'notVisited'
+    | 'accepted'
+    | 'skippedDate'
+    | 'skippedContent'
+    | 'failed';
+
+export interface ScrapeDiagnosticItem {
+    url: string;
+    title?: string;
+    status: ScrapeDiagnosticStatus;
+    reason: string;
+    publishedAt?: string;
+    contentLength?: number;
 }
 
 export abstract class BaseScraper {
@@ -39,12 +58,27 @@ export abstract class BaseScraper {
             accepted: 0,
             skippedByDate: 0,
             skippedByContent: 0,
-            requestFailures: 0
+            requestFailures: 0,
+            items: []
         };
     }
 
     public getDiagnostics(): ScrapeDiagnostics {
-        return { ...this.diagnostics };
+        return {
+            ...this.diagnostics,
+            items: this.diagnostics.items.map(item => {
+                if (item.status !== 'detected' && item.status !== 'visited') return { ...item };
+
+                const limitReached = this.diagnostics.accepted >= this.requestedLimit;
+                return {
+                    ...item,
+                    status: 'notVisited' as const,
+                    reason: limitReached
+                        ? `No se visitó porque ya se alcanzó el límite de ${this.requestedLimit} notas válidas.`
+                        : 'El enlace fue detectado, pero el scraper terminó antes de completar su evaluación.'
+                };
+            })
+        };
     }
 
     protected resetDiagnostics(limit: number) {
@@ -52,14 +86,80 @@ export abstract class BaseScraper {
         this.requestedLimit = limit;
     }
 
-    protected recordCandidates(count: number) { this.diagnostics.candidatesDetected = count; }
-    protected recordVisit() { this.diagnostics.candidatesVisited++; }
-    protected recordDateSkip() { this.diagnostics.skippedByDate++; }
-    protected recordContentSkip() { this.diagnostics.skippedByContent++; }
-    protected recordAccepted() { this.diagnostics.accepted++; }
-    protected recordFailure(error: unknown) {
+    protected recordCandidates(candidates: number | Array<string | { url: string; title?: string }>) {
+        if (typeof candidates === 'number') {
+            this.diagnostics.candidatesDetected = candidates;
+            return;
+        }
+
+        this.diagnostics.candidatesDetected = candidates.length;
+        for (const candidate of candidates) {
+            const entry = typeof candidate === 'string' ? { url: candidate } : candidate;
+            this.upsertDiagnosticItem(entry.url, {
+                title: entry.title,
+                status: 'detected',
+                reason: 'Enlace detectado en la sección.'
+            });
+        }
+    }
+
+    protected recordVisit(url?: string, title?: string) {
+        this.diagnostics.candidatesVisited++;
+        this.updateDiagnosticItem(url, { title, status: 'visited', reason: 'Nota visitada; evaluando fecha y contenido.' });
+    }
+
+    protected recordDateSkip(url?: string, publishedAt?: Date | null, title?: string) {
+        this.diagnostics.skippedByDate++;
+        this.updateDiagnosticItem(url, {
+            title,
+            status: 'skippedDate',
+            reason: publishedAt
+                ? `Fecha fuera de la ventana admitida: ${publishedAt.toISOString()}.`
+                : 'La fecha quedó fuera de la ventana admitida.',
+            publishedAt: publishedAt?.toISOString()
+        });
+    }
+
+    protected recordContentSkip(url?: string, title?: string, reason = 'No se obtuvo título y contenido suficientes.') {
+        this.diagnostics.skippedByContent++;
+        this.updateDiagnosticItem(url, { title, status: 'skippedContent', reason });
+    }
+
+    protected recordAccepted(url?: string, title?: string, publishedAt?: Date | null, contentLength?: number, reason = 'Fecha y contenido válidos.') {
+        this.diagnostics.accepted++;
+        this.updateDiagnosticItem(url, {
+            title,
+            status: 'accepted',
+            reason,
+            publishedAt: publishedAt?.toISOString(),
+            contentLength
+        });
+    }
+
+    protected recordFailure(error: unknown, url?: string, title?: string) {
         this.diagnostics.requestFailures++;
-        this.diagnostics.lastFailure = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+        const message = error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+        this.diagnostics.lastFailure = message;
+        this.updateDiagnosticItem(url, { title, status: 'failed', reason: message });
+    }
+
+    private upsertDiagnosticItem(url: string, patch: Omit<Partial<ScrapeDiagnosticItem>, 'url'>) {
+        const existing = this.diagnostics.items.find(item => item.url === url);
+        if (existing) {
+            Object.assign(existing, patch);
+            return;
+        }
+        this.diagnostics.items.push({
+            url,
+            status: patch.status || 'detected',
+            reason: patch.reason || 'Enlace detectado.',
+            ...patch
+        });
+    }
+
+    private updateDiagnosticItem(url: string | undefined, patch: Omit<Partial<ScrapeDiagnosticItem>, 'url'>) {
+        if (!url) return;
+        this.upsertDiagnosticItem(url, patch);
     }
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {

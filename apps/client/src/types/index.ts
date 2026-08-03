@@ -73,6 +73,14 @@ export interface ScrapeRun {
         skippedByContent: number;
         requestFailures: number;
         lastFailure?: string;
+        items?: Array<{
+            url: string;
+            title?: string;
+            status: 'detected' | 'visited' | 'notVisited' | 'accepted' | 'skippedDate' | 'skippedContent' | 'failed';
+            reason: string;
+            publishedAt?: string;
+            contentLength?: number;
+        }>;
         processing?: {
             attempted: number;
             saved: number;
@@ -80,6 +88,14 @@ export interface ScrapeRun {
             duplicateSemantic: number;
             failures: number;
             lastFailure?: string;
+            items?: Array<{
+                url: string;
+                title: string;
+                outcome: 'saved' | 'duplicateUrl' | 'duplicateSemantic' | 'failed';
+                reason: string;
+                matchedArticleId?: string;
+                matchedArticleTitle?: string;
+            }>;
         };
     } | null;
     cancelRequested: boolean;

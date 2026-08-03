@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
@@ -696,6 +696,16 @@ function ScrapeRunsPanel({
 }) {
     const [refreshing, setRefreshing] = useState(false);
     const [cancellingId, setCancellingId] = useState<string | null>(null);
+    const [selectedRun, setSelectedRun] = useState<ScrapeRun | null>(null);
+
+    useEffect(() => {
+        if (!selectedRun) return;
+        const closeOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') setSelectedRun(null);
+        };
+        document.addEventListener('keydown', closeOnEscape);
+        return () => document.removeEventListener('keydown', closeOnEscape);
+    }, [selectedRun]);
 
     const formatDate = (value: string) => new Intl.DateTimeFormat('es-AR', {
         day: '2-digit',
@@ -729,6 +739,42 @@ function ScrapeRunsPanel({
     };
 
     const activeCount = runs.filter(run => run.status === 'QUEUED' || run.status === 'RUNNING').length;
+
+    const diagnosticRows = (() => {
+        if (!selectedRun?.diagnostics) return [];
+        const extractionItems = selectedRun.diagnostics.items || [];
+        const processingItems = selectedRun.diagnostics.processing?.items || [];
+        const extractionByUrl = new Map(extractionItems.map(item => [item.url, item]));
+        const processingByUrl = new Map(processingItems.map(item => [item.url, item]));
+        const urls = [...new Set([...extractionByUrl.keys(), ...processingByUrl.keys()])];
+
+        return urls.map(url => ({
+            url,
+            extraction: extractionByUrl.get(url),
+            processing: processingByUrl.get(url)
+        }));
+    })();
+
+    const diagnosticLabel = (status?: string) => ({
+        detected: 'Detectada',
+        visited: 'Visitada',
+        notVisited: 'No visitada',
+        accepted: 'Aceptada',
+        skippedDate: 'Fecha descartada',
+        skippedContent: 'Contenido descartado',
+        duplicateUrl: 'URL repetida',
+        duplicateSemantic: 'Nota similar',
+        saved: 'Guardada',
+        failed: 'Error'
+    }[status || ''] || '-');
+
+    const diagnosticClass = (status?: string) => {
+        if (status === 'accepted' || status === 'saved') return 'bg-green-50 text-green-700 border-green-200';
+        if (status === 'failed') return 'bg-red-50 text-red-700 border-red-200';
+        if (status === 'duplicateUrl' || status === 'duplicateSemantic') return 'bg-blue-50 text-blue-700 border-blue-200';
+        if (status === 'skippedDate' || status === 'skippedContent' || status === 'notVisited') return 'bg-amber-50 text-amber-800 border-amber-200';
+        return 'bg-zinc-50 text-zinc-600 border-zinc-200';
+    };
 
     const handleRefresh = async () => {
         setRefreshing(true);
@@ -834,6 +880,17 @@ function ScrapeRunsPanel({
                                 <td className="py-2 pr-3">{run.trigger === 'SCHEDULED' ? 'Auto' : 'Manual'}</td>
                                 <td className="py-2 pr-3 text-right font-mono">{formatDuration(run.durationMs)}</td>
                                 <td className="py-2 pl-3 text-right">
+                                    {run.diagnostics && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedRun(run)}
+                                            className="mr-1.5 inline-flex items-center gap-1 border border-editorial-text/20 px-2 py-1 text-[10px] font-bold uppercase tracking-widest hover:bg-editorial-text/5"
+                                            title="Ver diagnóstico nota por nota"
+                                        >
+                                            <FileSearch size={12} />
+                                            Log
+                                        </button>
+                                    )}
                                     {(run.status === 'QUEUED' || run.status === 'RUNNING') && (
                                         <button
                                             type="button"
@@ -859,6 +916,121 @@ function ScrapeRunsPanel({
                     </tbody>
                 </table>
             </div>
+
+            {selectedRun?.diagnostics && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="scrape-log-title"
+                    onMouseDown={(event) => {
+                        if (event.target === event.currentTarget) setSelectedRun(null);
+                    }}
+                >
+                    <div className="flex max-h-[88vh] w-full max-w-6xl flex-col overflow-hidden rounded-md bg-white shadow-2xl">
+                        <div className="flex items-start justify-between gap-4 border-b border-editorial-text/10 px-5 py-4">
+                            <div className="min-w-0">
+                                <h2 id="scrape-log-title" className="font-serif text-xl font-bold">
+                                    Diagnóstico por nota
+                                </h2>
+                                <p className="mt-1 font-sans text-xs text-editorial-text/60">
+                                    {selectedRun.source} · {selectedRun.sectionName || 'Sin sección'} · {formatDate(selectedRun.startedAt)}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedRun(null)}
+                                className="grid h-9 w-9 shrink-0 place-items-center border border-editorial-text/15 hover:bg-editorial-text/5"
+                                title="Cerrar diagnóstico"
+                                aria-label="Cerrar diagnóstico"
+                            >
+                                <X size={17} />
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-px border-b border-editorial-text/10 bg-editorial-text/10 sm:grid-cols-4">
+                            {[
+                                ['Detectadas', selectedRun.diagnostics.candidatesDetected],
+                                ['Visitadas', selectedRun.diagnostics.candidatesVisited],
+                                ['Aceptadas', selectedRun.diagnostics.accepted],
+                                ['Nuevas', selectedRun.diagnostics.processing?.saved ?? 0]
+                            ].map(([label, value]) => (
+                                <div key={label} className="bg-white px-5 py-3">
+                                    <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-editorial-text/45">{label}</div>
+                                    <div className="mt-1 font-mono text-lg font-bold">{value}</div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="overflow-auto">
+                            {diagnosticRows.length > 0 ? (
+                                <table className="w-full min-w-[920px] table-fixed font-sans text-xs">
+                                    <thead className="sticky top-0 z-10 bg-white shadow-[0_1px_0_rgba(0,0,0,0.1)]">
+                                        <tr className="text-left text-[10px] uppercase tracking-widest text-editorial-text/50">
+                                            <th className="w-[38%] px-5 py-3">Nota</th>
+                                            <th className="w-[25%] px-3 py-3">Extracción</th>
+                                            <th className="w-[25%] px-3 py-3">Procesamiento</th>
+                                            <th className="w-[12%] px-3 py-3">Datos</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {diagnosticRows.map(({ url, extraction, processing }) => (
+                                            <tr key={url} className="border-b border-editorial-text/8 align-top">
+                                                <td className="px-5 py-3">
+                                                    <div className="font-bold leading-5">
+                                                        {processing?.title || extraction?.title || 'Título no disponible'}
+                                                    </div>
+                                                    <a
+                                                        href={url}
+                                                        target="_blank"
+                                                        rel="noreferrer"
+                                                        className="mt-1 flex items-start gap-1 break-all font-mono text-[10px] leading-4 text-blue-700 hover:underline"
+                                                    >
+                                                        <span>{url}</span>
+                                                        <ExternalLink size={11} className="mt-0.5 shrink-0" />
+                                                    </a>
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    {extraction ? (
+                                                        <>
+                                                            <span className={`inline-flex border px-2 py-0.5 text-[10px] font-bold ${diagnosticClass(extraction.status)}`}>
+                                                                {diagnosticLabel(extraction.status)}
+                                                            </span>
+                                                            <p className="mt-1.5 leading-4 text-editorial-text/65">{extraction.reason}</p>
+                                                        </>
+                                                    ) : <span className="text-editorial-text/40">Sin registro</span>}
+                                                </td>
+                                                <td className="px-3 py-3">
+                                                    {processing ? (
+                                                        <>
+                                                            <span className={`inline-flex border px-2 py-0.5 text-[10px] font-bold ${diagnosticClass(processing.outcome)}`}>
+                                                                {diagnosticLabel(processing.outcome)}
+                                                            </span>
+                                                            <p className="mt-1.5 leading-4 text-editorial-text/65">{processing.reason}</p>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-editorial-text/40">
+                                                            {extraction?.status === 'accepted' ? 'No llegó al procesamiento' : 'No correspondía procesar'}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-3 py-3 font-mono text-[10px] leading-4 text-editorial-text/55">
+                                                    {extraction?.publishedAt && <div>{new Date(extraction.publishedAt).toLocaleString('es-AR')}</div>}
+                                                    {extraction?.contentLength != null && <div>{extraction.contentLength} caracteres</div>}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="px-5 py-10 text-center font-sans text-sm text-editorial-text/55">
+                                    Esta ejecución es anterior al registro nota por nota. Los nuevos scraping mostrarán el detalle completo.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </Card>
     );
 }

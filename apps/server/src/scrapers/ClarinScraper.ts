@@ -110,12 +110,12 @@ export class ClarinScraper extends BaseScraper {
                 sectionName = segment.charAt(0).toUpperCase() + segment.slice(1);
             }
 
-            this.recordCandidates(links.length);
+            this.recordCandidates(links);
             for (const link of links) {
                 if (allArticles.length >= limit) break;
 
                 try {
-                    this.recordVisit();
+                    this.recordVisit(link);
                     console.log(`[Clarin] Fetching ${link}`);
                     const artRes = await fetch(link, {
                         headers: {
@@ -126,7 +126,7 @@ export class ClarinScraper extends BaseScraper {
                     });
 
                     if (!artRes.ok) {
-                        this.recordFailure(new Error(`Article request returned ${artRes.status}`));
+                        this.recordFailure(new Error(`Article request returned ${artRes.status}`), link);
                         continue;
                     }
                     const artHtml = await artRes.text();
@@ -139,7 +139,7 @@ export class ClarinScraper extends BaseScraper {
                         this.jsonLdDatePublished($art('script[type="application/ld+json"]').map((_, s) => $art(s).text()).get())
                     ]);
                     if (!this.isFromToday(publishedAt)) {
-                        this.recordDateSkip();
+                        this.recordDateSkip(link, publishedAt);
                         console.log(`[Clarin] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                         continue;
                     }
@@ -178,15 +178,15 @@ export class ClarinScraper extends BaseScraper {
                             publishedAt: publishedAt ?? new Date(),
                             section: sectionName
                         });
-                        this.recordAccepted();
+                        this.recordAccepted(link, title, publishedAt, content.length);
                         console.log(`[Clarin] Success: ${title.substring(0, 30)}...`);
                     } else {
-                        this.recordContentSkip();
+                        this.recordContentSkip(link, title, `Contenido insuficiente: ${content.length} caracteres extraídos.`);
                         console.log(`[Clarin-Debug] Skip: ${link}. Title?: ${!!title}, Content length: ${content.length}`);
                     }
 
                 } catch (e) {
-                    this.recordFailure(e);
+                    this.recordFailure(e, link);
                     console.error(`[Clarin] Error processing article ${link}:`, e);
                 }
             }

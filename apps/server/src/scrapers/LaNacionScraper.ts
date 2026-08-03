@@ -35,19 +35,19 @@ export class LaNacionScraper extends BaseScraper {
         }, url);
 
         const articles: ScrapedArticle[] = [];
-        this.recordCandidates(articleLinks.length);
+        this.recordCandidates(articleLinks);
 
         for (const link of articleLinks) {
             if (articles.length >= this.requestedLimit) break;
             if (!link) continue;
             console.log(`[LaNacion] Visiting ${link}`);
             try {
-                this.recordVisit();
+                this.recordVisit(link);
                 await page.goto(link, { waitUntil: 'domcontentloaded' });
 
                 const publishedAt = await this.extractPublishedDate(page) ?? this.dateFromUrl(link);
                 if (!this.isFromToday(publishedAt)) {
-                    this.recordDateSkip();
+                    this.recordDateSkip(link, publishedAt);
                     console.log(`[LaNacion] Skipping non-today article (${publishedAt!.toISOString()}): ${link}`);
                     continue;
                 }
@@ -115,11 +115,25 @@ export class LaNacionScraper extends BaseScraper {
                         imageUrl: data.image || undefined,
                         publishedAt: publishedAt ?? new Date()
                     });
-                    this.recordAccepted();
+                    this.recordAccepted(
+                        link,
+                        data.title,
+                        publishedAt,
+                        content.length,
+                        data.isPaywalled
+                            ? 'Nota de suscriptor aceptada; se usó el cuerpo estructurado cuando era más completo.'
+                            : 'Fecha y contenido válidos.'
+                    );
                     console.log(`[LaNacion] Success${data.isPaywalled ? ' (subscriber)' : ''}: ${data.title.substring(0, 30)}...`);
-                } else this.recordContentSkip();
+                } else {
+                    this.recordContentSkip(
+                        link,
+                        data.title,
+                        `Contenido insuficiente: título ${data.title ? 'presente' : 'ausente'}, ${content.length} caracteres extraídos.`
+                    );
+                }
             } catch (e) {
-                this.recordFailure(e);
+                this.recordFailure(e, link);
                 console.error(`Error scraping ${link}`, e);
             }
         }

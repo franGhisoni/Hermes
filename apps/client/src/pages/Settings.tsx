@@ -39,7 +39,7 @@ interface ScrapeSchedule {
     isActive: boolean;
 }
 
-const AVAILABLE_SOURCES = ['Clarin', 'LaNacion', 'Infobae', 'TN', 'NA', 'Ambito', 'Cronista'];
+const AVAILABLE_SOURCES = ['Clarin', 'LaNacion', 'Infobae', 'TN', 'NA', 'Ambito', 'Cronista', 'Pagina12'];
 
 const CRON_PRESETS = [
     { label: 'Cada 1 hora', value: '0 */1 * * *' },

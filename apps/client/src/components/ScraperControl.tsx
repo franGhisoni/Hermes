@@ -20,6 +20,7 @@ const SCRAPERS = [
     { name: 'Noticias Argentinas', source: 'NA' },
     { name: 'Ámbito', source: 'Ambito' },
     { name: 'El Cronista', source: 'Cronista' },
+    { name: 'Página/12', source: 'Pagina12' },
 ];
 
 export function ScraperControl() {

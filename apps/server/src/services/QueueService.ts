@@ -6,6 +6,7 @@ import { TNScraper } from '../scrapers/TNScraper';
 import { NAScraper } from '../scrapers/NAScraper';
 import { AmbitoScraper } from '../scrapers/AmbitoScraper';
 import { CronistaScraper } from '../scrapers/CronistaScraper';
+import { Pagina12Scraper } from '../scrapers/Pagina12Scraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 import { PrismaClient, ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
@@ -161,6 +162,7 @@ export class QueueService {
             'NA': NAScraper,
             'Ambito': AmbitoScraper,
             'Cronista': CronistaScraper,
+            'Pagina12': Pagina12Scraper,
         };
 
         // Scraper Worker

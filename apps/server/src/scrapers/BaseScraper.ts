@@ -291,7 +291,20 @@ export abstract class BaseScraper {
         if (!date) return true;
         const tz = 'America/Argentina/Buenos_Aires';
         const dayOf = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: tz });
-        return dayOf(date) === dayOf(new Date());
+        const now = new Date();
+        const today = dayOf(now);
+        const articleDay = dayOf(date);
+
+        if (articleDay === today) return true;
+
+        const weekday = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(now);
+        if (weekday !== 'Mon') return false;
+
+        const [year, month, day] = today.split('-').map(Number);
+        const previousDay = (daysAgo: number) =>
+            new Date(Date.UTC(year, month - 1, day - daysAgo)).toISOString().slice(0, 10);
+
+        return articleDay === previousDay(1) || articleDay === previousDay(2);
     }
 
     // Shared paragraph-level cleanup applied AFTER raw <p> extraction in every

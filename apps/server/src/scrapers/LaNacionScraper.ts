@@ -75,10 +75,38 @@ export class LaNacionScraper extends BaseScraper {
                         document.querySelector('.c-foco img')?.getAttribute('src') ||
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
-                    return { title, paragraphs, image };
+                    let structuredBody = '';
+                    let isPaywalled = false;
+                    const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
+                    for (const script of jsonLdScripts) {
+                        try {
+                            const json = JSON.parse(script.textContent || '');
+                            if (json?.pagetype === 'nota' && json.valor && json.valor !== 'abierta') {
+                                isPaywalled = true;
+                            }
+                            const nodes = Array.isArray(json) ? json : (json['@graph'] || [json]);
+                            const article = nodes.find((node: any) => {
+                                const types = Array.isArray(node?.['@type']) ? node['@type'] : [node?.['@type']];
+                                return types.includes('NewsArticle') || types.includes('Article');
+                            });
+                            if (!article) continue;
+
+                            if (typeof article.articleBody === 'string') structuredBody = article.articleBody.trim();
+                            isPaywalled ||= String(article.isAccessibleForFree).toLowerCase() === 'false';
+                            break;
+                        } catch {
+                            // Try the next JSON-LD block.
+                        }
+                    }
+
+                    return { title, paragraphs, image, structuredBody, isPaywalled };
                 });
 
-                const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                const renderedContent = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                const structuredContent = this.cleanParagraphs(data.structuredBody.split(/\n+/)).join('\n\n');
+                const content = structuredContent.length > renderedContent.length
+                    ? structuredContent
+                    : renderedContent;
                 if (data.title && content) {
                     articles.push({
                         title: data.title,
@@ -88,7 +116,7 @@ export class LaNacionScraper extends BaseScraper {
                         publishedAt: publishedAt ?? new Date()
                     });
                     this.recordAccepted();
-                    console.log(`[LaNacion] Success: ${data.title.substring(0, 30)}...`);
+                    console.log(`[LaNacion] Success${data.isPaywalled ? ' (subscriber)' : ''}: ${data.title.substring(0, 30)}...`);
                 } else this.recordContentSkip();
             } catch (e) {
                 this.recordFailure(e);

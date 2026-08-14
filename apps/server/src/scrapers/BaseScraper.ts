@@ -4,8 +4,10 @@ import { Browser, Page } from 'puppeteer';
 
 puppeteerExtra.use(StealthPlugin());
 import { PrismaClient } from '@prisma/client';
+import { ConfigService } from '../services/ConfigService';
 
 const prisma = new PrismaClient();
+const configService = new ConfigService();
 
 export interface ScrapedArticle {
     title: string;
@@ -50,6 +52,7 @@ export abstract class BaseScraper {
     abstract baseUrl: string;
     private diagnostics: ScrapeDiagnostics = this.newDiagnostics();
     protected requestedLimit = Infinity;
+    private scrapeOnlyToday = true;
 
     private newDiagnostics(): ScrapeDiagnostics {
         return {
@@ -84,6 +87,10 @@ export abstract class BaseScraper {
     protected resetDiagnostics(limit: number) {
         this.diagnostics = this.newDiagnostics();
         this.requestedLimit = limit;
+    }
+
+    protected async loadScrapeSettings(): Promise<void> {
+        this.scrapeOnlyToday = await configService.getScrapeOnlyToday();
     }
 
     protected recordCandidates(candidates: number | Array<string | { url: string; title?: string }>) {
@@ -164,6 +171,7 @@ export abstract class BaseScraper {
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         this.resetDiagnostics(limit);
+        await this.loadScrapeSettings();
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
         const browser = await puppeteerExtra.launch({
             headless: true, // Set to false for debugging
@@ -388,6 +396,7 @@ export abstract class BaseScraper {
     // running, in Argentina time. Articles with no detectable date are kept —
     // we only discard when we positively know the note is from another day.
     protected isFromToday(date: Date | null): boolean {
+        if (!this.scrapeOnlyToday) return true;
         if (!date) return true;
         const tz = 'America/Argentina/Buenos_Aires';
         const dayOf = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: tz });

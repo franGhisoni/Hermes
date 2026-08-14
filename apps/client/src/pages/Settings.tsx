@@ -61,6 +61,7 @@ const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: num
 ];
 
 interface ExtendedSettings {
+    scrapeOnlyToday: boolean;
     imagePoolSize: number;
     imageScoringMaxRetries: number;
     imagePerQueryCap: number;
@@ -162,6 +163,7 @@ export default function Settings() {
                 setArticleCleanupCron(d.articleCleanupCron ?? '0 * * * *');
                 if (d.imageMinScore) setImageMinScore(d.imageMinScore);
                 setExtended({
+                    scrapeOnlyToday: d.scrapeOnlyToday ?? true,
                     imagePoolSize: d.imagePoolSize,
                     imageScoringMaxRetries: d.imageScoringMaxRetries,
                     imagePerQueryCap: d.imagePerQueryCap,
@@ -1087,6 +1089,15 @@ function SistemaTab(props: SistemaTabProps) {
                     />
 
                     {extended && (
+                        <ToggleCard
+                            title="Solo notas del día"
+                            description="Activado limita por fecha (el lunes también admite sábado y domingo). Desactivado permite notas anteriores; las URL existentes se descartan antes de usar IA."
+                            checked={extended.scrapeOnlyToday}
+                            onChange={(checked) => updateExtended('scrapeOnlyToday', checked)}
+                        />
+                    )}
+
+                    {extended && (
                         <NumericCard
                             title="Ventana global de notas para flujos"
                             description="Default cuando un flujo no define su propia ventana. Aplica al pool de PENDING al ejecutar cada cron."
@@ -1338,6 +1349,33 @@ function CardHeading({ title, description }: { title: string; description: React
             <h3 className="text-sm font-bold">{title}</h3>
             <p className="font-sans text-[11px] text-editorial-text/60 leading-snug mt-0.5">{description}</p>
         </div>
+    );
+}
+
+interface ToggleCardProps {
+    title: string;
+    description: React.ReactNode;
+    checked: boolean;
+    onChange: (checked: boolean) => void | Promise<void>;
+}
+
+function ToggleCard({ title, description, checked, onChange }: ToggleCardProps) {
+    return (
+        <Card className="flex items-center justify-between gap-5">
+            <CardHeading title={title} description={description} />
+            <button
+                type="button"
+                role="switch"
+                aria-checked={checked}
+                aria-label={title}
+                onClick={() => onChange(!checked)}
+                className={`relative h-7 w-12 shrink-0 rounded-full transition-colors ${checked ? 'bg-editorial-text' : 'bg-editorial-text/20'}`}
+            >
+                <span
+                    className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`}
+                />
+            </button>
+        </Card>
     );
 }
 

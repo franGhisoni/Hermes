@@ -276,11 +276,13 @@ app.post('/api/scrape-runs/:id/cancel', requireAdmin, async (req, res) => {
 type SettingDef =
     | { api: string; key: string; kind: 'int'; min?: number; max?: number }
     | { api: string; key: string; kind: 'float'; min?: number; max?: number }
+    | { api: string; key: string; kind: 'boolean' }
     | { api: string; key: string; kind: 'string'; validate?: (v: string) => string | null }
     | { api: string; key: string; kind: 'cron' };
 
 const SETTINGS: SettingDef[] = [
     { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
+    { api: 'scrapeOnlyToday', key: 'scrape_only_today', kind: 'boolean' },
     { api: 'articleRetentionHours', key: 'article_retention_hours', kind: 'int', min: 1 },
     { api: 'articleCleanupCron', key: 'article_cleanup_cron', kind: 'cron' },
     { api: 'imageMinScore', key: 'image_min_score', kind: 'int', min: 1, max: 10 },
@@ -328,6 +330,8 @@ app.get('/api/config/settings', async (req, res) => {
             result[def.api] = parseInt(raw, 10);
         } else if (def.kind === 'float') {
             result[def.api] = parseFloat(raw);
+        } else if (def.kind === 'boolean') {
+            result[def.api] = raw.trim().toLowerCase() === 'true';
         } else {
             result[def.api] = raw;
         }
@@ -340,6 +344,7 @@ async function resolveDefault(def: SettingDef): Promise<any> {
     // through the typed getters so they stay in sync.
     const map: Record<string, () => Promise<any>> = {
         scrapeLimit: () => configService.getScrapeLimit(),
+        scrapeOnlyToday: () => configService.getScrapeOnlyToday(),
         articleRetentionHours: () => configService.getArticleRetentionHours(),
         articleCleanupCron: () => configService.getArticleCleanupCron(),
         imageMinScore: () => configService.getImageMinScore(),
@@ -405,6 +410,14 @@ app.post('/api/config/settings', async (req, res) => {
                 return res.status(400).json({ error: `${def.api} cannot be empty` });
             }
             await configService.setSetting(def.key, value);
+            continue;
+        }
+
+        if (def.kind === 'boolean') {
+            if (incoming !== true && incoming !== false && incoming !== 'true' && incoming !== 'false') {
+                return res.status(400).json({ error: `${def.api} must be a boolean` });
+            }
+            await configService.setSetting(def.key, incoming === true || incoming === 'true' ? 'true' : 'false');
             continue;
         }
 

@@ -22,6 +22,10 @@ export class ConfigService {
         return this.getIntSetting('scrape_limit', 3);
     }
 
+    async getScrapeOnlyToday(): Promise<boolean> {
+        return this.getBooleanSetting('scrape_only_today', true);
+    }
+
     async getArticleRetentionHours(): Promise<number> {
         return this.getIntSetting('article_retention_hours', 48);
     }
@@ -176,5 +180,12 @@ export class ConfigService {
         const val = await this.getSetting(key, defaultValue.toString());
         const parsed = parseFloat(val);
         return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
+    }
+
+    private async getBooleanSetting(key: string, defaultValue: boolean): Promise<boolean> {
+        const val = (await this.getSetting(key, defaultValue.toString())).trim().toLowerCase();
+        if (val === 'true') return true;
+        if (val === 'false') return false;
+        return defaultValue;
     }
 }

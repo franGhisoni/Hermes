@@ -8,6 +8,7 @@ export class ClarinScraper extends BaseScraper {
 
     // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        await this.loadScrapeSettings();
         this.resetDiagnostics(limit);
         console.log(`[Clarin] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 

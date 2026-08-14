@@ -23,6 +23,19 @@ function durationMsBetween(startedAt: Date, finishedAt: Date): number | null {
     return durationMs;
 }
 
+const SCRAPER_REGISTRY: Record<string, any> = {
+    Clarin: ClarinScraper,
+    LaNacion: LaNacionScraper,
+    Infobae: InfobaeScraper,
+    TN: TNScraper,
+    NA: NAScraper,
+    Ambito: AmbitoScraper,
+    Cronista: CronistaScraper,
+    Pagina12: Pagina12Scraper
+};
+
+export const SCRAPER_SOURCES = Object.freeze(Object.keys(SCRAPER_REGISTRY));
+
 type ScrapeJobOptions = {
     sectionName?: string;
     trigger?: ScrapeRunTrigger;
@@ -228,18 +241,6 @@ export class QueueService {
     }
 
     private setupWorkers(concurrency: number): Worker {
-        // Scraper Registry
-        const scraperRegistry: Record<string, any> = {
-            'Clarin': ClarinScraper,
-            'LaNacion': LaNacionScraper,
-            'Infobae': InfobaeScraper,
-            'TN': TNScraper,
-            'NA': NAScraper,
-            'Ambito': AmbitoScraper,
-            'Cronista': CronistaScraper,
-            'Pagina12': Pagina12Scraper,
-        };
-
         // Scraper Worker
         return new Worker(QUEUES.SCRAPER, async (job: Job) => {
             console.log(`[Worker] Processing job ${job.id}: ${job.data.source} - ${job.data.url || 'No URL custom'} - Limit: ${job.data.limit}`);
@@ -297,7 +298,7 @@ export class QueueService {
                 return !!fresh?.cancelRequested;
             };
 
-            const ScraperClass = scraperRegistry[job.data.source];
+            const ScraperClass = SCRAPER_REGISTRY[job.data.source];
 
             if (!ScraperClass) {
                 console.error(`[Worker] Unknown source: ${job.data.source}`);

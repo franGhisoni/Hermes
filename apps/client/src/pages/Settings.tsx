@@ -123,6 +123,7 @@ export default function Settings() {
     // Schedule Form State
     const [newSchedSource, setNewSchedSource] = useState(AVAILABLE_SOURCES[0]);
     const [newSchedCron, setNewSchedCron] = useState(CRON_PRESETS[1].value);
+    const [addingAllSchedules, setAddingAllSchedules] = useState(false);
     const [scrapeLimit, setScrapeLimit] = useState(3);
     const [articleRetentionHours, setArticleRetentionHours] = useState(48);
     const [articleCleanupCron, setArticleCleanupCron] = useState('0 * * * *');
@@ -326,6 +327,28 @@ export default function Settings() {
         }
     };
 
+    const handleCreateAllSchedules = async () => {
+        const missingCount = AVAILABLE_SOURCES.filter(
+            source => !schedules.some(schedule => schedule.source === source)
+        ).length;
+        if (missingCount === 0) return;
+        if (!confirm(`¿Agregar los ${missingCount} scrapers faltantes con este mismo horario?`)) return;
+
+        setAddingAllSchedules(true);
+        try {
+            const response = await api.post('/api/scrape-schedules/bulk', { cron: newSchedCron });
+            const createdCount = response.data.created?.length ?? 0;
+            await fetchData();
+            alert(createdCount > 0
+                ? `Se agregaron ${createdCount} scrapers.`
+                : 'Todos los scrapers disponibles ya estaban configurados.');
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudieron agregar los scrapers'));
+        } finally {
+            setAddingAllSchedules(false);
+        }
+    };
+
     const handleToggleSchedule = async (schedule: ScrapeSchedule) => {
         try {
             await api.put(`/api/scrape-schedules/${schedule.id}`, { ...schedule, isActive: !schedule.isActive });
@@ -439,6 +462,8 @@ export default function Settings() {
                             handleDeleteFilterCategory={handleDeleteFilterCategory}
                             handleUpdateSectionCategory={handleUpdateSectionCategory}
                             handleCreateSchedule={handleCreateSchedule}
+                            handleCreateAllSchedules={handleCreateAllSchedules}
+                            addingAllSchedules={addingAllSchedules}
                             handleToggleSchedule={handleToggleSchedule}
                             handleDeleteSchedule={handleDeleteSchedule}
                             refreshScrapeRuns={fetchScrapeRuns}
@@ -554,6 +579,8 @@ interface FuentesTabProps {
     handleDeleteFilterCategory: (id: string) => Promise<void>;
     handleUpdateSectionCategory: (sectionId: string, filterCategoryId: string) => Promise<void>;
     handleCreateSchedule: (e: React.FormEvent) => Promise<void>;
+    handleCreateAllSchedules: () => Promise<void>;
+    addingAllSchedules: boolean;
     handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
     handleDeleteSchedule: (id: string) => Promise<void>;
     refreshScrapeRuns: () => Promise<void>;
@@ -570,11 +597,15 @@ function FuentesTab(props: FuentesTabProps) {
         newSchedSource, setNewSchedSource, newSchedCron, setNewSchedCron,
         handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
         handleCreateFilterCategory, handleRenameFilterCategory, handleDeleteFilterCategory, handleUpdateSectionCategory,
-        handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule,
+        handleCreateSchedule, handleCreateAllSchedules, addingAllSchedules, handleToggleSchedule, handleDeleteSchedule,
         refreshScrapeRuns,
         cancelScrapeRun,
         onConfigureOverrides
     } = props;
+
+    const missingScheduleCount = AVAILABLE_SOURCES.filter(
+        source => !schedules.some(schedule => schedule.source === source)
+    ).length;
 
     return (
         <section className="space-y-6">
@@ -791,7 +822,20 @@ function FuentesTab(props: FuentesTabProps) {
                             presets={CRON_PRESETS}
                             helperText="Ej: 0 8,12,15 * * 1-5 corre L-V a las 8, 12 y 15hs."
                         />
-                        <div className="flex justify-end">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <button
+                                type="button"
+                                onClick={handleCreateAllSchedules}
+                                disabled={addingAllSchedules || missingScheduleCount === 0}
+                                className="border border-editorial-text/30 px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-editorial-text/5 transition-colors text-[10px] disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="Crea un schedule para cada scraper que todavía no esté configurado"
+                            >
+                                {addingAllSchedules
+                                    ? 'Agregando…'
+                                    : missingScheduleCount > 0
+                                        ? `Agregar todos (${missingScheduleCount})`
+                                        : 'Todos agregados'}
+                            </button>
                             <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]">
                                 Agregar
                             </button>

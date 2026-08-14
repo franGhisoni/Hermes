@@ -1,5 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { PrismaClient } from '@prisma/client';
+import cron from 'node-cron';
+import { requireAdmin } from '../middlewares/auth';
+import { SCRAPER_SOURCES } from '../services/QueueService';
 
 const prisma = new PrismaClient();
 const router = Router();
@@ -13,6 +16,46 @@ router.get('/', async (req: Request, res: Response) => {
         res.json(schedules);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch scrape schedules' });
+    }
+});
+
+// Create schedules for every registered scraper that is still missing.
+router.post('/bulk', requireAdmin, async (req: Request, res: Response) => {
+    const requestedCron = req.body?.cron?.toString().trim();
+    if (!requestedCron || !cron.validate(requestedCron)) {
+        return res.status(400).json({ error: 'A valid cron expression is required' });
+    }
+
+    try {
+        const existing = await prisma.scrapeSchedule.findMany({
+            where: { source: { in: [...SCRAPER_SOURCES] } },
+            select: { source: true }
+        });
+        const configuredSources = new Set(existing.map(schedule => schedule.source));
+        const missingSources = SCRAPER_SOURCES.filter(source => !configuredSources.has(source));
+
+        const created = missingSources.length > 0
+            ? await prisma.$transaction(
+                missingSources.map(source => prisma.scrapeSchedule.create({
+                    data: { source, cron: requestedCron }
+                }))
+            )
+            : [];
+
+        const { schedulerService } = require('../index');
+        if (schedulerService) {
+            for (const schedule of created) {
+                schedulerService.scheduleScrapeJob(schedule);
+            }
+        }
+
+        res.status(created.length > 0 ? 201 : 200).json({
+            created,
+            skippedSources: SCRAPER_SOURCES.filter(source => configuredSources.has(source))
+        });
+    } catch (error) {
+        console.error('Failed to create all scraper schedules:', error);
+        res.status(500).json({ error: 'Failed to create scraper schedules' });
     }
 });
 

@@ -21,6 +21,7 @@ const SCRAPERS = [
     { name: 'Ámbito', source: 'Ambito' },
     { name: 'El Cronista', source: 'Cronista' },
     { name: 'Página/12', source: 'Pagina12' },
+    { name: 'MDZ Online', source: 'MDZ' },
 ];
 
 export function ScraperControl() {

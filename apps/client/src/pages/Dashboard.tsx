@@ -101,11 +101,13 @@ export default function Dashboard() {
         try {
             const res = await api.get('/api/config/sources');
             const sources: { name: string }[] = res.data;
-            setDbSources(
-                sources.some(source => source.name === 'Pagina12')
-                    ? sources
-                    : [...sources, { name: 'Pagina12' }]
-            );
+            const registeredSources = ['Pagina12', 'MDZ'];
+            setDbSources(registeredSources.reduce(
+                (available, name) => available.some(source => source.name === name)
+                    ? available
+                    : [...available, { name }],
+                sources
+            ));
         } catch (error) {
             console.error('Error fetching sources:', error);
         }

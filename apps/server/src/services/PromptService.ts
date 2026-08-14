@@ -48,7 +48,7 @@ CITAS
 - Si una cita atribuye al medio fuente ("le dijo a Clarín", "según informó La Nación", "en diálogo con TN", etc.), reemplazá la atribución por una neutral: "nos comentó", "afirmó", "dijo el entrevistado", "según trascendió".
 
 MEDIOS — NUNCA NOMBRAR LA FUENTE NI A LA COMPETENCIA
-- Bajo ningún concepto menciones nombres de diarios o agencias: Clarín, La Nación, Infobae, TN, C5N, Ámbito, Cronista, Página/12, Noticias Argentinas, NA, Télam, Reuters, AP, AFP, EFE.
+- Bajo ningún concepto menciones nombres de diarios o agencias: Clarín, La Nación, Infobae, TN, C5N, Ámbito, Cronista, Página/12, MDZ, MDZ Online, Noticias Argentinas, NA, Télam, Reuters, AP, AFP, EFE.
 - Eliminá hashtags (#...) y arrobas (@usuario): son tags de redes o de medios.
 - Si un párrafo entero es un tuit citado (formato típico: arroba + nombre + handle + fecha + texto), eliminá el párrafo completo. NO lo parafrasees: borralo.
 

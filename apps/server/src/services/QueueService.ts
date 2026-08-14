@@ -7,6 +7,7 @@ import { NAScraper } from '../scrapers/NAScraper';
 import { AmbitoScraper } from '../scrapers/AmbitoScraper';
 import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { Pagina12Scraper } from '../scrapers/Pagina12Scraper';
+import { MDZScraper } from '../scrapers/MDZScraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 import { ConfigService } from './ConfigService';
@@ -31,7 +32,8 @@ const SCRAPER_REGISTRY: Record<string, any> = {
     NA: NAScraper,
     Ambito: AmbitoScraper,
     Cronista: CronistaScraper,
-    Pagina12: Pagina12Scraper
+    Pagina12: Pagina12Scraper,
+    MDZ: MDZScraper
 };
 
 export const SCRAPER_SOURCES = Object.freeze(Object.keys(SCRAPER_REGISTRY));

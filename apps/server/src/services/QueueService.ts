@@ -13,6 +13,15 @@ import { ConfigService } from './ConfigService';
 import { PrismaClient, ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
 
 const prisma = new PrismaClient();
+const POSTGRES_INT_MAX = 2_147_483_647;
+
+function durationMsBetween(startedAt: Date, finishedAt: Date): number | null {
+    const durationMs = finishedAt.getTime() - startedAt.getTime();
+    if (!Number.isFinite(durationMs) || durationMs < 0 || durationMs > POSTGRES_INT_MAX) {
+        return null;
+    }
+    return durationMs;
+}
 
 type ScrapeJobOptions = {
     sectionName?: string;
@@ -101,7 +110,9 @@ export class QueueService {
                 data: {
                     status: ScrapeRunStatus.ERROR,
                     finishedAt,
-                    durationMs: finishedAt.getTime() - activeRun.startedAt.getTime(),
+                    // Stale rows can be months old, while PostgreSQL INTEGER
+                    // only holds about 24.8 days expressed in milliseconds.
+                    durationMs: durationMsBetween(activeRun.startedAt, finishedAt),
                     errorMessage: 'La ejecución figuraba activa, pero su trabajo ya no existía en la cola.'
                 }
             });
@@ -140,7 +151,7 @@ export class QueueService {
                 data: {
                     status: ScrapeRunStatus.ERROR,
                     finishedAt,
-                    durationMs: finishedAt.getTime() - run.startedAt.getTime(),
+                    durationMs: durationMsBetween(run.startedAt, finishedAt),
                     errorMessage: error?.message || 'No se pudo encolar el scrapeo.'
                 }
             });
@@ -200,7 +211,7 @@ export class QueueService {
                     cancelRequested: true,
                     cancelledAt,
                     finishedAt: cancelledAt,
-                    durationMs: cancelledAt.getTime() - run.startedAt.getTime(),
+                    durationMs: durationMsBetween(run.startedAt, cancelledAt),
                     errorMessage: 'Cancelado antes de ejecutar.'
                 }
             });
@@ -271,7 +282,7 @@ export class QueueService {
                         scrapedCount,
                         processedCount,
                         finishedAt,
-                        durationMs: finishedAt.getTime() - startedAt.getTime(),
+                        durationMs: durationMsBetween(startedAt, finishedAt),
                         errorMessage: errorMessage ? errorMessage.slice(0, 1000) : null,
                         diagnostics: diagnostics || undefined
                     }

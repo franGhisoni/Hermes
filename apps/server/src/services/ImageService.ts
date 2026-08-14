@@ -85,8 +85,9 @@ export class ImageService {
         const searchInput = typeof input === 'string' ? { title: input } : input;
         const fallbackQueries = await this.buildSearchQueries(searchInput);
         const smart = (searchInput.smartQueries || []).map(q => q.trim()).filter(Boolean);
-        // Cap the total queries at imageQueryMaxCount + smart ones (smart take priority).
-        const queryCap = (await this.configService.getImageQueryMaxCount()) + smart.length;
+        // The configured cap is global. Smart queries take priority and fallback
+        // queries only fill the remaining slots.
+        const queryCap = await this.configService.getImageQueryMaxCount();
         const queries = this.uniqueStrings([...smart, ...fallbackQueries]).slice(0, queryCap);
         console.log(`[ImageService] Searching images via ${this.provider.name} with queries: ${queries.map(q => `"${q}"`).join(' | ')}`);
 

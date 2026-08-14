@@ -3,6 +3,7 @@ import { ArticleService } from './ArticleService';
 import { ScrapedArticle } from '../scrapers/BaseScraper';
 import { ImageService } from './ImageService';
 import { ConfigService } from './ConfigService';
+import { Prisma } from '@prisma/client';
 
 export interface ProcessingDiagnostics {
     attempted: number;
@@ -307,23 +308,40 @@ export class ProcessorService {
         }
 
         // 6. Save
-        const newArticle = await this.articleService.saveArticle({
-            sourceId,
-            section: article.section,
-            originalTitle: article.title,
-            originalContent: article.content,
-            originalUrl: article.url,
-            originalImageUrl: article.imageUrl,
-            featureImageUrl: featureImageUrl,
-            imageCandidates: imageCandidates,
-            imageScores: imageScoresDict,
-            aiDecisions: aiTrace,
-            embedding,
-            rewrittenTitle: rewritten.title,
-            rewrittenContent: rewritten.content,
-            interestScore,
-            status: 'PENDING'
-        });
+        let newArticle;
+        try {
+            newArticle = await this.articleService.saveArticle({
+                sourceId,
+                section: article.section,
+                originalTitle: article.title,
+                originalContent: article.content,
+                originalUrl: article.url,
+                originalImageUrl: article.imageUrl,
+                featureImageUrl: featureImageUrl,
+                imageCandidates: imageCandidates,
+                imageScores: imageScoresDict,
+                aiDecisions: aiTrace,
+                embedding,
+                rewrittenTitle: rewritten.title,
+                rewrittenContent: rewritten.content,
+                interestScore,
+                status: 'PENDING'
+            });
+        } catch (error) {
+            if (!this.isOriginalUrlUniqueConflict(error)) throw error;
+
+            // With multiple workers, two sections can pass the initial URL check
+            // before either insert commits. The unique constraint is the final
+            // authority, so treat the losing insert as a normal duplicate.
+            const existing = await this.articleService.findByUrl(article.url);
+            console.log(`[Processor] Article inserted concurrently; skipping duplicate URL: ${article.title}`);
+            return {
+                outcome: 'duplicateUrl',
+                reason: 'La URL fue guardada por otra ejecución concurrente.',
+                matchedArticleId: existing?.id,
+                matchedArticleTitle: existing?.originalTitle
+            } satisfies ProcessArticleResult;
+        }
 
         console.log(`[Processor] ✅ Saved new article: ${rewritten.title}`);
         return {
@@ -331,6 +349,16 @@ export class ProcessorService {
             reason: 'Nota guardada como nueva.',
             articleId: newArticle.id
         } satisfies ProcessArticleResult;
+    }
+
+    private isOriginalUrlUniqueConflict(error: unknown): boolean {
+        if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+            return false;
+        }
+        const target = error.meta?.target;
+        return Array.isArray(target)
+            ? target.includes('originalUrl')
+            : String(target || '').includes('originalUrl');
     }
 
     private areTitlesFactuallyDifferent(titleA: string, titleB: string): boolean {

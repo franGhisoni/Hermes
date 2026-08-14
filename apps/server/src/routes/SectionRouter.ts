@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
             orderBy: [
                 { name: 'asc' }
             ],
-            include: { overrides: true }
+            include: { overrides: true, filterCategory: true }
         });
         res.json(sections);
     } catch (error) {
@@ -60,7 +60,7 @@ router.get('/effective', async (req, res) => {
 
 // POST /api/config/sections
 router.post('/', requireAdmin, async (req, res) => {
-    const { name, path, scrapeLimit } = req.body;
+    const { name, path, scrapeLimit, filterCategoryId } = req.body;
     if (!name || !path) return res.status(400).json({ error: 'Name and path are required' });
 
     try {
@@ -68,7 +68,8 @@ router.post('/', requireAdmin, async (req, res) => {
             data: {
                 name,
                 path,
-                scrapeLimit: normalizeLimit(scrapeLimit)
+                scrapeLimit: normalizeLimit(scrapeLimit),
+                filterCategoryId: normalizeCategoryId(filterCategoryId)
             }
         });
         res.json(section);
@@ -82,13 +83,14 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // PUT /api/config/sections/:id
 router.put('/:id', requireAdmin, async (req, res) => {
-    const { name, path, scrapeLimit } = req.body;
+    const { name, path, scrapeLimit, filterCategoryId } = req.body;
 
     try {
         const data: any = {};
         if (typeof name === 'string') data.name = name;
         if (typeof path === 'string') data.path = path;
         if (scrapeLimit !== undefined) data.scrapeLimit = normalizeLimit(scrapeLimit);
+        if (filterCategoryId !== undefined) data.filterCategoryId = normalizeCategoryId(filterCategoryId);
 
         const section = await prisma.section.update({
             where: { id: req.params.id },
@@ -108,6 +110,11 @@ function normalizeLimit(raw: unknown): number | null {
     const parsed = parseInt(String(raw), 10);
     if (!Number.isFinite(parsed) || parsed <= 0) return null;
     return Math.min(parsed, 100);
+}
+
+function normalizeCategoryId(raw: unknown): string | null {
+    if (raw === null || raw === undefined || raw === '') return null;
+    return String(raw).trim() || null;
 }
 
 // DELETE /api/config/sections/:id

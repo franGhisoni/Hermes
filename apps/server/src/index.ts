@@ -21,6 +21,7 @@ app.use(express.json());
 import authRouter from './routes/AuthRouter';
 import userRouter from './routes/UserRouter';
 import sectionRouter from './routes/SectionRouter';
+import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
 import { requireAuth, requireAdmin } from './middlewares/auth';
 
@@ -85,13 +86,14 @@ app.get('/api/articles', async (req, res) => {
     try {
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
-        const { source, section, status, search, sortBy, sortOrder } = req.query as Record<string, string>;
+        const { source, section, category, status, search, sortBy, sortOrder } = req.query as Record<string, string>;
 
         const result = await articleService.getArticles({
             page,
             limit,
             source,
             section,
+            category,
             status,
             search,
             sortBy: sortBy as 'date' | 'score',
@@ -118,6 +120,7 @@ app.get('/api/articles/:id', async (req, res) => {
 
 // Section router (has its own auth: requireAuth for GET, requireAdmin for POST/DELETE)
 app.use('/api/config/sections', sectionRouter);
+app.use('/api/config/filter-categories', filterCategoryRouter);
 
 // Workflow router (must be imported after schedulerService is exported to avoid circular dep)
 import workflowRouter from './routes/WorkflowRouter';

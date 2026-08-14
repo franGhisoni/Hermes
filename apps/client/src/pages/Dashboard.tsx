@@ -6,10 +6,25 @@ import { useAuth } from '../contexts/AuthContext';
 import { ScraperControl } from '../components/ScraperControl';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 
+interface DashboardSection {
+    id: string;
+    name: string;
+    path: string;
+    filterCategory?: { id: string; name: string } | null;
+    overrides?: Array<{ path: string | null }>;
+}
+
+interface FilterCategory {
+    id: string;
+    name: string;
+    sections: DashboardSection[];
+}
+
 export default function Dashboard() {
     const { user, logout } = useAuth();
     const [articles, setArticles] = useState<Article[]>([]);
-    const [configSections, setConfigSections] = useState<{ name: string, path: string }[]>([]);
+    const [configSections, setConfigSections] = useState<DashboardSection[]>([]);
+    const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [filterSource, setFilterSource] = useState<string>('all');
@@ -46,11 +61,15 @@ export default function Dashboard() {
                 page: page.toString(),
                 limit: '48',
                 source: filterSource,
-                section: filterSection,
                 status: filterStatus,
                 sortBy,
                 sortOrder
             });
+            if (filterSection.startsWith('category:')) {
+                params.set('category', filterSection.slice('category:'.length));
+            } else if (filterSection.startsWith('section:')) {
+                params.set('section', filterSection.slice('section:'.length));
+            }
             if (debouncedSearchQuery) {
                 params.set('search', debouncedSearchQuery);
             }
@@ -67,8 +86,12 @@ export default function Dashboard() {
 
     const fetchSections = async () => {
         try {
-            const res = await api.get('/api/config/sections');
-            setConfigSections(res.data);
+            const [sectionsRes, categoriesRes] = await Promise.all([
+                api.get('/api/config/sections'),
+                api.get('/api/config/filter-categories')
+            ]);
+            setConfigSections(sectionsRes.data);
+            setFilterCategories(categoriesRes.data);
         } catch (error) {
             console.error('Error fetching sections config:', error);
         }
@@ -104,10 +127,20 @@ export default function Dashboard() {
     const sectionLabelByKey = useMemo(() => {
         const labels: Record<string, string> = {};
         configSections.forEach(section => {
-            labels[normalizeGroupKey(section.name)] = section.name;
+            const label = section.filterCategory?.name || section.name;
+            labels[normalizeGroupKey(section.name)] = label;
+            for (const path of [section.path, ...(section.overrides || []).map(override => override.path)]) {
+                const alias = pathAlias(path);
+                if (alias) labels[normalizeGroupKey(alias)] = label;
+            }
         });
         return labels;
     }, [configSections]);
+
+    const uncategorizedSections = useMemo(
+        () => configSections.filter(section => !section.filterCategory),
+        [configSections]
+    );
 
     const groupedArticles = useMemo(() => {
         if (groupBy === 'none') return null;
@@ -185,10 +218,15 @@ export default function Dashboard() {
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Sección</label>
+                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Categoría</label>
                         <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSection} onChange={e => setFilterSection(e.target.value)}>
                             <option value="all">Todas</option>
-                            {configSections.map(s => <option key={s.path} value={s.name}>{s.name}</option>)}
+                            {filterCategories.map(category => (
+                                <option key={category.id} value={`category:${category.id}`}>{category.name}</option>
+                            ))}
+                            {uncategorizedSections.map(section => (
+                                <option key={section.id} value={`section:${section.name}`}>{section.name}</option>
+                            ))}
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
@@ -297,6 +335,12 @@ function normalizeGroupKey(value: string) {
         .toLowerCase()
         .replace(/\s+/g, ' ')
         .trim();
+}
+
+function pathAlias(path?: string | null) {
+    if (!path) return '';
+    const segment = path.split(/[/?#]/).filter(Boolean).pop() || '';
+    return segment.replace(/[-_]+/g, ' ');
 }
 
 function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {

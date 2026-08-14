@@ -29,7 +29,15 @@ interface Section {
     name: string;
     path: string;
     scrapeLimit: number | null;
+    filterCategoryId?: string | null;
+    filterCategory?: FilterCategory | null;
     overrides?: SectionOverride[];
+}
+
+interface FilterCategory {
+    id: string;
+    name: string;
+    sections?: Section[];
 }
 
 interface ScrapeSchedule {
@@ -97,6 +105,7 @@ export default function Settings() {
     const { user, logout } = useAuth();
     const [prompts, setPrompts] = useState<PromptConfig[]>([]);
     const [sections, setSections] = useState<Section[]>([]);
+    const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
     const [schedules, setSchedules] = useState<ScrapeSchedule[]>([]);
     const [scrapeRuns, setScrapeRuns] = useState<ScrapeRun[]>([]);
     const [loading, setLoading] = useState(true);
@@ -106,6 +115,8 @@ export default function Settings() {
     const [newSecName, setNewSecName] = useState('');
     const [newSecPath, setNewSecPath] = useState('');
     const [newSecLimit, setNewSecLimit] = useState('');
+    const [newSecCategoryId, setNewSecCategoryId] = useState('');
+    const [newFilterCategoryName, setNewFilterCategoryName] = useState('');
     const [overrideSectionId, setOverrideSectionId] = useState<string | null>(null);
 
     // Schedule Form State
@@ -127,14 +138,16 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [promptsRes, sectionsRes, schedulesRes, scrapeRunsRes] = await Promise.all([
+            const [promptsRes, sectionsRes, categoriesRes, schedulesRes, scrapeRunsRes] = await Promise.all([
                 api.get('/api/config/prompts'),
                 api.get('/api/config/sections'),
+                api.get('/api/config/filter-categories'),
                 api.get('/api/scrape-schedules'),
                 api.get('/api/scrape-runs?limit=100')
             ]);
             setPrompts(promptsRes.data);
             setSections(sectionsRes.data);
+            setFilterCategories(categoriesRes.data);
             setSchedules(schedulesRes.data);
             setScrapeRuns(scrapeRunsRes.data);
         } catch (e) {
@@ -214,11 +227,13 @@ export default function Settings() {
             await api.post('/api/config/sections', {
                 name: newSecName,
                 path: newSecPath,
-                scrapeLimit: parsedLimit
+                scrapeLimit: parsedLimit,
+                filterCategoryId: newSecCategoryId || null
             });
             setNewSecName('');
             setNewSecPath('');
             setNewSecLimit('');
+            setNewSecCategoryId('');
             fetchData();
         } catch (error: any) {
             alert('Error: ' + (error.response?.data?.error || 'Failed to create section'));
@@ -243,6 +258,50 @@ export default function Settings() {
             fetchData();
         } catch (error) {
             alert('Error deleting section');
+        }
+    };
+
+    const handleCreateFilterCategory = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            await api.post('/api/config/filter-categories', { name: newFilterCategoryName });
+            setNewFilterCategoryName('');
+            fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo crear el filtro'));
+        }
+    };
+
+    const handleRenameFilterCategory = async (id: string, name: string) => {
+        const trimmed = name.trim();
+        if (!trimmed) return fetchData();
+        try {
+            await api.put(`/api/config/filter-categories/${id}`, { name: trimmed });
+            fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo renombrar el filtro'));
+            fetchData();
+        }
+    };
+
+    const handleDeleteFilterCategory = async (id: string) => {
+        if (!confirm('¿Eliminar esta categoría de filtro? Las secciones quedarán sin categoría.')) return;
+        try {
+            await api.delete(`/api/config/filter-categories/${id}`);
+            fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo eliminar el filtro'));
+        }
+    };
+
+    const handleUpdateSectionCategory = async (sectionId: string, filterCategoryId: string) => {
+        try {
+            await api.put(`/api/config/sections/${sectionId}`, {
+                filterCategoryId: filterCategoryId || null
+            });
+            fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo asociar la categoría'));
         }
     };
 
@@ -352,6 +411,7 @@ export default function Settings() {
                     {activeTab === 'fuentes' && (
                         <FuentesTab
                             sections={sections}
+                            filterCategories={filterCategories}
                             schedules={schedules}
                             scrapeRuns={scrapeRuns}
                             scrapeLimit={scrapeLimit}
@@ -361,6 +421,10 @@ export default function Settings() {
                             setNewSecPath={setNewSecPath}
                             newSecLimit={newSecLimit}
                             setNewSecLimit={setNewSecLimit}
+                            newSecCategoryId={newSecCategoryId}
+                            setNewSecCategoryId={setNewSecCategoryId}
+                            newFilterCategoryName={newFilterCategoryName}
+                            setNewFilterCategoryName={setNewFilterCategoryName}
                             newSchedSource={newSchedSource}
                             setNewSchedSource={setNewSchedSource}
                             newSchedCron={newSchedCron}
@@ -368,6 +432,10 @@ export default function Settings() {
                             handleCreateSection={handleCreateSection}
                             handleUpdateSectionLimit={handleUpdateSectionLimit}
                             handleDeleteSection={handleDeleteSection}
+                            handleCreateFilterCategory={handleCreateFilterCategory}
+                            handleRenameFilterCategory={handleRenameFilterCategory}
+                            handleDeleteFilterCategory={handleDeleteFilterCategory}
+                            handleUpdateSectionCategory={handleUpdateSectionCategory}
                             handleCreateSchedule={handleCreateSchedule}
                             handleToggleSchedule={handleToggleSchedule}
                             handleDeleteSchedule={handleDeleteSchedule}
@@ -458,6 +526,7 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
 
 interface FuentesTabProps {
     sections: Section[];
+    filterCategories: FilterCategory[];
     schedules: ScrapeSchedule[];
     scrapeRuns: ScrapeRun[];
     scrapeLimit: number;
@@ -467,6 +536,10 @@ interface FuentesTabProps {
     setNewSecPath: (v: string) => void;
     newSecLimit: string;
     setNewSecLimit: (v: string) => void;
+    newSecCategoryId: string;
+    setNewSecCategoryId: (v: string) => void;
+    newFilterCategoryName: string;
+    setNewFilterCategoryName: (v: string) => void;
     newSchedSource: string;
     setNewSchedSource: (v: string) => void;
     newSchedCron: string;
@@ -474,6 +547,10 @@ interface FuentesTabProps {
     handleCreateSection: (e: React.FormEvent) => Promise<void>;
     handleUpdateSectionLimit: (id: string, raw: string) => Promise<void>;
     handleDeleteSection: (id: string) => Promise<void>;
+    handleCreateFilterCategory: (e: React.FormEvent) => Promise<void>;
+    handleRenameFilterCategory: (id: string, name: string) => Promise<void>;
+    handleDeleteFilterCategory: (id: string) => Promise<void>;
+    handleUpdateSectionCategory: (sectionId: string, filterCategoryId: string) => Promise<void>;
     handleCreateSchedule: (e: React.FormEvent) => Promise<void>;
     handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
     handleDeleteSchedule: (id: string) => Promise<void>;
@@ -484,10 +561,13 @@ interface FuentesTabProps {
 
 function FuentesTab(props: FuentesTabProps) {
     const {
-        sections, schedules, scrapeRuns, scrapeLimit,
+        sections, filterCategories, schedules, scrapeRuns, scrapeLimit,
         newSecName, setNewSecName, newSecPath, setNewSecPath, newSecLimit, setNewSecLimit,
+        newSecCategoryId, setNewSecCategoryId,
+        newFilterCategoryName, setNewFilterCategoryName,
         newSchedSource, setNewSchedSource, newSchedCron, setNewSchedCron,
         handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
+        handleCreateFilterCategory, handleRenameFilterCategory, handleDeleteFilterCategory, handleUpdateSectionCategory,
         handleCreateSchedule, handleToggleSchedule, handleDeleteSchedule,
         refreshScrapeRuns,
         cancelScrapeRun,
@@ -501,11 +581,64 @@ function FuentesTab(props: FuentesTabProps) {
             <div className="flex flex-col gap-4">
                 <Header
                     title="Secciones"
-                    subtitle="URLs específicas por medio. Disponibles al crear un Flujo."
+                    subtitle="Creá secciones de scraping y asocialas a categorías visibles en los filtros."
                     dense
                 />
                 <Card>
-                    <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">Añadir sección</h3>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-2 font-sans">Categorías de filtro</h3>
+                    <p className="text-[11px] font-sans opacity-60 mb-4">
+                        Varias secciones pueden aparecer bajo un mismo filtro del Dashboard.
+                    </p>
+                    <form onSubmit={handleCreateFilterCategory} className="flex gap-2 font-sans mb-4">
+                        <input
+                            type="text"
+                            placeholder="Nueva categoría (ej. Finanzas)"
+                            value={newFilterCategoryName}
+                            onChange={e => setNewFilterCategoryName(e.target.value)}
+                            required
+                            className="flex-1 border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent text-sm"
+                        />
+                        <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]">
+                            Agregar filtro
+                        </button>
+                    </form>
+                    <div className="flex flex-col gap-2">
+                        {filterCategories.map(category => (
+                            <div key={category.id} className="group flex items-center gap-2 border border-editorial-text/10 px-3 py-2">
+                                <input
+                                    key={category.name}
+                                    defaultValue={category.name}
+                                    onBlur={e => {
+                                        if (e.target.value.trim() !== category.name) {
+                                            handleRenameFilterCategory(category.id, e.target.value);
+                                        }
+                                    }}
+                                    className="flex-1 bg-transparent font-sans font-bold text-sm focus:outline-none border-b border-transparent focus:border-editorial-text/30"
+                                    aria-label={`Nombre del filtro ${category.name}`}
+                                />
+                                <span className="text-[10px] font-sans opacity-50">
+                                    {category.sections?.length ?? 0} secciones
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleDeleteFilterCategory(category.id)}
+                                    className="opacity-0 group-hover:opacity-100 text-editorial-text/40 hover:text-red-500 transition-all"
+                                    aria-label={`Eliminar filtro ${category.name}`}
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                        ))}
+                        {filterCategories.length === 0 && (
+                            <div className="text-xs opacity-50 italic py-3 text-center border border-dashed border-editorial-text/20">
+                                Todavía no hay categorías de filtro.
+                            </div>
+                        )}
+                    </div>
+                </Card>
+
+                <Card>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">Nueva sección de scraping</h3>
                     <form onSubmit={handleCreateSection} className="grid grid-cols-2 gap-3 font-sans">
                         <input
                             type="text"
@@ -533,6 +666,16 @@ function FuentesTab(props: FuentesTabProps) {
                             className="col-span-2 sm:col-span-1 border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent text-sm"
                             title="Cuántas notas levantar por scrapeo. Vacío = usa el global."
                         />
+                        <select
+                            value={newSecCategoryId}
+                            onChange={e => setNewSecCategoryId(e.target.value)}
+                            className="col-span-2 border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent text-sm"
+                        >
+                            <option value="">Sin categoría de filtro</option>
+                            {filterCategories.map(category => (
+                                <option key={category.id} value={category.id}>{category.name}</option>
+                            ))}
+                        </select>
                         <div className="col-span-2 flex items-center justify-between mt-1">
                             <span className="text-[10px] opacity-50 italic">Vacío = global ({scrapeLimit})</span>
                             <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]">
@@ -554,6 +697,17 @@ function FuentesTab(props: FuentesTabProps) {
                                     <div className="flex flex-col flex-1 min-w-0">
                                         <span className="font-sans font-bold text-sm truncate">{sec.name}</span>
                                         <span className="font-sans text-[10px] text-editorial-text/60 font-mono bg-black/5 px-1.5 py-0.5 mt-1 rounded w-fit max-w-full truncate">{sec.path}</span>
+                                        <select
+                                            value={sec.filterCategoryId || ''}
+                                            onChange={e => handleUpdateSectionCategory(sec.id, e.target.value)}
+                                            className="mt-2 w-full border border-editorial-text/20 px-1.5 py-1 text-[11px] font-sans focus:outline-none focus:border-editorial-text bg-white"
+                                            aria-label={`Categoría de filtro para ${sec.name}`}
+                                        >
+                                            <option value="">Sin categoría</option>
+                                            {filterCategories.map(category => (
+                                                <option key={category.id} value={category.id}>{category.name}</option>
+                                            ))}
+                                        </select>
                                         <div className="flex items-center gap-1.5 mt-2">
                                             <label className="text-[9px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
                                             <input

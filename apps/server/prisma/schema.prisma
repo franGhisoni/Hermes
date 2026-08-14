@@ -10,16 +10,16 @@ datasource db {
 }
 
 model Source {
-  id              String   @id @default(uuid())
-  name            String
-  url             String
-  active          Boolean  @default(true)
-  scraperConfig   Json     // Stores selectors, wait times, etc.
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  url           String
+  active        Boolean  @default(true)
+  scraperConfig Json // Stores selectors, wait times, etc.
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  articles        Article[]
-  routeRules      RouteRule[]
+  articles   Article[]
+  routeRules RouteRule[]
 }
 
 model SystemSetting {
@@ -46,14 +46,14 @@ model Target {
 }
 
 model Workflow {
-  id              String   @id @default(uuid())
-  name            String
-  section         String?  // Optional: only publish articles from this section
-  sources         String[] // Optional: array of source names to constrain extraction
-  minScore        Int?     // Optional: minimum interest score required
-  targetCategory  String?  // Custom category name for the destination (e.g. WordPress)
-  cron            String
-  isActive        Boolean  @default(true)
+  id                 String        @id @default(uuid())
+  name               String
+  section            String? // Optional: only publish articles from this section
+  sources            String[] // Optional: array of source names to constrain extraction
+  minScore           Int? // Optional: minimum interest score required
+  targetCategory     String? // Custom category name for the destination (e.g. WordPress)
+  cron               String
+  isActive           Boolean       @default(true)
   // Per-workflow window (hours) for pulling eligible PENDING articles. If
   // null, the scheduler falls back to the system-wide default
   // (`workflow_default_window_hours` in SystemSetting, default 24).
@@ -62,30 +62,30 @@ model Workflow {
   // workflow refills the missing destinations by reusing articles with a fresh
   // AI rewrite and a fresh image search so each target still receives unique
   // content. When false, missing destinations are skipped and logged.
-  allowRepublish  Boolean  @default(false)
+  allowRepublish     Boolean       @default(false)
   // Round-robin cursor: index into the alphabetically-sorted target list where
   // the next execution should start dispatching. Lets multi-run cron schedules
   // eventually cover every destination when the article pool is smaller than
   // the workflow's target count.
-  nextTargetIndex Int      @default(0)
-  targets         Target[] // Implicit many-to-many
-  runs            WorkflowRun[]
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  nextTargetIndex    Int           @default(0)
+  targets            Target[] // Implicit many-to-many
+  runs               WorkflowRun[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 }
 
 model WorkflowRun {
-  id               String   @id @default(uuid())
+  id               String            @id @default(uuid())
   workflowId       String
-  workflow         Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  startedAt        DateTime @default(now())
+  workflow         Workflow          @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  startedAt        DateTime          @default(now())
   durationMs       Int?
   status           WorkflowRunStatus
-  targetsTotal     Int      @default(0)
-  targetsCovered   Int      @default(0)  // sends that succeeded
-  targetsSkipped   Int      @default(0)  // targets with no article (refill off, pool empty)
-  articlesUnique   Int      @default(0)  // distinct articles dispatched
-  articlesRefilled Int      @default(0)  // refill dispatches (republished with fresh rewrite/image)
+  targetsTotal     Int               @default(0)
+  targetsCovered   Int               @default(0) // sends that succeeded
+  targetsSkipped   Int               @default(0) // targets with no article (refill off, pool empty)
+  articlesUnique   Int               @default(0) // distinct articles dispatched
+  articlesRefilled Int               @default(0) // refill dispatches (republished with fresh rewrite/image)
   summary          String
   errorMessage     String?
 
@@ -101,32 +101,32 @@ enum WorkflowRunStatus {
 
 model ScrapeSchedule {
   id        String   @id @default(uuid())
-  source    String   // "Clarin", "LaNacion", etc.
-  cron      String   // Cron expression
+  source    String // "Clarin", "LaNacion", etc.
+  cron      String // Cron expression
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model ScrapeRun {
-  id             String           @id @default(uuid())
-  queueJobId     String?
-  source         String
-  sectionName    String?
-  path           String?
-  requestedLimit Int
-  scrapedCount   Int              @default(0)
-  processedCount Int              @default(0)
-  status         ScrapeRunStatus
-  trigger        ScrapeRunTrigger @default(MANUAL)
-  startedAt      DateTime         @default(now())
-  finishedAt     DateTime?
-  durationMs     Int?
-  errorMessage   String?
+  id              String           @id @default(uuid())
+  queueJobId      String?
+  source          String
+  sectionName     String?
+  path            String?
+  requestedLimit  Int
+  scrapedCount    Int              @default(0)
+  processedCount  Int              @default(0)
+  status          ScrapeRunStatus
+  trigger         ScrapeRunTrigger @default(MANUAL)
+  startedAt       DateTime         @default(now())
+  finishedAt      DateTime?
+  durationMs      Int?
+  errorMessage    String?
   // Evidence collected by the scraper (candidate links, date/content rejects,
   // navigation failures). This turns an EMPTY run into an actionable signal.
-  diagnostics    Json?
-  cancelRequested Boolean         @default(false)
+  diagnostics     Json?
+  cancelRequested Boolean          @default(false)
   cancelledAt     DateTime?
 
   @@index([startedAt])
@@ -150,20 +150,33 @@ enum ScrapeRunTrigger {
 }
 
 model Section {
-  id          String   @id @default(uuid())
-  name        String
-  path        String
+  id               String            @id @default(uuid())
+  name             String
+  path             String
+  filterCategoryId String?
+  filterCategory   FilterCategory?   @relation(fields: [filterCategoryId], references: [id], onDelete: SetNull)
   // Per-section override for the scrape limit. When null, the global
   // scrape_limit setting applies. Useful when some sections (politics) need
   // more articles per cycle than others (sports).
-  scrapeLimit Int?
+  scrapeLimit      Int?
   // Per-source overrides: let a single global section diverge for a given
   // medium (different path, different limit, or disable it entirely).
-  overrides   SectionOverride[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  overrides        SectionOverride[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@unique([name, path])
+  @@index([filterCategoryId])
+}
+
+// Editorial grouping used by Dashboard filters. Several scraper sections
+// (and their per-source paths) can belong to the same visible category.
+model FilterCategory {
+  id        String    @id @default(uuid())
+  name      String    @unique
+  sections  Section[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 // Per-source customization for a global Section. The Section row is the
@@ -173,9 +186,9 @@ model SectionOverride {
   id          String   @id @default(uuid())
   sectionId   String
   section     Section  @relation(fields: [sectionId], references: [id], onDelete: Cascade)
-  source      String   // "Clarin", "LaNacion", etc.
-  path        String?  // null = inherit section.path
-  scrapeLimit Int?     // null = inherit section.scrapeLimit / global
+  source      String // "Clarin", "LaNacion", etc.
+  path        String? // null = inherit section.path
+  scrapeLimit Int? // null = inherit section.scrapeLimit / global
   enabled     Boolean  @default(true) // false = skip this section for this source
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -189,38 +202,38 @@ enum UserRole {
 }
 
 model Article {
-  id              String   @id @default(uuid())
-  sourceId        String
-  source          Source   @relation(fields: [sourceId], references: [id])
-  
-  section         String?  // e.g. "Politica", "Economia"
-  originalTitle   String
-  originalContent String
-  originalUrl     String   @unique
+  id       String @id @default(uuid())
+  sourceId String
+  source   Source @relation(fields: [sourceId], references: [id])
+
+  section          String? // e.g. "Politica", "Economia"
+  originalTitle    String
+  originalContent  String
+  originalUrl      String   @unique
   originalImageUrl String?
-  publishedAt     DateTime // When it was published on the source
-  
+  publishedAt      DateTime // When it was published on the source
+
   // Intelligence
-  embedding       Unsupported("vector(1536)")?
-  interestScore   Int?     // 1-10
-  analysisData    Json?    // Stores raw AI analysis stats
-  
+  embedding     Unsupported("vector(1536)")?
+  interestScore Int? // 1-10
+  analysisData  Json? // Stores raw AI analysis stats
+
   // Rewrite
   rewrittenTitle   String?
   rewrittenContent String?
-  
-  featureImageUrl  String?  // The final image used for publication (Original, Found, or Generated)
-  imageCandidates  String[] // Array of candidate image URLs (from search or generation)
-  imageScores      Json?    // Map of { "url": score }
+
+  featureImageUrl String? // The final image used for publication (Original, Found, or Generated)
+  imageCandidates String[] // Array of candidate image URLs (from search or generation)
+  imageScores     Json? // Map of { "url": score }
   // Trace of every AI decision made during processing, shown only to admins
   // in the editor for debugging the scoring/protagonist identification.
   // Shape: { imageProtagonist, smartQueries[], imageScoring: [{url, score, reason}], fallbackUsed }
-  aiDecisions      Json?
-  
-  status          ArticleStatus @default(PENDING)
-  
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  aiDecisions     Json?
+
+  status ArticleStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 enum ArticleStatus {
@@ -231,14 +244,14 @@ enum ArticleStatus {
 }
 
 model Notification {
-  id        String              @id @default(uuid())
+  id        String             @id @default(uuid())
   level     NotificationLevel
   source    NotificationSource
   title     String
   message   String
   metadata  Json?
   readAt    DateTime?
-  createdAt DateTime            @default(now())
+  createdAt DateTime           @default(now())
 
   @@index([createdAt])
   @@index([readAt])
@@ -267,12 +280,12 @@ model GeneratedImage {
 }
 
 model PromptConfig {
-  id          String      @id @default(uuid())
-  name        String
-  template    String      // The prompt text with {{placeholders}}
-  type        PromptType
-  
-  routeRules  RouteRule[]
+  id       String     @id @default(uuid())
+  name     String
+  template String // The prompt text with {{placeholders}}
+  type     PromptType
+
+  routeRules RouteRule[]
 }
 
 enum PromptType {
@@ -283,13 +296,13 @@ enum PromptType {
 }
 
 model PublicationTarget {
-  id          String   @id @default(uuid())
-  name        String
-  type        TargetType
-  config      Json     // { email: "blog@wordpress.com", etc }
-  active      Boolean  @default(true)
-  
-  routeRules  RouteRule[]
+  id     String     @id @default(uuid())
+  name   String
+  type   TargetType
+  config Json // { email: "blog@wordpress.com", etc }
+  active Boolean    @default(true)
+
+  routeRules RouteRule[]
 }
 
 enum TargetType {
@@ -300,16 +313,16 @@ enum TargetType {
 
 // Logic: If Source A, Use Prompt B, Send to Target C
 model RouteRule {
-  id          String   @id @default(uuid())
-  
-  sourceId    String
-  source      Source   @relation(fields: [sourceId], references: [id])
-  
-  promptId    String
-  prompt      PromptConfig @relation(fields: [promptId], references: [id])
-  
-  targetId    String
-  target      PublicationTarget @relation(fields: [targetId], references: [id])
-  
-  active      Boolean @default(true)
+  id String @id @default(uuid())
+
+  sourceId String
+  source   Source @relation(fields: [sourceId], references: [id])
+
+  promptId String
+  prompt   PromptConfig @relation(fields: [promptId], references: [id])
+
+  targetId String
+  target   PublicationTarget @relation(fields: [targetId], references: [id])
+
+  active Boolean @default(true)
 }

@@ -102,12 +102,13 @@ export class ArticleService {
         limit: number;
         source?: string;
         section?: string;
+        category?: string;
         status?: string;
         search?: string;
         sortBy?: 'date' | 'score';
         sortOrder?: 'desc' | 'asc';
     }) {
-        const { page, limit, source, section, status, search, sortBy = 'date', sortOrder = 'desc' } = params;
+        const { page, limit, source, section, category, status, search, sortBy = 'date', sortOrder = 'desc' } = params;
         const skip = (page - 1) * limit;
 
         let where: any = {};
@@ -120,6 +121,29 @@ export class ArticleService {
                     section: { contains: value, mode: 'insensitive' }
                     }))
                 }
+            ];
+        }
+        if (category && category !== 'all') {
+            const filterCategory = await prisma.filterCategory.findUnique({
+                where: { id: category },
+                include: {
+                    sections: { include: { overrides: true } }
+                }
+            });
+
+            const aliases = filterCategory
+                ? Array.from(new Set(filterCategory.sections.flatMap(sectionAliases)))
+                : [];
+
+            where.AND = [
+                ...(where.AND || []),
+                aliases.length > 0
+                    ? {
+                        OR: aliases.flatMap(value => buildSectionVariants(value).map(variant => ({
+                            section: { contains: variant, mode: 'insensitive' as const }
+                        })))
+                    }
+                    : { id: '__missing_filter_category__' }
             ];
         }
         if (status && status !== 'all') where.status = status as any;
@@ -189,6 +213,22 @@ export class ArticleService {
             });
         }
     }
+}
+
+function sectionAliases(section: {
+    name: string;
+    path: string;
+    overrides: Array<{ path: string | null }>;
+}): string[] {
+    const aliases = new Set<string>([section.name]);
+    for (const path of [section.path, ...section.overrides.map(override => override.path)]) {
+        if (!path) continue;
+        const segment = path.split(/[/?#]/).filter(Boolean).pop();
+        if (!segment) continue;
+        aliases.add(segment);
+        aliases.add(segment.replace(/[-_]+/g, ' '));
+    }
+    return Array.from(aliases);
 }
 
 function buildSectionVariants(value: string): string[] {

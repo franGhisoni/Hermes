@@ -253,6 +253,12 @@ export class QueueService {
 
                 console.log(`[Worker] Starting scrape for ${job.data.source} with limit ${limit}...`);
                 const articles = await scraper.scrape(limit);
+                // The configured section name is the canonical editorial label.
+                // Source-specific paths such as /noticias-financieras must not
+                // leak into Article.section when the configured section is Finanzas.
+                if (job.data.sectionName) {
+                    for (const article of articles) article.section = job.data.sectionName;
+                }
                 const diagnostics = scraper.getDiagnostics?.();
                 console.log(`[Worker] Scraped ${articles.length} articles from ${job.data.source}.`);
 

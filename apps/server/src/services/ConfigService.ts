@@ -26,6 +26,15 @@ export class ConfigService {
         return this.getBooleanSetting('scrape_only_today', true);
     }
 
+    async getScraperWorkerConcurrency(): Promise<number> {
+        const envValue = Number.parseInt(process.env.SCRAPER_WORKER_CONCURRENCY || '', 10);
+        const envDefault = Number.isFinite(envValue) && envValue > 0
+            ? Math.min(envValue, 8)
+            : 4;
+        const configured = await this.getIntSetting('scraper_worker_concurrency', envDefault);
+        return Math.min(Math.max(configured, 1), 8);
+    }
+
     async getArticleRetentionHours(): Promise<number> {
         return this.getIntSetting('article_retention_hours', 48);
     }

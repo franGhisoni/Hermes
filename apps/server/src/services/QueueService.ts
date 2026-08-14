@@ -9,6 +9,7 @@ import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { Pagina12Scraper } from '../scrapers/Pagina12Scraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
+import { ConfigService } from './ConfigService';
 import { PrismaClient, ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -36,13 +37,76 @@ export const QUEUES = {
 
 export class QueueService {
     private scraperQueue: Queue;
+    private scraperWorker: Worker;
+    private configService: ConfigService;
 
     constructor() {
         this.scraperQueue = new Queue(QUEUES.SCRAPER, { connection });
-        this.setupWorkers();
+        this.configService = new ConfigService();
+        const envConcurrency = Number.parseInt(process.env.SCRAPER_WORKER_CONCURRENCY || '', 10);
+        const initialConcurrency = Number.isFinite(envConcurrency) && envConcurrency > 0
+            ? Math.min(envConcurrency, 8)
+            : 4;
+        this.scraperWorker = this.setupWorkers(initialConcurrency);
+    }
+
+    async initializeWorkerConcurrency() {
+        const concurrency = await this.configService.getScraperWorkerConcurrency();
+        this.setWorkerConcurrency(concurrency);
+    }
+
+    setWorkerConcurrency(concurrency: number) {
+        if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
+            throw new Error('Scraper worker concurrency must be an integer between 1 and 8.');
+        }
+        this.scraperWorker.concurrency = concurrency;
+        console.log(`[Queue] Scraper worker concurrency set to ${concurrency}.`);
+    }
+
+    getWorkerConcurrency() {
+        return this.scraperWorker.concurrency;
     }
 
     async addScrapeJob(source: string, url?: string, limit: number = 30, options: ScrapeJobOptions = {}) {
+        const activeRun = await prisma.scrapeRun.findFirst({
+            where: {
+                source,
+                sectionName: options.sectionName || null,
+                path: url || null,
+                status: { in: [ScrapeRunStatus.QUEUED, ScrapeRunStatus.RUNNING] }
+            },
+            orderBy: { startedAt: 'desc' }
+        });
+
+        if (activeRun) {
+            let jobIsActive = !activeRun.queueJobId
+                && Date.now() - activeRun.startedAt.getTime() < 60_000;
+
+            if (activeRun.queueJobId) {
+                const existingJob = await this.scraperQueue.getJob(activeRun.queueJobId);
+                if (existingJob) {
+                    const state = await existingJob.getState();
+                    jobIsActive = !['completed', 'failed', 'unknown'].includes(state);
+                }
+            }
+
+            if (jobIsActive) {
+                console.log(`[Queue] Skipping duplicate scrape job for ${source}${options.sectionName ? ` / ${options.sectionName}` : ''}; run ${activeRun.id} is still active.`);
+                return activeRun;
+            }
+
+            const finishedAt = new Date();
+            await prisma.scrapeRun.update({
+                where: { id: activeRun.id },
+                data: {
+                    status: ScrapeRunStatus.ERROR,
+                    finishedAt,
+                    durationMs: finishedAt.getTime() - activeRun.startedAt.getTime(),
+                    errorMessage: 'La ejecución figuraba activa, pero su trabajo ya no existía en la cola.'
+                }
+            });
+        }
+
         console.log(`[Queue] Adding scrape job for ${source}${options.sectionName ? ` / ${options.sectionName}` : ''} with limit ${limit}`);
         const run = await prisma.scrapeRun.create({
             data: {
@@ -152,7 +216,7 @@ export class QueueService {
         });
     }
 
-    private setupWorkers() {
+    private setupWorkers(concurrency: number): Worker {
         // Scraper Registry
         const scraperRegistry: Record<string, any> = {
             'Clarin': ClarinScraper,
@@ -166,7 +230,7 @@ export class QueueService {
         };
 
         // Scraper Worker
-        new Worker(QUEUES.SCRAPER, async (job: Job) => {
+        return new Worker(QUEUES.SCRAPER, async (job: Job) => {
             console.log(`[Worker] Processing job ${job.id}: ${job.data.source} - ${job.data.url || 'No URL custom'} - Limit: ${job.data.limit}`);
 
             const limit = job.data.limit || 30;
@@ -316,6 +380,6 @@ export class QueueService {
                 throw err;
             }
 
-        }, { connection });
+        }, { connection, concurrency });
     }
 }

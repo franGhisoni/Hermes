@@ -32,7 +32,16 @@ const queueService = new QueueService();
 const articleService = new ArticleService();
 export const schedulerService = new SchedulerService(queueService, articleService);
 
-schedulerService.initialize();
+async function initializeBackgroundServices() {
+    try {
+        await queueService.initializeWorkerConcurrency();
+    } catch (error) {
+        console.error('Failed to load persisted worker concurrency; keeping the environment default:', error);
+    }
+    await schedulerService.initialize();
+}
+
+initializeBackgroundServices();
 
 async function initSections() {
     try {
@@ -286,6 +295,7 @@ type SettingDef =
 const SETTINGS: SettingDef[] = [
     { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
     { api: 'scrapeOnlyToday', key: 'scrape_only_today', kind: 'boolean' },
+    { api: 'scraperWorkerConcurrency', key: 'scraper_worker_concurrency', kind: 'int', min: 1, max: 8 },
     { api: 'articleRetentionHours', key: 'article_retention_hours', kind: 'int', min: 1 },
     { api: 'articleCleanupCron', key: 'article_cleanup_cron', kind: 'cron' },
     { api: 'imageMinScore', key: 'image_min_score', kind: 'int', min: 1, max: 10 },
@@ -348,6 +358,7 @@ async function resolveDefault(def: SettingDef): Promise<any> {
     const map: Record<string, () => Promise<any>> = {
         scrapeLimit: () => configService.getScrapeLimit(),
         scrapeOnlyToday: () => configService.getScrapeOnlyToday(),
+        scraperWorkerConcurrency: () => configService.getScraperWorkerConcurrency(),
         articleRetentionHours: () => configService.getArticleRetentionHours(),
         articleCleanupCron: () => configService.getArticleCleanupCron(),
         imageMinScore: () => configService.getImageMinScore(),
@@ -437,6 +448,9 @@ app.post('/api/config/settings', async (req, res) => {
                 return res.status(400).json({ error: `${def.api} must be <= ${def.max}` });
             }
             await configService.setSetting(def.key, parsed.toString());
+            if (def.api === 'scraperWorkerConcurrency') {
+                queueService.setWorkerConcurrency(parsed);
+            }
             continue;
         }
 

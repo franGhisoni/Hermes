@@ -70,6 +70,7 @@ const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: num
 
 interface ExtendedSettings {
     scrapeOnlyToday: boolean;
+    scraperWorkerConcurrency: number;
     imagePoolSize: number;
     imageScoringMaxRetries: number;
     imagePerQueryCap: number;
@@ -177,6 +178,7 @@ export default function Settings() {
                 if (d.imageMinScore) setImageMinScore(d.imageMinScore);
                 setExtended({
                     scrapeOnlyToday: d.scrapeOnlyToday ?? true,
+                    scraperWorkerConcurrency: d.scraperWorkerConcurrency ?? 4,
                     imagePoolSize: d.imagePoolSize,
                     imageScoringMaxRetries: d.imageScoringMaxRetries,
                     imagePerQueryCap: d.imagePerQueryCap,
@@ -1248,6 +1250,18 @@ function SistemaTab(props: SistemaTabProps) {
                             description="Activado limita por fecha (el lunes también admite sábado y domingo). Desactivado permite notas anteriores; las URL existentes se descartan antes de usar IA."
                             checked={extended.scrapeOnlyToday}
                             onChange={(checked) => updateExtended('scrapeOnlyToday', checked)}
+                        />
+                    )}
+
+                    {extended && (
+                        <NumericCard
+                            title="Scrapeos simultáneos"
+                            description="Trabajos que BullMQ procesa a la vez. Se aplica en caliente; Railway usa 4 como valor inicial desde SCRAPER_WORKER_CONCURRENCY."
+                            value={extended.scraperWorkerConcurrency}
+                            unit="workers"
+                            min={1}
+                            max={8}
+                            onCommit={(v) => updateExtended('scraperWorkerConcurrency', v)}
                         />
                     )}
 

@@ -8,7 +8,9 @@ type Candidate = {
     title?: string;
 };
 
-const SECTION_SLUGS: Record<string, string> = {
+const SECTION_SLUGS: Record<string, string | null> = {
+    'ultimo-momento': null,
+    'ultimas-noticias': null,
     politica: 'el-pais',
     economia: 'economia',
     sociedad: 'sociedad',
@@ -42,9 +44,15 @@ export class Pagina12Scraper extends BaseScraper {
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         this.resetDiagnostics(limit);
+        await this.loadScrapeSettings();
         const requestedSegment = new URL(this.baseUrl).pathname.split('/').filter(Boolean).pop()?.toLowerCase();
-        const sectionSlug = requestedSegment ? (SECTION_SLUGS[requestedSegment] || requestedSegment) : null;
-        const sectionName = sectionSlug ? (SECTION_NAMES[sectionSlug] || this.capitalize(sectionSlug)) : 'Portada';
+        const mappedSection = requestedSegment && Object.prototype.hasOwnProperty.call(SECTION_SLUGS, requestedSegment)
+            ? SECTION_SLUGS[requestedSegment]
+            : requestedSegment;
+        const sectionSlug = mappedSection || null;
+        const sectionName = sectionSlug
+            ? (SECTION_NAMES[sectionSlug] || this.capitalize(sectionSlug))
+            : (requestedSegment ? 'Último Momento' : 'Portada');
 
         console.log(`[Pagina12] Starting ${sectionName} scrape with limit ${limit}...`);
 

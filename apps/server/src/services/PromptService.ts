@@ -1,6 +1,5 @@
-import { PrismaClient, PromptConfig, PromptType } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { PromptConfig, PromptType } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
 export class PromptService {
 

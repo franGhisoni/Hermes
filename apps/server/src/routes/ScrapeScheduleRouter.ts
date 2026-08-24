@@ -1,10 +1,9 @@
 import { Router, Request, Response } from 'express';
-import { PrismaClient } from '@prisma/client';
 import cron from 'node-cron';
 import { requireAdmin } from '../middlewares/auth';
 import { SCRAPER_SOURCES } from '../services/QueueService';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 const router = Router();
 
 // GET all scrape schedules

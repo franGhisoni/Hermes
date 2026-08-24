@@ -1,10 +1,8 @@
 import OpenAI from 'openai';
-import { PrismaClient } from '@prisma/client';
 import { ConfigService } from './ConfigService';
 import { ImageSearchProvider } from './imageProviders/types';
 import { SearxngProvider } from './imageProviders/SearxngProvider';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 interface ImageSearchInput {
     title: string;

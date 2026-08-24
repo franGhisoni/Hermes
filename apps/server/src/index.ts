@@ -2,10 +2,9 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { QueueService } from './services/QueueService';
-import { ArticleService } from './services/ArticleService';
-import { PrismaClient, ScrapeRunTrigger } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { ArticleService, buildContentPreview } from './services/ArticleService';
+import { ScrapeRunTrigger } from '@prisma/client';
+import { prisma } from './lib/prisma';
 
 const app = express();
 const port = parseInt(process.env.PORT || '3000');
@@ -292,6 +291,13 @@ type SettingDef =
     | { api: string; key: string; kind: 'string'; validate?: (v: string) => string | null }
     | { api: string; key: string; kind: 'cron' };
 
+const REASONING_EFFORTS = new Set(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+
+const validateReasoningEffort = (value: string): string | null =>
+    REASONING_EFFORTS.has(value)
+        ? null
+        : 'El nivel de razonamiento debe ser none, low, medium, high, xhigh o max';
+
 const SETTINGS: SettingDef[] = [
     { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
     { api: 'scrapeOnlyToday', key: 'scrape_only_today', kind: 'boolean' },
@@ -317,6 +323,7 @@ const SETTINGS: SettingDef[] = [
     { api: 'modelImageQuery', key: 'model_image_query', kind: 'string' },
     { api: 'modelImageScoring', key: 'model_image_scoring', kind: 'string' },
     { api: 'modelImageGeneration', key: 'model_image_generation', kind: 'string' },
+    { api: 'aiImageScoringReasoningEffort', key: 'ai_image_scoring_reasoning_effort', kind: 'string', validate: validateReasoningEffort },
     { api: 'aiRewriteMaxTokens', key: 'ai_rewrite_max_tokens', kind: 'int', min: 1 },
     { api: 'aiRewriteContentChars', key: 'ai_rewrite_content_chars', kind: 'int', min: 1 },
     { api: 'aiInterestMaxTokens', key: 'ai_interest_max_tokens', kind: 'int', min: 1 },
@@ -332,14 +339,10 @@ const SETTINGS: SettingDef[] = [
 
 app.get('/api/config/settings', async (req, res) => {
     const result: Record<string, any> = {};
+    const settings = await configService.getSettingsSnapshot();
     for (const def of SETTINGS) {
-        const raw = await configService.getSetting(def.key, '');
-        if (raw === '') {
-            // Resolve to the typed default by reading through ConfigService's
-            // typed getters where available, so the UI sees consistent defaults
-            // instead of empty strings.
-            result[def.api] = await resolveDefault(def);
-        } else if (def.kind === 'int') {
+        const raw = settings[def.key];
+        if (def.kind === 'int') {
             result[def.api] = parseInt(raw, 10);
         } else if (def.kind === 'float') {
             result[def.api] = parseFloat(raw);
@@ -351,50 +354,6 @@ app.get('/api/config/settings', async (req, res) => {
     }
     res.json(result);
 });
-
-async function resolveDefault(def: SettingDef): Promise<any> {
-    // Single source of truth for defaults lives in ConfigService. We reflect
-    // through the typed getters so they stay in sync.
-    const map: Record<string, () => Promise<any>> = {
-        scrapeLimit: () => configService.getScrapeLimit(),
-        scrapeOnlyToday: () => configService.getScrapeOnlyToday(),
-        scraperWorkerConcurrency: () => configService.getScraperWorkerConcurrency(),
-        articleRetentionHours: () => configService.getArticleRetentionHours(),
-        articleCleanupCron: () => configService.getArticleCleanupCron(),
-        imageMinScore: () => configService.getImageMinScore(),
-        imagePoolSize: () => configService.getImagePoolSize(),
-        imageScoringMaxRetries: () => configService.getImageScoringMaxRetries(),
-        imagePerQueryCap: () => configService.getImagePerQueryCap(),
-        imageMinWidth: () => configService.getImageMinWidth(),
-        imageMinHeight: () => configService.getImageMinHeight(),
-        imageQueryContentChars: () => configService.getImageQueryContentChars(),
-        imageQueryMinLength: () => configService.getImageQueryMinLength(),
-        imageQueryMaxCount: () => configService.getImageQueryMaxCount(),
-        imageLeadMinChars: () => configService.getImageLeadMinChars(),
-        imageLeadMaxChars: () => configService.getImageLeadMaxChars(),
-        imageLeadMaxWords: () => configService.getImageLeadMaxWords(),
-        imageFetchTimeoutMs: () => configService.getImageFetchTimeoutMs(),
-        modelEmbedding: () => configService.getEmbeddingModel(),
-        modelRewrite: () => configService.getRewriteModel(),
-        modelInterest: () => configService.getInterestModel(),
-        modelImageQuery: () => configService.getImageQueryModel(),
-        modelImageScoring: () => configService.getImageScoringModel(),
-        modelImageGeneration: () => configService.getImageGenerationModel(),
-        aiRewriteMaxTokens: () => configService.getRewriteMaxTokens(),
-        aiRewriteContentChars: () => configService.getRewriteContentChars(),
-        aiInterestMaxTokens: () => configService.getInterestMaxTokens(),
-        aiInterestContentChars: () => configService.getInterestContentChars(),
-        aiImageQueryMaxTokens: () => configService.getImageQueryMaxTokens(),
-        aiImageQueryContentChars: () => configService.getImageQueryGenContentChars(),
-        aiImageScoringMaxTokens: () => configService.getImageScoringMaxTokens(),
-        aiImageScoringContentChars: () => configService.getImageScoringContentChars(),
-        dedupThreshold: () => configService.getDedupThreshold(),
-        embeddingTextChars: () => configService.getEmbeddingTextChars(),
-        workflowDefaultWindowHours: () => configService.getDefaultArticleWindowHours()
-    };
-    const fn = map[def.api];
-    return fn ? fn() : undefined;
-}
 
 app.post('/api/config/settings', async (req, res) => {
     const body = req.body || {};
@@ -511,7 +470,7 @@ app.post('/api/articles/:id/publish', async (req, res) => {
     if (!targetId) return res.status(400).json({ error: 'targetId is required' });
 
     try {
-        const draftUpdates: { rewrittenTitle?: string; rewrittenContent?: string } = {};
+        const draftUpdates: { rewrittenTitle?: string; rewrittenContent?: string; contentPreview?: string } = {};
         if (typeof rewrittenTitle === 'string') draftUpdates.rewrittenTitle = rewrittenTitle;
         if (typeof rewrittenContent === 'string') draftUpdates.rewrittenContent = rewrittenContent;
 
@@ -519,6 +478,9 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Article not found' });
 
         if (Object.keys(draftUpdates).length > 0) {
+            if (draftUpdates.rewrittenContent !== undefined) {
+                draftUpdates.contentPreview = buildContentPreview(draftUpdates.rewrittenContent || article.originalContent);
+            }
             article = await prisma.article.update({
                 where: { id: req.params.id },
                 data: draftUpdates,
@@ -569,9 +531,15 @@ app.delete('/api/articles/:id', async (req, res) => {
 app.put('/api/articles/:id', async (req, res) => {
     try {
         const { rewrittenTitle, rewrittenContent } = req.body;
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Article not found' });
         const updated = await prisma.article.update({
             where: { id: req.params.id },
-            data: { rewrittenTitle, rewrittenContent }
+            data: {
+                rewrittenTitle,
+                rewrittenContent,
+                contentPreview: buildContentPreview(rewrittenContent || article.originalContent)
+            }
         });
         res.json(updated);
     } catch (error) {
@@ -592,7 +560,8 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
             where: { id: article.id },
             data: {
                 rewrittenTitle: result.title,
-                rewrittenContent: result.content
+                rewrittenContent: result.content,
+                contentPreview: buildContentPreview(result.content)
             }
         });
 

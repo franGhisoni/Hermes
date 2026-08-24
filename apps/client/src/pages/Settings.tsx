@@ -89,6 +89,7 @@ interface ExtendedSettings {
     modelImageQuery: string;
     modelImageScoring: string;
     modelImageGeneration: string;
+    aiImageScoringReasoningEffort: string;
     aiRewriteMaxTokens: number;
     aiRewriteContentChars: number;
     aiInterestMaxTokens: number;
@@ -109,7 +110,9 @@ export default function Settings() {
     const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
     const [schedules, setSchedules] = useState<ScrapeSchedule[]>([]);
     const [scrapeRuns, setScrapeRuns] = useState<ScrapeRun[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [promptsLoading, setPromptsLoading] = useState(false);
+    const [promptsLoaded, setPromptsLoaded] = useState(false);
+    const [scrapeRunsLoaded, setScrapeRunsLoaded] = useState(false);
     const [activeTab, setActiveTab] = useState<TabKey>('fuentes');
 
     // Section Form State
@@ -140,28 +143,40 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [promptsRes, sectionsRes, categoriesRes, schedulesRes, scrapeRunsRes] = await Promise.all([
-                api.get('/api/config/prompts'),
+            const [sectionsRes, categoriesRes, schedulesRes] = await Promise.all([
                 api.get('/api/config/sections'),
                 api.get('/api/config/filter-categories'),
-                api.get('/api/scrape-schedules'),
-                api.get('/api/scrape-runs?limit=100')
+                api.get('/api/scrape-schedules')
             ]);
-            setPrompts(promptsRes.data);
             setSections(sectionsRes.data);
             setFilterCategories(categoriesRes.data);
             setSchedules(schedulesRes.data);
-            setScrapeRuns(scrapeRunsRes.data);
         } catch (e) {
             console.error(e);
+        }
+    };
+
+    const fetchPrompts = async () => {
+        setPromptsLoading(true);
+        try {
+            const res = await api.get('/api/config/prompts');
+            setPrompts(res.data);
+            setPromptsLoaded(true);
+        } catch (error) {
+            console.error('Error fetching prompts:', error);
         } finally {
-            setLoading(false);
+            setPromptsLoading(false);
         }
     };
 
     const fetchScrapeRuns = async () => {
-        const res = await api.get('/api/scrape-runs?limit=100');
-        setScrapeRuns(res.data);
+        try {
+            const res = await api.get('/api/scrape-runs?limit=100');
+            setScrapeRuns(res.data);
+            setScrapeRunsLoaded(true);
+        } catch (error) {
+            console.error('Error fetching scrape runs:', error);
+        }
     };
 
     const cancelScrapeRun = async (id: string) => {
@@ -198,6 +213,7 @@ export default function Settings() {
                     modelImageQuery: d.modelImageQuery,
                     modelImageScoring: d.modelImageScoring,
                     modelImageGeneration: d.modelImageGeneration,
+                    aiImageScoringReasoningEffort: d.aiImageScoringReasoningEffort ?? 'medium',
                     aiRewriteMaxTokens: d.aiRewriteMaxTokens,
                     aiRewriteContentChars: d.aiRewriteContentChars,
                     aiInterestMaxTokens: d.aiInterestMaxTokens,
@@ -212,6 +228,18 @@ export default function Settings() {
                 });
             });
     }, []);
+
+    useEffect(() => {
+        if (activeTab === 'prompts' && !promptsLoaded) {
+            void fetchPrompts();
+        }
+        if (activeTab !== 'fuentes' || scrapeRunsLoaded) return;
+
+        // Let the visible source controls render before loading the heavier
+        // audit history table.
+        const timer = window.setTimeout(() => void fetchScrapeRuns(), 250);
+        return () => window.clearTimeout(timer);
+    }, [activeTab, promptsLoaded, scrapeRunsLoaded]);
 
     const updateExtended = async <K extends keyof ExtendedSettings>(key: K, value: ExtendedSettings[K]) => {
         if (!extended) return;
@@ -428,7 +456,7 @@ export default function Settings() {
                     {activeTab === 'prompts' && (
                         <PromptsTab
                             prompts={prompts}
-                            loading={loading}
+                            loading={promptsLoading}
                             savePrompt={savePrompt}
                         />
                     )}
@@ -1483,7 +1511,7 @@ function ImagenesTab(props: ImagenesTabProps) {
             <div>
                 <Header
                     title="Scoring"
-                    subtitle="Cómo gpt-4o elige la mejor imagen para cada nota."
+                    subtitle="Cómo el modelo de visión elige la mejor imagen para cada nota."
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <NumericCard
@@ -1508,6 +1536,20 @@ function ImagenesTab(props: ImagenesTabProps) {
                     <NumericCard title="Reintentos de scoring" description="Si OpenAI no puede descargar una imagen, descartamos y reintentamos."
                         value={extended.imageScoringMaxRetries} unit="" min={0} max={20}
                         onCommit={(v) => updateExtended('imageScoringMaxRetries', v)} />
+                    <SelectCard
+                        title="Razonamiento del scoring"
+                        description="Nivel de análisis para modelos GPT-5. Medium es el equilibrio recomendado; no afecta a gpt-4o."
+                        value={extended.aiImageScoringReasoningEffort}
+                        options={[
+                            { value: 'none', label: 'Ninguno' },
+                            { value: 'low', label: 'Bajo' },
+                            { value: 'medium', label: 'Medio (recomendado)' },
+                            { value: 'high', label: 'Alto' },
+                            { value: 'xhigh', label: 'Muy alto' },
+                            { value: 'max', label: 'Máximo' }
+                        ]}
+                        onCommit={(value) => updateExtended('aiImageScoringReasoningEffort', value)}
+                    />
                 </div>
             </div>
 
@@ -1700,6 +1742,42 @@ function StringCard({ label, value, onCommit }: StringCardProps) {
                     if (v && v !== value) await onCommit(v);
                 }}
             />
+        </Card>
+    );
+}
+
+interface SelectCardOption {
+    value: string;
+    label: string;
+}
+
+interface SelectCardProps {
+    title: string;
+    description: string;
+    value: string;
+    options: SelectCardOption[];
+    onCommit: (value: string) => Promise<void>;
+}
+
+function SelectCard({ title, description, value, options, onCommit }: SelectCardProps) {
+    return (
+        <Card>
+            <div className="flex justify-between items-start gap-3">
+                <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold">{title}</h3>
+                    <p className="font-sans text-[11px] text-editorial-text/60 leading-snug mt-0.5">{description}</p>
+                </div>
+                <select
+                    value={value}
+                    aria-label={title}
+                    className="min-w-36 max-w-48 p-1.5 font-bold text-sm border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none bg-white"
+                    onChange={async (e) => await onCommit(e.target.value)}
+                >
+                    {options.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                </select>
+            </div>
         </Card>
     );
 }

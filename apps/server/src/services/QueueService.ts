@@ -11,9 +11,8 @@ import { MDZScraper } from '../scrapers/MDZScraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 import { ConfigService } from './ConfigService';
-import { PrismaClient, ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 const POSTGRES_INT_MAX = 2_147_483_647;
 
 function durationMsBetween(startedAt: Date, finishedAt: Date): number | null {

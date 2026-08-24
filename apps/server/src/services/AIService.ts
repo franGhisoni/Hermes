@@ -340,6 +340,7 @@ Return a JSON object:
             // the error message, drop it, and retry with the rest.
             const poolSize = await this.configService.getImagePoolSize();
             const scoringModel = await this.configService.getImageScoringModel();
+            const scoringReasoningEffort = await this.configService.getImageScoringReasoningEffort();
             const scoringMaxTokens = await this.configService.getImageScoringMaxTokens();
             const scoringContentChars = await this.configService.getImageScoringContentChars();
             const MAX_RETRIES = await this.configService.getImageScoringMaxRetries();
@@ -399,12 +400,19 @@ Return a JSON object:
                 ];
 
                 try {
-                    const completion = await this.openai.chat.completions.create({
+                    const usesReasoning = this.supportsReasoningEffort(scoringModel);
+                    const request: any = {
                         model: scoringModel,
                         messages: messages,
-                        response_format: { type: "json_object" },
-                        max_tokens: scoringMaxTokens
-                    });
+                        response_format: { type: "json_object" }
+                    };
+                    if (usesReasoning) {
+                        request.max_completion_tokens = scoringMaxTokens;
+                        request.reasoning_effort = scoringReasoningEffort;
+                    } else {
+                        request.max_tokens = scoringMaxTokens;
+                    }
+                    const completion = await this.openai.chat.completions.create(request);
                     rawResult = JSON.parse(completion.choices[0].message.content || '{}');
                     break;
                 } catch (err: any) {
@@ -529,6 +537,11 @@ Return a JSON object:
                 protagonist: null
             };
         }
+    }
+
+    private supportsReasoningEffort(model: string): boolean {
+        const normalized = model.trim().toLowerCase();
+        return normalized.startsWith('gpt-5') || /^o[1-4](?:-|$)/.test(normalized);
     }
 
     private isImageDownloadError(err: any, message: string): boolean {

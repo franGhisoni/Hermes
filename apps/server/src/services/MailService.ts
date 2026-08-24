@@ -1,8 +1,7 @@
 import { Resend } from 'resend';
-import { Article, PrismaClient } from '@prisma/client';
+import { Article } from '@prisma/client';
 import { ConfigService } from './ConfigService';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 export class MailService {
     private resend: Resend;

@@ -1,5 +1,6 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
+import * as cheerio from 'cheerio';
 
 export class CronistaScraper extends BaseScraper {
     name = 'Cronista';
@@ -65,10 +66,11 @@ export class CronistaScraper extends BaseScraper {
             this.loggedIn = await this.login(page);
         }
 
-        console.log(`[Cronista] Navigating to ${url}`);
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const resolvedUrl = this.resolveSectionUrl(url);
+        console.log(`[Cronista] Navigating to ${resolvedUrl}`);
+        await page.goto(resolvedUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        const articleLinks = await page.evaluate((currentUrl) => {
+        let articleLinks = await page.evaluate((currentUrl) => {
             const seen = new Set<string>();
             const links: string[] = [];
             const sectionMatch = currentUrl.match(/cronista\.com\/([^/]+)/);
@@ -113,6 +115,11 @@ export class CronistaScraper extends BaseScraper {
             return links;
         }, page.url());
 
+        if (articleLinks.length === 0) {
+            console.warn(`[Cronista] Browser found no links; retrying section discovery with fetch: ${resolvedUrl}`);
+            articleLinks = await this.fetchSectionLinks(resolvedUrl);
+        }
+
         const articles: ScrapedArticle[] = [];
         this.recordCandidates(articleLinks);
 
@@ -127,14 +134,16 @@ export class CronistaScraper extends BaseScraper {
                 this.recordVisit(link);
                 let articlePage: Page = page;
                 try {
-                    await articlePage.goto(link, { waitUntil: 'domcontentloaded' });
+                    await articlePage.goto(link, { waitUntil: 'domcontentloaded', timeout: 15000 });
                 } catch (navigationError: any) {
                     // Cronista occasionally aborts Chromium navigation for an
                     // otherwise public, 200-response article. Reuse the HTML
                     // through Node's fetch instead of discarding that article.
-                    if (!String(navigationError?.message || navigationError).includes('ERR_ABORTED')) throw navigationError;
+                    const navigationMessage = String(navigationError?.message || navigationError);
+                    const canUseFetchFallback = navigationMessage.includes('ERR_ABORTED') || /timeout/i.test(navigationMessage);
+                    if (!canUseFetchFallback) throw navigationError;
 
-                    console.warn(`[Cronista] Browser navigation aborted; retrying with fetch: ${link}`);
+                    console.warn(`[Cronista] Browser navigation unavailable; retrying with fetch: ${link}`);
                     const response = await fetch(link, {
                         headers: {
                             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -216,5 +225,65 @@ export class CronistaScraper extends BaseScraper {
         }
 
         return articles;
+    }
+
+    private resolveSectionUrl(url: string): string {
+        const parsed = new URL(url);
+        if (parsed.pathname.replace(/\/+$/, '') === '/informacion-de-mercados') {
+            parsed.pathname = '/finanzas-mercados/';
+        }
+        return parsed.toString();
+    }
+
+    private async fetchSectionLinks(url: string): Promise<string[]> {
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7'
+            }
+        });
+        if (!response.ok) throw new Error(`Section fallback returned ${response.status}`);
+
+        const $ = cheerio.load(await response.text());
+        const section = new URL(url).pathname.split('/').filter(Boolean)[0];
+        const seen = new Set<string>();
+        const links: string[] = [];
+
+        $('a[href]').each((_, anchor) => {
+            const href = $(anchor).attr('href');
+            if (!href) return;
+
+            let fullUrl: string;
+            try {
+                fullUrl = new URL(href, 'https://www.cronista.com').toString();
+            } catch {
+                return;
+            }
+
+            const parsed = new URL(fullUrl);
+            const path = parsed.pathname;
+            if (parsed.hostname !== 'www.cronista.com' || !path.startsWith(`/${section}/`)) return;
+
+            const segments = path.split('/').filter(Boolean);
+            const slug = segments[segments.length - 1] || '';
+            if (segments.length < 2 || (slug.match(/-/g) || []).length < 3) return;
+            if (
+                path.includes('/tag/') ||
+                path.includes('/autor/') ||
+                path.includes('/tema/') ||
+                path.includes('/MercadosOnline/') ||
+                path.includes('/resizer/') ||
+                path.includes('/columnistas/') ||
+                path.includes('/cronista-studio/') ||
+                /\.(html|asp|png|jpg|webp)$/i.test(path) ||
+                seen.has(fullUrl)
+            ) return;
+
+            seen.add(fullUrl);
+            links.push(fullUrl);
+        });
+
+        console.log(`[Cronista] Found ${links.length} links with native section fetch.`);
+        return links;
     }
 }

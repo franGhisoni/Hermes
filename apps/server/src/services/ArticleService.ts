@@ -1,7 +1,7 @@
-import { PrismaClient, Article } from '@prisma/client';
+import { Article } from '@prisma/client';
 import { ConfigService } from './ConfigService';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
 const configService = new ConfigService();
 
 export class ArticleService {
@@ -81,6 +81,7 @@ export class ArticleService {
                 aiDecisions: data.aiDecisions ?? undefined,
                 rewrittenTitle: data.rewrittenTitle,
                 rewrittenContent: data.rewrittenContent,
+                contentPreview: buildContentPreview(data.rewrittenContent || data.originalContent),
                 interestScore: data.interestScore,
                 status: data.status || 'PENDING',
                 publishedAt: new Date(),
@@ -169,19 +170,31 @@ export class ArticleService {
         if (sortBy === 'date') orderBy = { createdAt: sortOrder };
         else if (sortBy === 'score') orderBy = { interestScore: sortOrder };
 
-        const [items, total] = await Promise.all([
+        const [rawItems, total] = await Promise.all([
             prisma.article.findMany({
                 where,
                 orderBy,
                 skip,
                 take: limit,
-                include: { source: true }
+                select: {
+                    id: true,
+                    originalTitle: true,
+                    rewrittenTitle: true,
+                    contentPreview: true,
+                    originalImageUrl: true,
+                    featureImageUrl: true,
+                    interestScore: true,
+                    status: true,
+                    createdAt: true,
+                    section: true,
+                    source: { select: { name: true } }
+                }
             }),
             prisma.article.count({ where })
         ]);
 
         return {
-            items,
+            items: rawItems,
             total,
             page,
             totalPages: Math.ceil(total / limit)
@@ -213,6 +226,14 @@ export class ArticleService {
             });
         }
     }
+}
+
+export function buildContentPreview(content: string | null | undefined): string {
+    return (content || '')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 280);
 }
 
 function sectionAliases(section: {

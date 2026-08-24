@@ -1,7 +1,5 @@
 import 'dotenv/config';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from './lib/prisma';
 
 async function main() {
     console.log("Checking DB...", process.env.DATABASE_URL);

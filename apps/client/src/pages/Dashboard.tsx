@@ -383,7 +383,7 @@ function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel
             </h3>
 
             <p className="text-sm text-editorial-text/80 leading-relaxed line-clamp-4 font-sans mb-4 flex-1">
-                {article.rewrittenContent || article.originalContent}
+                {article.contentPreview || 'Abrí la nota para ver el contenido completo.'}
             </p>
 
             <div className="pt-4 border-t border-editorial-text/10 flex justify-between items-center font-sans text-xs">

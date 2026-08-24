@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { requireAuth, requireAdmin } from '../middlewares/auth';
+import { requireAdmin } from '../middlewares/auth';
+import { prisma } from '../lib/prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-router.use(requireAuth, requireAdmin);
+router.use(requireAdmin);
 
 // Returns:
 //   - undefined if the client did not include the field (don't touch DB)

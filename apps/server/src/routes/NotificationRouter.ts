@@ -1,11 +1,7 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
-import { requireAuth } from '../middlewares/auth';
+import { prisma } from '../lib/prisma';
 
 const router = Router();
-const prisma = new PrismaClient();
-
-router.use(requireAuth);
 
 // GET /api/notifications — list notifications (most recent first).
 // Query params: take (default 50, max 200), unreadOnly=1 to filter.

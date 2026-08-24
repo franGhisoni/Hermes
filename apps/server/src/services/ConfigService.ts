@@ -1,8 +1,61 @@
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
-const prisma = new PrismaClient();
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
+export type ReasoningEffort = typeof REASONING_EFFORTS[number];
 
 export class ConfigService {
+    async getSettingsSnapshot(): Promise<Record<string, string>> {
+        const envValue = Number.parseInt(process.env.SCRAPER_WORKER_CONCURRENCY || '', 10);
+        const workerDefault = Number.isFinite(envValue) && envValue > 0
+            ? Math.min(envValue, 8)
+            : 4;
+
+        const defaults: Record<string, string> = {
+            scrape_limit: '3',
+            scrape_only_today: 'true',
+            scraper_worker_concurrency: workerDefault.toString(),
+            article_retention_hours: '48',
+            article_cleanup_cron: '0 * * * *',
+            image_min_score: '4',
+            image_pool_size: '30',
+            image_scoring_max_retries: '6',
+            image_per_query_cap: '3',
+            image_min_width: '400',
+            image_min_height: '300',
+            image_query_content_chars: '900',
+            image_query_min_length: '4',
+            image_query_max_count: '6',
+            image_lead_min_chars: '20',
+            image_lead_max_chars: '300',
+            image_lead_max_words: '8',
+            image_fetch_timeout_ms: '10000',
+            model_embedding: 'text-embedding-3-small',
+            model_rewrite: 'gpt-4o-mini',
+            model_interest: 'gpt-4o-mini',
+            model_image_query: 'gpt-4o',
+            model_image_scoring: 'gpt-4o',
+            model_image_generation: 'gpt-image-2',
+            ai_image_scoring_reasoning_effort: 'medium',
+            ai_rewrite_max_tokens: '1500',
+            ai_rewrite_content_chars: '3000',
+            ai_interest_max_tokens: '3',
+            ai_interest_content_chars: '500',
+            ai_image_query_max_tokens: '500',
+            ai_image_query_content_chars: '1500',
+            ai_image_scoring_max_tokens: '2000',
+            ai_image_scoring_content_chars: '1200',
+            dedup_threshold: '0.15',
+            embedding_text_chars: '1000',
+            workflow_default_window_hours: '24'
+        };
+
+        const rows = await prisma.systemSetting.findMany({
+            select: { key: true, value: true }
+        });
+        for (const row of rows) defaults[row.key] = row.value;
+        return defaults;
+    }
+
     async getSetting(key: string, defaultValue: string): Promise<string> {
         const setting = await prisma.systemSetting.findUnique({ where: { key } });
         return setting ? setting.value : defaultValue;
@@ -121,6 +174,13 @@ export class ConfigService {
 
     async getImageScoringModel(): Promise<string> {
         return this.getSetting('model_image_scoring', 'gpt-4o');
+    }
+
+    async getImageScoringReasoningEffort(): Promise<ReasoningEffort> {
+        const value = await this.getSetting('ai_image_scoring_reasoning_effort', 'medium');
+        return (REASONING_EFFORTS as readonly string[]).includes(value)
+            ? value as ReasoningEffort
+            : 'medium';
     }
 
     async getImageGenerationModel(): Promise<string> {

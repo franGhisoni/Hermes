@@ -3,10 +3,8 @@ import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import { Browser, Page } from 'puppeteer';
 
 puppeteerExtra.use(StealthPlugin());
-import { PrismaClient } from '@prisma/client';
 import { ConfigService } from '../services/ConfigService';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 const configService = new ConfigService();
 
 export interface ScrapedArticle {

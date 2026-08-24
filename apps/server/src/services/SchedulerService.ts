@@ -1,5 +1,5 @@
 import cron, { ScheduledTask } from 'node-cron';
-import { Article, PrismaClient, ScrapeRunTrigger, WorkflowRunStatus } from '@prisma/client';
+import { Article, ScrapeRunTrigger, WorkflowRunStatus } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
 import { ArticleService } from './ArticleService';
@@ -7,8 +7,7 @@ import { ConfigService } from './ConfigService';
 import { AIService } from './AIService';
 import { ImageService } from './ImageService';
 import { notificationService } from './NotificationService';
-
-const prisma = new PrismaClient();
+import { prisma } from '../lib/prisma';
 
 interface RunStats {
     targetsTotal: number;

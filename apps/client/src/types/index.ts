@@ -30,6 +30,7 @@ export interface Article {
     aiDecisions?: AiDecisionsTrace | null;
     rewrittenTitle?: string;
     rewrittenContent?: string;
+    contentPreview?: string;
     interestScore?: number;
     status: 'PENDING' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
     createdAt: string;

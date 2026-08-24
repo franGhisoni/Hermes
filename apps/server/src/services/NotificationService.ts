@@ -1,6 +1,5 @@
-import { NotificationLevel, NotificationSource, PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { NotificationLevel, NotificationSource } from '@prisma/client';
+import { prisma } from '../lib/prisma';
 
 export interface NotificationInput {
     level: NotificationLevel;

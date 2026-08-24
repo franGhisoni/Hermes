@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
+import { isDemoUser } from '../middlewares/auth';
+import { getDemoNotifications } from '../services/DemoService';
 
 const router = Router();
 
@@ -7,6 +9,8 @@ const router = Router();
 // Query params: take (default 50, max 200), unreadOnly=1 to filter.
 router.get('/', async (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json(getDemoNotifications());
+
         const take = Math.min(parseInt(String(req.query.take ?? '50'), 10) || 50, 200);
         const unreadOnly = req.query.unreadOnly === '1' || req.query.unreadOnly === 'true';
 

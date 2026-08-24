@@ -18,6 +18,7 @@ export default function Users() {
 
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
+    const [newRole, setNewRole] = useState<'EDITOR' | 'DEMO'>('EDITOR');
 
     useEffect(() => {
         fetchUsers();
@@ -37,9 +38,10 @@ export default function Users() {
     const handleCreateUser = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/api/users', { username: newUsername, password: newPassword, role: 'EDITOR' });
+            await api.post('/api/users', { username: newUsername, password: newPassword, role: newRole });
             setNewUsername('');
             setNewPassword('');
+            setNewRole('EDITOR');
             fetchUsers();
             alert('Usuario creado correctamente');
         } catch (error: any) {
@@ -92,7 +94,7 @@ export default function Users() {
             <main className="max-w-4xl mx-auto p-12">
 
                 <div className="mb-12 border border-editorial-text/20 p-8 bg-white/50">
-                    <h2 className="text-xl font-bold uppercase tracking-widest mb-6 font-sans">Crear Nuevo Usuario (Editor)</h2>
+                    <h2 className="text-xl font-bold uppercase tracking-widest mb-6 font-sans">Crear Nuevo Usuario</h2>
                     <form onSubmit={handleCreateUser} className="flex gap-4 items-end font-sans">
                         <div className="flex flex-col gap-2 flex-1">
                             <label className="text-xs font-bold uppercase tracking-widest opacity-60">Usuario</label>
@@ -113,6 +115,17 @@ export default function Users() {
                                 className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text/80 transition-colors"
                                 required
                             />
+                        </div>
+                        <div className="flex flex-col gap-2 w-44">
+                            <label className="text-xs font-bold uppercase tracking-widest opacity-60">Tipo</label>
+                            <select
+                                value={newRole}
+                                onChange={e => setNewRole(e.target.value as 'EDITOR' | 'DEMO')}
+                                className="border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text/80 transition-colors"
+                            >
+                                <option value="EDITOR">Editor</option>
+                                <option value="DEMO">Demo · solo lectura</option>
+                            </select>
                         </div>
                         <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors self-end h-[41px]">
                             Crear

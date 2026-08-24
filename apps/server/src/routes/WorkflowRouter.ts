@@ -1,10 +1,9 @@
 import { Router } from 'express';
-import { requireAdmin } from '../middlewares/auth';
+import { requireAdmin, isDemoUser } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
+import { getDemoWorkflowRuns, getDemoWorkflows } from '../services/DemoService';
 
 const router = Router();
-
-router.use(requireAdmin);
 
 // Returns:
 //   - undefined if the client did not include the field (don't touch DB)
@@ -22,6 +21,8 @@ function parseArticleWindow(value: unknown): number | null | undefined | 'invali
 // GET /api/workflows
 router.get('/', async (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json(getDemoWorkflows());
+
         const workflows = await prisma.workflow.findMany({
             include: {
                 targets: true,
@@ -40,6 +41,8 @@ router.get('/', async (req, res) => {
 // to interpret "runs" as a workflow id.
 router.get('/runs', async (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json(getDemoWorkflowRuns());
+
         const take = Math.min(parseInt(String(req.query.take ?? '60'), 10) || 60, 200);
         const runs = await prisma.workflowRun.findMany({
             orderBy: { startedAt: 'desc' },
@@ -59,6 +62,10 @@ router.get('/runs', async (req, res) => {
 // GET /api/workflows/:id/runs
 router.get('/:id/runs', async (req, res) => {
     try {
+        if (isDemoUser(req)) {
+            return res.json(getDemoWorkflowRuns().filter(run => run.workflow.id === req.params.id));
+        }
+
         const runs = await prisma.workflowRun.findMany({
             where: { workflowId: req.params.id },
             orderBy: { startedAt: 'desc' },
@@ -74,7 +81,7 @@ router.get('/:id/runs', async (req, res) => {
 import { schedulerService } from '../index';
 
 // POST /api/workflows
-router.post('/', async (req, res) => {
+router.post('/', requireAdmin, async (req, res) => {
     const { name, section, sources, minScore, targetCategory, cron, targetIds, allowRepublish, articleWindowHours } = req.body;
     if (!name || !cron || !targetIds || !Array.isArray(targetIds) || targetIds.length === 0) {
         return res.status(400).json({ error: 'name, cron, and at least one targetId are required' });
@@ -109,7 +116,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT /api/workflows/:id
-router.put('/:id', async (req, res) => {
+router.put('/:id', requireAdmin, async (req, res) => {
     const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, allowRepublish, articleWindowHours } = req.body;
 
     if (targetIds && (!Array.isArray(targetIds) || targetIds.length === 0)) {
@@ -157,7 +164,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // DELETE /api/workflows/:id
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireAdmin, async (req, res) => {
     try {
         await prisma.workflow.delete({
             where: { id: req.params.id }

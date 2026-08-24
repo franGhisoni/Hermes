@@ -22,7 +22,8 @@ import userRouter from './routes/UserRouter';
 import sectionRouter from './routes/SectionRouter';
 import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
-import { requireAuth, requireAdmin } from './middlewares/auth';
+import { requireAuth, requireAdmin, requireReadOnly, isDemoUser } from './middlewares/auth';
+import { getDemoArticleById, getDemoArticles, getDemoSources } from './services/DemoService';
 
 import { SchedulerService } from './services/SchedulerService';
 import cron from 'node-cron';
@@ -86,8 +87,9 @@ app.get('/api/images/:id', async (req, res) => {
 app.use('/api/users', userRouter);
 app.use('/api/targets', targetRouter);
 
-// Global auth guard for the rest of the API
-app.use('/api', requireAuth);
+// Global auth guard for the rest of the API. Demo users may browse, but the
+// read-only guard also protects against crafted mutation requests.
+app.use('/api', requireAuth, requireReadOnly);
 
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {
@@ -95,6 +97,20 @@ app.get('/api/articles', async (req, res) => {
         const page = parseInt(req.query.page as string) || 1;
         const limit = parseInt(req.query.limit as string) || 50;
         const { source, section, category, status, search, sortBy, sortOrder } = req.query as Record<string, string>;
+
+        if (isDemoUser(req)) {
+            return res.json(getDemoArticles({
+                page,
+                limit,
+                source,
+                section,
+                category,
+                status,
+                search,
+                sortBy: sortBy as 'date' | 'score',
+                sortOrder: sortOrder as 'desc' | 'asc'
+            }));
+        }
 
         const result = await articleService.getArticles({
             page,
@@ -117,6 +133,12 @@ app.get('/api/articles', async (req, res) => {
 // GET /api/articles/:id - Get single article
 app.get('/api/articles/:id', async (req, res) => {
     try {
+        if (isDemoUser(req)) {
+            const article = getDemoArticleById(req.params.id);
+            if (!article) return res.status(404).json({ error: 'Not found' });
+            return res.json(article);
+        }
+
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Not found' });
         res.json(article);
@@ -137,6 +159,8 @@ app.use('/api/workflows', workflowRouter);
 // GET /api/config/sources - List available sources for Workflows
 app.get('/api/config/sources', async (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json(getDemoSources());
+
         const sources = await prisma.source.findMany({
             where: { active: true },
             orderBy: { name: 'asc' }

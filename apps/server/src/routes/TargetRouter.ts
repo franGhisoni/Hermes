@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { requireAuth, requireAdmin } from '../middlewares/auth';
+import { requireAuth, requireAdmin, isDemoUser } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
+import { getDemoTargets } from '../services/DemoService';
 
 const router = Router();
 
@@ -9,6 +10,8 @@ router.use(requireAuth);
 // GET /api/targets
 router.get('/', async (req, res) => {
     try {
+        if (isDemoUser(req)) return res.json(getDemoTargets());
+
         const targets = await prisma.target.findMany({
             orderBy: { createdAt: 'desc' }
         });

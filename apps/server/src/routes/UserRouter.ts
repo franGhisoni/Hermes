@@ -34,7 +34,7 @@ router.post('/', async (req, res) => {
             data: {
                 username,
                 passwordHash,
-                role: role === 'ADMIN' ? 'ADMIN' : 'EDITOR'
+                role: role === 'ADMIN' ? 'ADMIN' : role === 'DEMO' ? 'DEMO' : 'EDITOR'
             },
             select: { id: true, username: true, role: true }
         });

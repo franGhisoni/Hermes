@@ -203,6 +203,7 @@ model SectionOverride {
 enum UserRole {
   ADMIN
   EDITOR
+  DEMO
 }
 
 model Article {

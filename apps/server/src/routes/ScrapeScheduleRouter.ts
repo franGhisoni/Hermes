@@ -1,14 +1,17 @@
 import { Router, Request, Response } from 'express';
 import cron from 'node-cron';
-import { requireAdmin } from '../middlewares/auth';
+import { requireAdmin, isDemoUser } from '../middlewares/auth';
 import { SCRAPER_SOURCES } from '../services/QueueService';
 import { prisma } from '../lib/prisma';
+import { getDemoScrapeSchedules } from '../services/DemoService';
 
 const router = Router();
 
 // GET all scrape schedules
 router.get('/', async (req: Request, res: Response) => {
     try {
+        if (isDemoUser(req)) return res.json(getDemoScrapeSchedules());
+
         const schedules = await prisma.scrapeSchedule.findMany({
             orderBy: { createdAt: 'desc' }
         });
@@ -59,7 +62,7 @@ router.post('/bulk', requireAdmin, async (req: Request, res: Response) => {
 });
 
 // POST create a new scrape schedule
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', requireAdmin, async (req: Request, res: Response) => {
     const { source, cron } = req.body;
     if (!source || !cron) {
         return res.status(400).json({ error: 'source and cron are required' });
@@ -82,7 +85,7 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // PUT update a scrape schedule
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', requireAdmin, async (req: Request, res: Response) => {
     const { source, cron, isActive } = req.body;
     try {
         const schedule = await prisma.scrapeSchedule.update({
@@ -107,7 +110,7 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // DELETE a scrape schedule
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', requireAdmin, async (req: Request, res: Response) => {
     try {
         // Unschedule first
         const { schedulerService } = require('../index');

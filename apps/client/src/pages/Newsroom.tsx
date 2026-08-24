@@ -14,6 +14,7 @@ export default function Newsroom() {
     const { id } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
+    const isDemo = user?.role === 'DEMO';
     const [article, setArticle] = useState<Article | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -238,50 +239,65 @@ export default function Newsroom() {
             {/* Header */}
             <header className="h-16 border-b border-editorial-text/10 flex items-center px-6 justify-between bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
+                    <Link to="/" className="flex items-center">
+                        <img src={isDemo ? "/logo%20hermes.png" : "/logo.png"} alt={isDemo ? "Hermes" : "Logo"} className={isDemo ? "h-9 w-auto object-contain" : "h-9 w-auto mix-blend-multiply"} />
+                    </Link>
                     <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
+                    {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Solo lectura</span>}
                 </div>
-                <div className="flex gap-3">
-                    <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
-                        Rechazar
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving}
-                        className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                        {saving ? 'Guardando...' : 'Guardar'}
-                    </button>
-                    <button
-                        onClick={handleRewrite}
-                        disabled={rewriting}
-                        className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
-                    >
-                        {rewriting ? (
-                            <>
-                                <span className="inline-block w-3 h-3 border-2 border-editorial-text/30 border-t-editorial-text rounded-full animate-spin"></span>
-                                Reescribiendo...
-                            </>
-                        ) : 'Reescribir'}
-                    </button>
+                {isDemo ? (
                     <button
                         onClick={openPublishModal}
-                        className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors ${article.status === 'PUBLISHED'
-                            ? 'bg-green-700 text-white hover:bg-green-800'
-                            : 'bg-editorial-text text-editorial-bg hover:bg-editorial-text/90'
-                            }`}
+                        className="px-4 py-2 border border-amber-700/30 text-amber-800 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors hover:bg-amber-700/5"
                     >
-                        {article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
+                        Vista previa de publicación
                     </button>
-                </div>
+                ) : (
+                    <div className="flex gap-3">
+                        <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
+                            Rechazar
+                        </button>
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {saving ? 'Guardando...' : 'Guardar'}
+                        </button>
+                        <button
+                            onClick={handleRewrite}
+                            disabled={rewriting}
+                            className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                        >
+                            {rewriting ? (
+                                <>
+                                    <span className="inline-block w-3 h-3 border-2 border-editorial-text/30 border-t-editorial-text rounded-full animate-spin"></span>
+                                    Reescribiendo...
+                                </>
+                            ) : 'Reescribir'}
+                        </button>
+                        <button
+                            onClick={openPublishModal}
+                            className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors ${article.status === 'PUBLISHED'
+                                ? 'bg-green-700 text-white hover:bg-green-800'
+                                : 'bg-editorial-text text-editorial-bg hover:bg-editorial-text/90'
+                                }`}
+                        >
+                            {article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
+                        </button>
+                    </div>
+                )}
             </header>
 
             {/* Publish Modal */}
             {showPublishModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowPublishModal(false)}>
                     <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-xl font-bold mb-2">Publicar Artículo</h3>
+                        <h3 className="text-xl font-bold mb-2">{isDemo ? 'Vista previa de publicación' : 'Publicar Artículo'}</h3>
                         <p className="font-sans text-sm text-editorial-text/60 mb-4">
-                            Seleccioná el medio y la categoría para publicar este artículo.
+                            {isDemo
+                                ? 'Estos son destinos ficticios para mostrar el recorrido. El envío está deshabilitado en modo demo.'
+                                : 'Seleccioná el medio y la categoría para publicar este artículo.'}
                         </p>
 
                         {loadingTargets ? (
@@ -299,7 +315,7 @@ export default function Newsroom() {
                             </div>
                         ) : (
                             <>
-                                <div className="mb-3">
+                                {!isDemo && <div className="mb-3">
                                     <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
                                     <input
                                         type="search"
@@ -308,7 +324,7 @@ export default function Newsroom() {
                                         placeholder="Nombre o email"
                                         className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text"
                                     />
-                                </div>
+                                </div>}
 
                                 <div className="flex flex-col gap-2 mb-6 max-h-60 overflow-y-auto">
                                     {filteredTargets.length === 0 ? (
@@ -330,6 +346,7 @@ export default function Newsroom() {
                                                     value={t.id}
                                                     checked={selectedTargetId === t.id}
                                                     onChange={() => setSelectedTargetId(t.id)}
+                                                    disabled={isDemo}
                                                     className="accent-editorial-text"
                                                 />
                                                 <div className="flex flex-col">
@@ -347,6 +364,7 @@ export default function Newsroom() {
                                     <select
                                         value={selectedCategory}
                                         onChange={e => setSelectedCategory(e.target.value)}
+                                        disabled={isDemo}
                                         className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
                                     >
                                         <option value="">Sin categoría</option>
@@ -368,7 +386,7 @@ export default function Newsroom() {
                                     >
                                         Cancelar
                                     </button>
-                                    <button
+                                    {!isDemo && <button
                                         onClick={handlePublish}
                                         disabled={publishing || !selectedTargetId}
                                         className="px-6 py-2 bg-editorial-text text-editorial-bg hover:bg-black text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
@@ -379,7 +397,8 @@ export default function Newsroom() {
                                                 Enviando...
                                             </>
                                         ) : 'Enviar'}
-                                    </button>
+                                    </button>}
+                                    {isDemo && <span className="px-3 py-2 text-[10px] font-sans font-bold uppercase tracking-widest text-amber-800/70">Solo vista previa</span>}
                                 </div>
                             </>
                         )}
@@ -461,7 +480,7 @@ export default function Newsroom() {
                                             </div>
                                         )}
                                         <img src={resolveAssetUrl(article.featureImageUrl)} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
-                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                        {!isDemo && <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                                             <button
                                                 onClick={handleRegenerate}
                                                 disabled={generating}
@@ -476,10 +495,10 @@ export default function Newsroom() {
                                             >
                                                 {searching ? 'Searching...' : 'Search Web'}
                                             </button>
-                                        </div>
+                                        </div>}
 
                                         {/* Restore Original Button (if different) */}
-                                        {article.originalImageUrl && article.featureImageUrl !== article.originalImageUrl && (
+                                        {!isDemo && article.originalImageUrl && article.featureImageUrl !== article.originalImageUrl && (
                                             <div className="absolute bottom-2 right-2">
                                                 <button
                                                     onClick={() => handleSelectImage(article.originalImageUrl!)}
@@ -524,8 +543,8 @@ export default function Newsroom() {
                                                     return (
                                                         <div
                                                             key={idx}
-                                                            onClick={() => handleSelectImage(url)}
-                                                            className={`relative flex-shrink-0 w-24 h-24 rounded border-2 cursor-pointer overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                            onClick={isDemo ? undefined : () => handleSelectImage(url)}
+                                                            className={`relative flex-shrink-0 w-24 h-24 rounded border-2 ${isDemo ? 'cursor-default' : 'cursor-pointer'} overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
                                                         >
                                                             {score !== undefined && (
                                                                 <div className="absolute top-0 right-0 bg-editorial-text text-editorial-bg text-[10px] font-bold px-1.5 py-0.5 opacity-90 z-10">
@@ -563,7 +582,7 @@ export default function Newsroom() {
                                         })()}
 
                                         {/* Manual URL input */}
-                                        <div className="mt-3 flex gap-2 items-center">
+                                        {!isDemo && <div className="mt-3 flex gap-2 items-center">
                                             <input
                                                 type="url"
                                                 value={customImageUrl}
@@ -579,7 +598,7 @@ export default function Newsroom() {
                                             >
                                                 {addingCustom ? '...' : 'Agregar'}
                                             </button>
-                                        </div>
+                                        </div>}
                                     </div>
 
                                     {user?.role === 'ADMIN' && article.aiDecisions && (
@@ -592,7 +611,8 @@ export default function Newsroom() {
                         <textarea
                             ref={titleRef}
                             rows={1}
-                            className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none overflow-hidden"
+                            readOnly={isDemo}
+                            className={`w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none overflow-hidden ${isDemo ? 'cursor-default' : ''}`}
                             value={article.rewrittenTitle || ''}
                             onChange={(e) => {
                                 setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null);
@@ -606,7 +626,8 @@ export default function Newsroom() {
                         />
 
                         <textarea
-                            className="w-full h-[calc(100vh-400px)] bg-transparent resize-none focus:outline-none text-editorial-text text-lg leading-relaxed font-serif p-0"
+                            readOnly={isDemo}
+                            className={`w-full h-[calc(100vh-400px)] bg-transparent resize-none focus:outline-none text-editorial-text text-lg leading-relaxed font-serif p-0 ${isDemo ? 'cursor-default' : ''}`}
                             value={article.rewrittenContent || ''}
                             onChange={(e) => setArticle(prev => prev ? { ...prev, rewrittenContent: e.target.value } : null)}
                             placeholder="Start writing..."

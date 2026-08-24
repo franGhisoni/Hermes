@@ -1,11 +1,14 @@
 import { Router } from 'express';
-import { requireAdmin } from '../middlewares/auth';
+import { requireAdmin, isDemoUser } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
+import { getDemoFilterCategories } from '../services/DemoService';
 
 const router = Router();
 
 router.get('/', async (_req, res) => {
     try {
+        if (isDemoUser(_req)) return res.json(getDemoFilterCategories());
+
         const categories = await prisma.filterCategory.findMany({
             orderBy: { name: 'asc' },
             include: {

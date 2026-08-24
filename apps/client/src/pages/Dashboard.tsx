@@ -22,6 +22,7 @@ interface FilterCategory {
 
 export default function Dashboard() {
     const { user, logout } = useAuth();
+    const isDemo = user?.role === 'DEMO';
     const [articles, setArticles] = useState<Article[]>([]);
     const [configSections, setConfigSections] = useState<DashboardSection[]>([]);
     const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
@@ -168,17 +169,22 @@ export default function Dashboard() {
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/">
-                        <img src="/logo.png" alt="Logo" className="h-12 w-auto mix-blend-multiply opacity-90 transition-opacity hover:opacity-100" />
+                        <img src={isDemo ? "/logo%20hermes.png" : "/logo.png"} alt={isDemo ? "Hermes" : "Logo"} className={isDemo ? "h-12 w-auto object-contain opacity-90 transition-opacity hover:opacity-100" : "h-12 w-auto mix-blend-multiply opacity-90 transition-opacity hover:opacity-100"} />
                     </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
+                    {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · solo lectura</span>}
                 </div>
                 <div className="flex gap-4 items-center">
                     {user?.role === 'ADMIN' && <NotificationsPanel />}
-                    <ScraperControl />
+                    {!isDemo && <ScraperControl />}
                     {user?.role === 'ADMIN' && (
                         <>
                             <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
+                        </>
+                    )}
+                    {user?.role === 'ADMIN' && (
+                        <>
                             <Link to="/users" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Usuarios</Link>
                             <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
                         </>
@@ -285,6 +291,7 @@ export default function Dashboard() {
                                             key={article.id}
                                             article={article}
                                             sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
+                                            readOnly={isDemo}
                                         />
                                     ))}
                                 </div>
@@ -298,6 +305,7 @@ export default function Dashboard() {
                                 key={article.id}
                                 article={article}
                                 sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
+                                readOnly={isDemo}
                             />
                         ))}
                     </div>
@@ -345,7 +353,7 @@ function pathAlias(path?: string | null) {
     return segment.replace(/[-_]+/g, ' ');
 }
 
-function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {
+function ArticleCard({ article, sectionLabel, readOnly = false }: { article: Article; sectionLabel?: string; readOnly?: boolean }) {
     return (
         <article className="group flex flex-col h-full">
             {article.originalImageUrl && (
@@ -389,7 +397,7 @@ function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel
             <div className="pt-4 border-t border-editorial-text/10 flex justify-between items-center font-sans text-xs">
                 <span className="text-editorial-text/50">{new Date(article.createdAt).toLocaleDateString()}</span>
                 <Link to={`/newsroom/${article.id}`} className="font-bold hover:translate-x-1 transition-transform">
-                    Leer y Editar →
+                    {readOnly ? 'Leer nota →' : 'Leer y Editar →'}
                 </Link>
             </div>
         </article>

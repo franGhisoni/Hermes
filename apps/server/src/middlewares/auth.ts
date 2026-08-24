@@ -25,18 +25,21 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
         // 2. Verify token
         const decoded = jwt.verify(token, JWT_SECRET) as any;
 
-        // 3. Attach user to request
-        req.user = {
-            id: decoded.id,
-            username: decoded.username,
-            role: decoded.role
-        };
-
-        // Ensure user still exists
-        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+        // 3. Resolve the current user from the database. In particular, do
+        // not trust a stale role embedded in a long-lived JWT.
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            select: { id: true, username: true, role: true }
+        });
         if (!user) {
             return res.status(401).json({ error: 'Unauthorized: Invalid token' });
         }
+
+        req.user = {
+            id: user.id,
+            username: user.username,
+            role: user.role
+        };
 
         next();
     } catch (error) {
@@ -47,6 +50,19 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
     if (req.user?.role !== 'ADMIN') {
         return res.status(403).json({ error: 'Forbidden: Requires Admin role' });
+    }
+    next();
+};
+
+export const isDemoUser = (req: Request) => (req as AuthRequest).user?.role === 'DEMO';
+
+/**
+ * Demo accounts can browse authenticated GET endpoints, but they cannot
+ * mutate anything even if a request is crafted outside the frontend.
+ */
+export const requireReadOnly = (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (req.user?.role === 'DEMO' && !['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        return res.status(403).json({ error: 'Demo accounts are read-only' });
     }
     next();
 };

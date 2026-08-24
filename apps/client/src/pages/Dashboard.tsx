@@ -173,11 +173,11 @@ export default function Dashboard() {
                     </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
-                    {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · solo lectura</span>}
+                    {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
                 <div className="flex gap-4 items-center">
                     {user?.role === 'ADMIN' && <NotificationsPanel />}
-                    {!isDemo && <ScraperControl />}
+                    <ScraperControl />
                     {user?.role === 'ADMIN' && (
                         <>
                             <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
@@ -291,7 +291,6 @@ export default function Dashboard() {
                                             key={article.id}
                                             article={article}
                                             sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
-                                            readOnly={isDemo}
                                         />
                                     ))}
                                 </div>
@@ -305,7 +304,6 @@ export default function Dashboard() {
                                 key={article.id}
                                 article={article}
                                 sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
-                                readOnly={isDemo}
                             />
                         ))}
                     </div>
@@ -353,7 +351,7 @@ function pathAlias(path?: string | null) {
     return segment.replace(/[-_]+/g, ' ');
 }
 
-function ArticleCard({ article, sectionLabel, readOnly = false }: { article: Article; sectionLabel?: string; readOnly?: boolean }) {
+function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {
     return (
         <article className="group flex flex-col h-full">
             {article.originalImageUrl && (
@@ -397,7 +395,7 @@ function ArticleCard({ article, sectionLabel, readOnly = false }: { article: Art
             <div className="pt-4 border-t border-editorial-text/10 flex justify-between items-center font-sans text-xs">
                 <span className="text-editorial-text/50">{new Date(article.createdAt).toLocaleDateString()}</span>
                 <Link to={`/newsroom/${article.id}`} className="font-bold hover:translate-x-1 transition-transform">
-                    {readOnly ? 'Leer nota →' : 'Leer y Editar →'}
+                    Leer y Editar →
                 </Link>
             </div>
         </article>

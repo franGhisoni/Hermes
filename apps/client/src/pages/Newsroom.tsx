@@ -42,6 +42,15 @@ export default function Newsroom() {
     const handleRegenerate = async () => {
         if (!id) return;
         setGenerating(true);
+
+        if (isDemo) {
+            setTimeout(() => {
+                setGenerating(false);
+                alert('Demo: se simuló la regeneración de imagen. No se guardó nada.');
+            }, 450);
+            return;
+        }
+
         try {
             const res = await api.post(`/api/articles/${id}/regenerate-image`);
             setArticle(prev => prev ? {
@@ -58,6 +67,12 @@ export default function Newsroom() {
 
     const handleSelectImage = async (url: string) => {
         if (!id) return;
+
+        if (isDemo) {
+            setArticle(prev => prev ? { ...prev, featureImageUrl: url } : null);
+            return;
+        }
+
         try {
             const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: url });
             setArticle(prev => prev ? {
@@ -92,6 +107,18 @@ export default function Newsroom() {
             return;
         }
         setAddingCustom(true);
+
+        if (isDemo) {
+            setArticle(prev => prev ? {
+                ...prev,
+                featureImageUrl: customImageUrl.trim(),
+                imageCandidates: [customImageUrl.trim(), ...(prev.imageCandidates || [])]
+            } : null);
+            setCustomImageUrl('');
+            setAddingCustom(false);
+            return;
+        }
+
         try {
             const res = await api.put(`/api/articles/${id}/select-image`, { imageUrl: customImageUrl.trim() });
             setArticle(prev => prev ? {
@@ -111,6 +138,15 @@ export default function Newsroom() {
     const handleSearch = async () => {
         if (!id) return;
         setSearching(true);
+
+        if (isDemo) {
+            setTimeout(() => {
+                setSearching(false);
+                alert('Demo: se simuló la búsqueda de imágenes. No se guardó nada.');
+            }, 450);
+            return;
+        }
+
         try {
             const res = await api.post(`/api/articles/${id}/search-images`);
             setArticle(prev => prev ? {
@@ -128,6 +164,12 @@ export default function Newsroom() {
     const handleReject = async () => {
         if (!id) return;
         if (confirm('Are you sure you want to delete this article?')) {
+            if (isDemo) {
+                alert('Demo: se simuló el rechazo de la nota. No se eliminó nada.');
+                navigate('/');
+                return;
+            }
+
             try {
                 await api.delete(`/api/articles/${id}`);
                 navigate('/');
@@ -142,6 +184,15 @@ export default function Newsroom() {
     const handleRewrite = async () => {
         if (!id) return;
         setRewriting(true);
+
+        if (isDemo) {
+            setTimeout(() => {
+                setRewriting(false);
+                alert('Demo: se simuló la reescritura. No se guardó nada.');
+            }, 450);
+            return;
+        }
+
         try {
             const res = await api.post(`/api/articles/${id}/rewrite`);
             setArticle(prev => prev ? {
@@ -160,6 +211,9 @@ export default function Newsroom() {
 
     const saveDraft = async () => {
         if (!id || !article) return;
+
+        if (isDemo) return;
+
         return api.put(`/api/articles/${id}`, {
             rewrittenTitle: article.rewrittenTitle,
             rewrittenContent: article.rewrittenContent
@@ -171,7 +225,7 @@ export default function Newsroom() {
         setSaving(true);
         try {
             await saveDraft();
-            alert('¡Cambios guardados!');
+            alert(isDemo ? 'Demo: cambios simulados. No se guardó nada.' : '¡Cambios guardados!');
         } catch (e) {
             alert('Error al guardar cambios');
         } finally {
@@ -214,6 +268,16 @@ export default function Newsroom() {
     const handlePublish = async () => {
         if (!id || !article || !selectedTargetId) return;
         setPublishing(true);
+
+        if (isDemo) {
+            setArticle(prev => prev ? { ...prev, status: 'PUBLISHED' } : null);
+            setShowPublishModal(false);
+            setPublishing(false);
+            const target = targets.find(item => item.id === selectedTargetId);
+            alert(`✅ Demo: publicación simulada para ${target?.name || 'el destino seleccionado'}. No se envió nada.`);
+            return;
+        }
+
         try {
             const res = await api.post(`/api/articles/${id}/publish`, {
                 targetId: selectedTargetId,
@@ -243,17 +307,9 @@ export default function Newsroom() {
                         <img src={isDemo ? "/logo%20hermes.png" : "/logo.png"} alt={isDemo ? "Hermes" : "Logo"} className={isDemo ? "h-9 w-auto object-contain" : "h-9 w-auto mix-blend-multiply"} />
                     </Link>
                     <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
-                    {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Solo lectura</span>}
+                    {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
-                {isDemo ? (
-                    <button
-                        onClick={openPublishModal}
-                        className="px-4 py-2 border border-amber-700/30 text-amber-800 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors hover:bg-amber-700/5"
-                    >
-                        Vista previa de publicación
-                    </button>
-                ) : (
-                    <div className="flex gap-3">
+                <div className="flex gap-3">
                         <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                             Rechazar
                         </button>
@@ -285,8 +341,7 @@ export default function Newsroom() {
                         >
                             {article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
                         </button>
-                    </div>
-                )}
+                </div>
             </header>
 
             {/* Publish Modal */}
@@ -296,7 +351,7 @@ export default function Newsroom() {
                         <h3 className="text-xl font-bold mb-2">{isDemo ? 'Vista previa de publicación' : 'Publicar Artículo'}</h3>
                         <p className="font-sans text-sm text-editorial-text/60 mb-4">
                             {isDemo
-                                ? 'Estos son destinos ficticios para mostrar el recorrido. El envío está deshabilitado en modo demo.'
+                                ? 'Estos son destinos ficticios para mostrar el recorrido. El envío se simula y no persiste cambios.'
                                 : 'Seleccioná el medio y la categoría para publicar este artículo.'}
                         </p>
 
@@ -315,7 +370,7 @@ export default function Newsroom() {
                             </div>
                         ) : (
                             <>
-                                {!isDemo && <div className="mb-3">
+                                <div className="mb-3">
                                     <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
                                     <input
                                         type="search"
@@ -324,7 +379,7 @@ export default function Newsroom() {
                                         placeholder="Nombre o email"
                                         className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text"
                                     />
-                                </div>}
+                                </div>
 
                                 <div className="flex flex-col gap-2 mb-6 max-h-60 overflow-y-auto">
                                     {filteredTargets.length === 0 ? (
@@ -346,7 +401,6 @@ export default function Newsroom() {
                                                     value={t.id}
                                                     checked={selectedTargetId === t.id}
                                                     onChange={() => setSelectedTargetId(t.id)}
-                                                    disabled={isDemo}
                                                     className="accent-editorial-text"
                                                 />
                                                 <div className="flex flex-col">
@@ -364,7 +418,6 @@ export default function Newsroom() {
                                     <select
                                         value={selectedCategory}
                                         onChange={e => setSelectedCategory(e.target.value)}
-                                        disabled={isDemo}
                                         className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
                                     >
                                         <option value="">Sin categoría</option>
@@ -386,7 +439,7 @@ export default function Newsroom() {
                                     >
                                         Cancelar
                                     </button>
-                                    {!isDemo && <button
+                                    <button
                                         onClick={handlePublish}
                                         disabled={publishing || !selectedTargetId}
                                         className="px-6 py-2 bg-editorial-text text-editorial-bg hover:bg-black text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
@@ -397,8 +450,7 @@ export default function Newsroom() {
                                                 Enviando...
                                             </>
                                         ) : 'Enviar'}
-                                    </button>}
-                                    {isDemo && <span className="px-3 py-2 text-[10px] font-sans font-bold uppercase tracking-widest text-amber-800/70">Solo vista previa</span>}
+                                    </button>
                                 </div>
                             </>
                         )}
@@ -480,7 +532,7 @@ export default function Newsroom() {
                                             </div>
                                         )}
                                         <img src={resolveAssetUrl(article.featureImageUrl)} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
-                                        {!isDemo && <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
                                             <button
                                                 onClick={handleRegenerate}
                                                 disabled={generating}
@@ -495,10 +547,10 @@ export default function Newsroom() {
                                             >
                                                 {searching ? 'Searching...' : 'Search Web'}
                                             </button>
-                                        </div>}
+                                        </div>
 
                                         {/* Restore Original Button (if different) */}
-                                        {!isDemo && article.originalImageUrl && article.featureImageUrl !== article.originalImageUrl && (
+                                        {article.originalImageUrl && article.featureImageUrl !== article.originalImageUrl && (
                                             <div className="absolute bottom-2 right-2">
                                                 <button
                                                     onClick={() => handleSelectImage(article.originalImageUrl!)}
@@ -543,8 +595,8 @@ export default function Newsroom() {
                                                     return (
                                                         <div
                                                             key={idx}
-                                                            onClick={isDemo ? undefined : () => handleSelectImage(url)}
-                                                            className={`relative flex-shrink-0 w-24 h-24 rounded border-2 ${isDemo ? 'cursor-default' : 'cursor-pointer'} overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                            onClick={() => handleSelectImage(url)}
+                                                            className={`relative flex-shrink-0 w-24 h-24 rounded border-2 cursor-pointer overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
                                                         >
                                                             {score !== undefined && (
                                                                 <div className="absolute top-0 right-0 bg-editorial-text text-editorial-bg text-[10px] font-bold px-1.5 py-0.5 opacity-90 z-10">
@@ -582,7 +634,7 @@ export default function Newsroom() {
                                         })()}
 
                                         {/* Manual URL input */}
-                                        {!isDemo && <div className="mt-3 flex gap-2 items-center">
+                                        <div className="mt-3 flex gap-2 items-center">
                                             <input
                                                 type="url"
                                                 value={customImageUrl}
@@ -598,7 +650,7 @@ export default function Newsroom() {
                                             >
                                                 {addingCustom ? '...' : 'Agregar'}
                                             </button>
-                                        </div>}
+                                        </div>
                                     </div>
 
                                     {user?.role === 'ADMIN' && article.aiDecisions && (
@@ -611,8 +663,7 @@ export default function Newsroom() {
                         <textarea
                             ref={titleRef}
                             rows={1}
-                            readOnly={isDemo}
-                            className={`w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none overflow-hidden ${isDemo ? 'cursor-default' : ''}`}
+                            className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none overflow-hidden"
                             value={article.rewrittenTitle || ''}
                             onChange={(e) => {
                                 setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null);
@@ -626,8 +677,7 @@ export default function Newsroom() {
                         />
 
                         <textarea
-                            readOnly={isDemo}
-                            className={`w-full h-[calc(100vh-400px)] bg-transparent resize-none focus:outline-none text-editorial-text text-lg leading-relaxed font-serif p-0 ${isDemo ? 'cursor-default' : ''}`}
+                            className="w-full h-[calc(100vh-400px)] bg-transparent resize-none focus:outline-none text-editorial-text text-lg leading-relaxed font-serif p-0"
                             value={article.rewrittenContent || ''}
                             onChange={(e) => setArticle(prev => prev ? { ...prev, rewrittenContent: e.target.value } : null)}
                             placeholder="Start writing..."

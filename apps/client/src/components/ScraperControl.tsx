@@ -25,7 +25,7 @@ const SCRAPERS = [
 ];
 
 export function ScraperControl() {
-    const { token } = useAuth();
+    const { token, user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [hoveredSource, setHoveredSource] = useState<string | null>(null);
@@ -55,6 +55,14 @@ export function ScraperControl() {
     const handleScrape = async (source: string, sectionId?: string, label?: string) => {
         setLoading(true);
         setMessage(`Iniciando ${label || source}...`);
+
+        if (user?.role === 'DEMO') {
+            setMessage(`Demo: simulando scraping de ${label || source}. No se guardó nada.`);
+            setLoading(false);
+            setTimeout(() => setMessage(''), 4000);
+            return;
+        }
+
         try {
             const body: { source: string; sectionId?: string } = { source };
             if (sectionId) body.sectionId = sectionId;

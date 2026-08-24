@@ -22,8 +22,7 @@ import userRouter from './routes/UserRouter';
 import sectionRouter from './routes/SectionRouter';
 import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
-import { requireAuth, requireAdmin, requireReadOnly, isDemoUser } from './middlewares/auth';
-import { getDemoArticleById, getDemoArticles, getDemoSources } from './services/DemoService';
+import { requireAuth, requireAdmin, requireReadOnly } from './middlewares/auth';
 
 import { SchedulerService } from './services/SchedulerService';
 import cron from 'node-cron';
@@ -98,20 +97,6 @@ app.get('/api/articles', async (req, res) => {
         const limit = parseInt(req.query.limit as string) || 50;
         const { source, section, category, status, search, sortBy, sortOrder } = req.query as Record<string, string>;
 
-        if (isDemoUser(req)) {
-            return res.json(getDemoArticles({
-                page,
-                limit,
-                source,
-                section,
-                category,
-                status,
-                search,
-                sortBy: sortBy as 'date' | 'score',
-                sortOrder: sortOrder as 'desc' | 'asc'
-            }));
-        }
-
         const result = await articleService.getArticles({
             page,
             limit,
@@ -133,12 +118,6 @@ app.get('/api/articles', async (req, res) => {
 // GET /api/articles/:id - Get single article
 app.get('/api/articles/:id', async (req, res) => {
     try {
-        if (isDemoUser(req)) {
-            const article = getDemoArticleById(req.params.id);
-            if (!article) return res.status(404).json({ error: 'Not found' });
-            return res.json(article);
-        }
-
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Not found' });
         res.json(article);
@@ -159,8 +138,6 @@ app.use('/api/workflows', workflowRouter);
 // GET /api/config/sources - List available sources for Workflows
 app.get('/api/config/sources', async (req, res) => {
     try {
-        if (isDemoUser(req)) return res.json(getDemoSources());
-
         const sources = await prisma.source.findMany({
             where: { active: true },
             orderBy: { name: 'asc' }

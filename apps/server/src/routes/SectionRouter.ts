@@ -1,7 +1,6 @@
 import { Router } from 'express';
-import { requireAdmin, isDemoUser } from '../middlewares/auth';
+import { requireAdmin } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
-import { getDemoSections } from '../services/DemoService';
 
 const router = Router();
 
@@ -11,8 +10,6 @@ const router = Router();
 // which sections to show in the hover submenu).
 router.get('/', async (req, res) => {
     try {
-        if (isDemoUser(req)) return res.json(getDemoSections());
-
         const sections = await prisma.section.findMany({
             orderBy: [
                 { name: 'asc' }
@@ -34,17 +31,6 @@ router.get('/effective', async (req, res) => {
     if (!source) return res.status(400).json({ error: 'Missing source' });
 
     try {
-        if (isDemoUser(req)) {
-            return res.json(getDemoSections().map(section => ({
-                id: section.id,
-                name: section.name,
-                path: section.path,
-                scrapeLimit: null,
-                enabled: true,
-                hasOverride: false
-            })));
-        }
-
         const sections = await prisma.section.findMany({
             orderBy: [{ name: 'asc' }],
             include: {

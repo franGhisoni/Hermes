@@ -12,31 +12,31 @@ interface EffectiveSection {
     hasOverride: boolean;
 }
 
-const SCRAPERS = [
-    { name: 'Clarín', source: 'Clarin' },
-    { name: 'La Nación', source: 'LaNacion' },
-    { name: 'Infobae', source: 'Infobae' },
-    { name: 'TN', source: 'TN' },
-    { name: 'Noticias Argentinas', source: 'NA' },
-    { name: 'Ámbito', source: 'Ambito' },
-    { name: 'El Cronista', source: 'Cronista' },
-    { name: 'Página/12', source: 'Pagina12' },
-    { name: 'MDZ Online', source: 'MDZ' },
-];
+interface ScraperConfig {
+    source: string;
+    label: string;
+    active: boolean;
+}
 
 export function ScraperControl() {
     const { token, user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [hoveredSource, setHoveredSource] = useState<string | null>(null);
+    const [scrapers, setScrapers] = useState<ScraperConfig[]>([]);
     // Cache effective sections per source so we don't refetch on every hover.
     const [sectionsBySource, setSectionsBySource] = useState<Record<string, EffectiveSection[]>>({});
     const [sectionsLoading, setSectionsLoading] = useState<Record<string, boolean>>({});
 
-    if (!token) return null;
+    useEffect(() => {
+        if (!token) return;
+        api.get('/api/config/scrapers')
+            .then(res => setScrapers(res.data.filter((scraper: ScraperConfig) => scraper.active)))
+            .catch(err => console.error('Failed to load scraper configuration', err));
+    }, [token]);
 
     useEffect(() => {
-        if (!hoveredSource) return;
+        if (!token || !hoveredSource) return;
         if (sectionsBySource[hoveredSource] || sectionsLoading[hoveredSource]) return;
 
         setSectionsLoading(prev => ({ ...prev, [hoveredSource]: true }));
@@ -50,7 +50,9 @@ export function ScraperControl() {
             .finally(() => {
                 setSectionsLoading(prev => ({ ...prev, [hoveredSource]: false }));
             });
-    }, [hoveredSource]);
+    }, [hoveredSource, token]);
+
+    if (!token) return null;
 
     const handleScrape = async (source: string, sectionId?: string, label?: string) => {
         setLoading(true);
@@ -89,7 +91,7 @@ export function ScraperControl() {
                             {message}
                         </div>
                     )}
-                    {SCRAPERS.map(s => {
+                    {scrapers.map(s => {
                         const sections = sectionsBySource[s.source];
                         const isLoadingSections = sectionsLoading[s.source];
                         return (
@@ -100,12 +102,12 @@ export function ScraperControl() {
                             >
                                 <div className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-editorial-text/5 rounded transition-colors text-sm font-serif text-editorial-text">
                                     <button
-                                        onClick={() => handleScrape(s.source, undefined, s.name)}
+                                        onClick={() => handleScrape(s.source, undefined, s.label)}
                                         disabled={loading}
                                         className="flex-1 text-left disabled:opacity-50"
                                         title="Scrapear todas las secciones"
                                     >
-                                        {s.name}
+                                        {s.label}
                                     </button>
                                     {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3 text-editorial-text/50" />}
                                 </div>
@@ -116,10 +118,10 @@ export function ScraperControl() {
                                     style={{ display: hoveredSource === s.source ? 'block' : 'none' }}
                                 >
                                     <div className="text-[10px] uppercase tracking-widest font-sans font-bold opacity-60 px-2 py-1 border-b border-editorial-text/10 mb-1">
-                                        {s.name}
+                                        {s.label}
                                     </div>
                                     <button
-                                        onClick={() => handleScrape(s.source, undefined, s.name)}
+                                        onClick={() => handleScrape(s.source, undefined, s.label)}
                                         disabled={loading}
                                         className="w-full flex items-center justify-between gap-2 px-2 py-1.5 hover:bg-editorial-text/5 rounded text-xs font-sans font-bold uppercase tracking-wider disabled:opacity-50"
                                     >
@@ -136,7 +138,7 @@ export function ScraperControl() {
                                     {sections && sections.map(sec => (
                                         <button
                                             key={sec.id}
-                                            onClick={() => sec.enabled && handleScrape(s.source, sec.id, `${s.name} → ${sec.name}`)}
+                                            onClick={() => sec.enabled && handleScrape(s.source, sec.id, `${s.label} → ${sec.name}`)}
                                             disabled={loading || !sec.enabled}
                                             className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-sm font-serif ${
                                                 sec.enabled
@@ -158,6 +160,11 @@ export function ScraperControl() {
                             </div>
                         );
                     })}
+                    {scrapers.length === 0 && (
+                        <div className="text-xs font-sans italic opacity-60 px-3 py-2 text-center">
+                            No hay scrapers habilitados
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

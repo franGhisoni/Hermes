@@ -23,19 +23,48 @@ function durationMsBetween(startedAt: Date, finishedAt: Date): number | null {
     return durationMs;
 }
 
-const SCRAPER_REGISTRY: Record<string, any> = {
-    Clarin: ClarinScraper,
-    LaNacion: LaNacionScraper,
-    Infobae: InfobaeScraper,
-    TN: TNScraper,
-    NA: NAScraper,
-    Ambito: AmbitoScraper,
-    Cronista: CronistaScraper,
-    Pagina12: Pagina12Scraper,
-    MDZ: MDZScraper
-};
+export const SCRAPER_DEFINITIONS = Object.freeze([
+    { source: 'Clarin', label: 'Clarín', scraper: ClarinScraper },
+    { source: 'LaNacion', label: 'La Nación', scraper: LaNacionScraper },
+    { source: 'Infobae', label: 'Infobae', scraper: InfobaeScraper },
+    { source: 'TN', label: 'TN', scraper: TNScraper },
+    { source: 'NA', label: 'Noticias Argentinas', scraper: NAScraper },
+    { source: 'Ambito', label: 'Ámbito', scraper: AmbitoScraper },
+    { source: 'Cronista', label: 'El Cronista', scraper: CronistaScraper },
+    { source: 'Pagina12', label: 'Página/12', scraper: Pagina12Scraper },
+    { source: 'MDZ', label: 'MDZ Online', scraper: MDZScraper }
+] as const);
 
-export const SCRAPER_SOURCES = Object.freeze(Object.keys(SCRAPER_REGISTRY));
+const SCRAPER_REGISTRY: Record<string, any> = Object.fromEntries(
+    SCRAPER_DEFINITIONS.map(definition => [definition.source, definition.scraper])
+);
+
+export const SCRAPER_SOURCES = Object.freeze(SCRAPER_DEFINITIONS.map(definition => definition.source));
+
+/**
+ * Make every registered scraper configurable even before its first article is
+ * scraped. New rows start disabled so a fresh client never runs a source by
+ * accident; existing rows keep their current active state.
+ */
+export async function ensureRegisteredScrapers() {
+    for (const definition of SCRAPER_DEFINITIONS) {
+        const existing = await prisma.source.findFirst({
+            where: { name: definition.source },
+            select: { id: true }
+        });
+        if (existing) continue;
+
+        const scraper = new definition.scraper();
+        await prisma.source.create({
+            data: {
+                name: definition.source,
+                url: scraper.baseUrl,
+                scraperConfig: {},
+                active: false
+            }
+        });
+    }
+}
 
 type ScrapeJobOptions = {
     sectionName?: string;

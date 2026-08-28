@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { QueueService } from './services/QueueService';
+import { QueueService, SCRAPER_DEFINITIONS, ensureRegisteredScrapers } from './services/QueueService';
 import { ArticleService, buildContentPreview } from './services/ArticleService';
 import { ScrapeRunTrigger } from '@prisma/client';
 import { prisma } from './lib/prisma';
@@ -36,6 +36,11 @@ async function initializeBackgroundServices() {
         await queueService.initializeWorkerConcurrency();
     } catch (error) {
         console.error('Failed to load persisted worker concurrency; keeping the environment default:', error);
+    }
+    try {
+        await ensureRegisteredScrapers();
+    } catch (error) {
+        console.error('Failed to register scraper configuration:', error);
     }
     await schedulerService.initialize();
 }
@@ -135,7 +140,62 @@ app.use('/api/config/filter-categories', filterCategoryRouter);
 import workflowRouter from './routes/WorkflowRouter';
 app.use('/api/workflows', workflowRouter);
 
-// GET /api/config/sources - List available sources for Workflows
+// GET /api/config/scrapers - List every registered scraper and its toggle.
+// This is intentionally separate from /sources, which only returns enabled
+// sources for filters and workflows.
+app.get('/api/config/scrapers', async (req, res) => {
+    try {
+        await ensureRegisteredScrapers();
+        const sources = await prisma.source.findMany({
+            where: { name: { in: SCRAPER_DEFINITIONS.map(definition => definition.source) } },
+            select: { id: true, name: true, url: true, active: true },
+            orderBy: { name: 'asc' }
+        });
+        const byName = new Map(sources.map(source => [source.name, source]));
+        res.json(SCRAPER_DEFINITIONS.map(definition => {
+            const source = byName.get(definition.source);
+            return {
+                id: source?.id ?? null,
+                source: definition.source,
+                label: definition.label,
+                url: source?.url ?? null,
+                active: source?.active ?? false
+            };
+        }));
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch scraper configuration' });
+    }
+});
+
+// PUT /api/config/scrapers/:source - Enable or disable a registered scraper.
+app.put('/api/config/scrapers/:source', requireAdmin, async (req, res) => {
+    const definition = SCRAPER_DEFINITIONS.find(item => item.source === req.params.source);
+    if (!definition) return res.status(404).json({ error: 'Unknown scraper' });
+    if (typeof req.body?.active !== 'boolean') {
+        return res.status(400).json({ error: 'active must be a boolean' });
+    }
+
+    try {
+        await ensureRegisteredScrapers();
+        const source = await prisma.source.findFirst({ where: { name: definition.source } });
+        if (!source) return res.status(404).json({ error: 'Scraper configuration not found' });
+        const updated = await prisma.source.update({
+            where: { id: source.id },
+            data: { active: req.body.active }
+        });
+        res.json({
+            id: updated.id,
+            source: definition.source,
+            label: definition.label,
+            url: updated.url,
+            active: updated.active
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update scraper configuration' });
+    }
+});
+
+// GET /api/config/sources - List enabled sources for filters and workflows.
 app.get('/api/config/sources', async (req, res) => {
     try {
         const sources = await prisma.source.findMany({
@@ -174,6 +234,14 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     try {
+        const configuredSource = await prisma.source.findFirst({
+            where: { name: source },
+            select: { active: true }
+        });
+        if (!configuredSource?.active) {
+            return res.status(400).json({ error: `El scraper "${source}" está deshabilitado o no existe.` });
+        }
+
         let effectiveLimit = limit;
         if (!effectiveLimit) {
             effectiveLimit = await configService.getScrapeLimit();

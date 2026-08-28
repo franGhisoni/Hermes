@@ -33,8 +33,18 @@ router.post('/bulk', requireAdmin, async (req: Request, res: Response) => {
             where: { source: { in: [...SCRAPER_SOURCES] } },
             select: { source: true }
         });
+        const activeSources = await prisma.source.findMany({
+            where: {
+                name: { in: [...SCRAPER_SOURCES] },
+                active: true
+            },
+            select: { name: true }
+        });
+        const activeSourceNames = new Set(activeSources.map(source => source.name));
         const configuredSources = new Set(existing.map(schedule => schedule.source));
-        const missingSources = SCRAPER_SOURCES.filter(source => !configuredSources.has(source));
+        const missingSources = SCRAPER_SOURCES.filter(source =>
+            activeSourceNames.has(source) && !configuredSources.has(source)
+        );
 
         const created = missingSources.length > 0
             ? await prisma.$transaction(
@@ -53,7 +63,9 @@ router.post('/bulk', requireAdmin, async (req: Request, res: Response) => {
 
         res.status(created.length > 0 ? 201 : 200).json({
             created,
-            skippedSources: SCRAPER_SOURCES.filter(source => configuredSources.has(source))
+            skippedSources: SCRAPER_SOURCES.filter(source =>
+                activeSourceNames.has(source) && configuredSources.has(source)
+            )
         });
     } catch (error) {
         console.error('Failed to create all scraper schedules:', error);
@@ -68,6 +80,14 @@ router.post('/', requireAdmin, async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'source and cron are required' });
     }
     try {
+        const configuredSource = await prisma.source.findFirst({
+            where: { name: source, active: true },
+            select: { id: true }
+        });
+        if (!configuredSource) {
+            return res.status(400).json({ error: 'El scraper debe estar habilitado antes de programarlo' });
+        }
+
         const schedule = await prisma.scrapeSchedule.create({
             data: { source, cron }
         });

@@ -304,7 +304,7 @@ export default function Newsroom() {
             <header className="h-16 border-b border-editorial-text/10 flex items-center px-6 justify-between bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center">
-                        <img src={isDemo ? "/logo%20hermes.png" : "/logo.png"} alt={isDemo ? "Hermes" : "Logo"} className={isDemo ? "h-9 w-auto object-contain" : "h-9 w-auto mix-blend-multiply"} />
+                                    <img src="/logo%20hermes.png" alt="Hermes" className="h-9 w-auto object-contain" />
                     </Link>
                     <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}

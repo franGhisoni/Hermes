@@ -163,6 +163,15 @@ export class SchedulerService {
         const task = cron.schedule(schedule.cron, async () => {
             console.log(`[CRON-SCRAPE] Scraping ${schedule.source}...`);
             try {
+                const configuredSource = await prisma.source.findFirst({
+                    where: { name: schedule.source },
+                    select: { active: true }
+                });
+                if (!configuredSource?.active) {
+                    console.log(`[CRON-SCRAPE] Skipping disabled scraper ${schedule.source}.`);
+                    return;
+                }
+
                 // Resolve the global scrape limit once per tick, then let each
                 // section override it via its own scrapeLimit field.
                 const defaultLimit = await this.configService.getScrapeLimit();

@@ -102,13 +102,7 @@ export default function Dashboard() {
         try {
             const res = await api.get('/api/config/sources');
             const sources: { name: string }[] = res.data;
-            const registeredSources = ['Pagina12', 'MDZ'];
-            setDbSources(registeredSources.reduce(
-                (available, name) => available.some(source => source.name === name)
-                    ? available
-                    : [...available, { name }],
-                sources
-            ));
+            setDbSources(sources);
         } catch (error) {
             console.error('Error fetching sources:', error);
         }
@@ -169,7 +163,7 @@ export default function Dashboard() {
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/">
-                        <img src={isDemo ? "/logo%20hermes.png" : "/logo.png"} alt={isDemo ? "Hermes" : "Logo"} className={isDemo ? "h-12 w-auto object-contain opacity-90 transition-opacity hover:opacity-100" : "h-12 w-auto mix-blend-multiply opacity-90 transition-opacity hover:opacity-100"} />
+                        <img src="/logo%20hermes.png" alt="Hermes" className="h-12 w-auto object-contain opacity-90 transition-opacity hover:opacity-100" />
                     </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>

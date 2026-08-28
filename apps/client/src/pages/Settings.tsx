@@ -47,7 +47,12 @@ interface ScrapeSchedule {
     isActive: boolean;
 }
 
-const AVAILABLE_SOURCES = ['Clarin', 'LaNacion', 'Infobae', 'TN', 'NA', 'Ambito', 'Cronista', 'Pagina12', 'MDZ'];
+interface ScraperConfig {
+    source: string;
+    label: string;
+    url: string | null;
+    active: boolean;
+}
 
 const CRON_PRESETS = [
     { label: 'Cada 1 hora', value: '0 */1 * * *' },
@@ -107,6 +112,7 @@ export default function Settings() {
     const { user, logout } = useAuth();
     const [prompts, setPrompts] = useState<PromptConfig[]>([]);
     const [sections, setSections] = useState<Section[]>([]);
+    const [scrapers, setScrapers] = useState<ScraperConfig[]>([]);
     const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
     const [schedules, setSchedules] = useState<ScrapeSchedule[]>([]);
     const [scrapeRuns, setScrapeRuns] = useState<ScrapeRun[]>([]);
@@ -124,7 +130,7 @@ export default function Settings() {
     const [overrideSectionId, setOverrideSectionId] = useState<string | null>(null);
 
     // Schedule Form State
-    const [newSchedSource, setNewSchedSource] = useState(AVAILABLE_SOURCES[0]);
+    const [newSchedSource, setNewSchedSource] = useState('');
     const [newSchedCron, setNewSchedCron] = useState(CRON_PRESETS[1].value);
     const [addingAllSchedules, setAddingAllSchedules] = useState(false);
     const [scrapeLimit, setScrapeLimit] = useState(3);
@@ -132,6 +138,7 @@ export default function Settings() {
     const [articleCleanupCron, setArticleCleanupCron] = useState('0 * * * *');
     const [imageMinScore, setImageMinScore] = useState(6);
     const [extended, setExtended] = useState<ExtendedSettings | null>(null);
+    const [togglingScraper, setTogglingScraper] = useState<string | null>(null);
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
@@ -143,12 +150,17 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [sectionsRes, categoriesRes, schedulesRes] = await Promise.all([
+            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes] = await Promise.all([
                 api.get('/api/config/sections'),
+                api.get('/api/config/scrapers'),
                 api.get('/api/config/filter-categories'),
                 api.get('/api/scrape-schedules')
             ]);
             setSections(sectionsRes.data);
+            setScrapers(scrapersRes.data);
+            setNewSchedSource(current => scrapersRes.data.some((scraper: ScraperConfig) => scraper.active && scraper.source === current)
+                ? current
+                : scrapersRes.data.find((scraper: ScraperConfig) => scraper.active)?.source || '');
             setFilterCategories(categoriesRes.data);
             setSchedules(schedulesRes.data);
         } catch (e) {
@@ -347,6 +359,7 @@ export default function Settings() {
 
     const handleCreateSchedule = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!newSchedSource) return;
         try {
             await api.post('/api/scrape-schedules', { source: newSchedSource, cron: newSchedCron });
             fetchData();
@@ -356,8 +369,8 @@ export default function Settings() {
     };
 
     const handleCreateAllSchedules = async () => {
-        const missingCount = AVAILABLE_SOURCES.filter(
-            source => !schedules.some(schedule => schedule.source === source)
+        const missingCount = scrapers.filter(scraper => scraper.active).filter(
+            scraper => !schedules.some(schedule => schedule.source === scraper.source)
         ).length;
         if (missingCount === 0) return;
         if (!confirm(`¿Agregar los ${missingCount} scrapers faltantes con este mismo horario?`)) return;
@@ -374,6 +387,18 @@ export default function Settings() {
             alert('Error: ' + (error.response?.data?.error || 'No se pudieron agregar los scrapers'));
         } finally {
             setAddingAllSchedules(false);
+        }
+    };
+
+    const handleToggleScraper = async (scraper: ScraperConfig) => {
+        setTogglingScraper(scraper.source);
+        try {
+            await api.put(`/api/config/scrapers/${scraper.source}`, { active: !scraper.active });
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo actualizar el scraper'));
+        } finally {
+            setTogglingScraper(null);
         }
     };
 
@@ -401,7 +426,7 @@ export default function Settings() {
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-20">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
-                        <img src="/logo.png" alt="Logo" className="h-10 w-auto mix-blend-multiply" />
+                        <img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto object-contain" />
                     </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <h1 className="font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
@@ -464,6 +489,7 @@ export default function Settings() {
                     {activeTab === 'fuentes' && (
                         <FuentesTab
                             sections={sections}
+                            scrapers={scrapers}
                             filterCategories={filterCategories}
                             schedules={schedules}
                             scrapeRuns={scrapeRuns}
@@ -492,6 +518,8 @@ export default function Settings() {
                             handleCreateSchedule={handleCreateSchedule}
                             handleCreateAllSchedules={handleCreateAllSchedules}
                             addingAllSchedules={addingAllSchedules}
+                            handleToggleScraper={handleToggleScraper}
+                            togglingScraper={togglingScraper}
                             handleToggleSchedule={handleToggleSchedule}
                             handleDeleteSchedule={handleDeleteSchedule}
                             refreshScrapeRuns={fetchScrapeRuns}
@@ -506,7 +534,7 @@ export default function Settings() {
                         return (
                             <SectionOverridesModal
                                 section={target}
-                                sources={AVAILABLE_SOURCES}
+                                sources={scrapers.map(scraper => scraper.source)}
                                 globalLimit={scrapeLimit}
                                 onClose={() => setOverrideSectionId(null)}
                                 onSaved={fetchData}
@@ -581,6 +609,7 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
 
 interface FuentesTabProps {
     sections: Section[];
+    scrapers: ScraperConfig[];
     filterCategories: FilterCategory[];
     schedules: ScrapeSchedule[];
     scrapeRuns: ScrapeRun[];
@@ -609,6 +638,8 @@ interface FuentesTabProps {
     handleCreateSchedule: (e: React.FormEvent) => Promise<void>;
     handleCreateAllSchedules: () => Promise<void>;
     addingAllSchedules: boolean;
+    handleToggleScraper: (scraper: ScraperConfig) => Promise<void>;
+    togglingScraper: string | null;
     handleToggleSchedule: (s: ScrapeSchedule) => Promise<void>;
     handleDeleteSchedule: (id: string) => Promise<void>;
     refreshScrapeRuns: () => Promise<void>;
@@ -618,21 +649,23 @@ interface FuentesTabProps {
 
 function FuentesTab(props: FuentesTabProps) {
     const {
-        sections, filterCategories, schedules, scrapeRuns, scrapeLimit,
+        sections, scrapers, filterCategories, schedules, scrapeRuns, scrapeLimit,
         newSecName, setNewSecName, newSecPath, setNewSecPath, newSecLimit, setNewSecLimit,
         newSecCategoryId, setNewSecCategoryId,
         newFilterCategoryName, setNewFilterCategoryName,
         newSchedSource, setNewSchedSource, newSchedCron, setNewSchedCron,
         handleCreateSection, handleUpdateSectionLimit, handleDeleteSection,
         handleCreateFilterCategory, handleRenameFilterCategory, handleDeleteFilterCategory, handleUpdateSectionCategory,
-        handleCreateSchedule, handleCreateAllSchedules, addingAllSchedules, handleToggleSchedule, handleDeleteSchedule,
+        handleCreateSchedule, handleCreateAllSchedules, addingAllSchedules, handleToggleScraper, togglingScraper,
+        handleToggleSchedule, handleDeleteSchedule,
         refreshScrapeRuns,
         cancelScrapeRun,
         onConfigureOverrides
     } = props;
 
-    const missingScheduleCount = AVAILABLE_SOURCES.filter(
-        source => !schedules.some(schedule => schedule.source === source)
+    const activeScrapers = scrapers.filter(scraper => scraper.active);
+    const missingScheduleCount = activeScrapers.filter(
+        scraper => !schedules.some(schedule => schedule.source === scraper.source)
     ).length;
 
     return (
@@ -640,6 +673,38 @@ function FuentesTab(props: FuentesTabProps) {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Sections column */}
             <div className="flex flex-col gap-4">
+                <Card>
+                    <h3 className="text-xs font-bold uppercase tracking-widest mb-2 font-sans">Scrapers disponibles</h3>
+                    <p className="text-[11px] font-sans opacity-60 mb-4">
+                        Activá solo los medios contratados. Los deshabilitados no aparecen en filtros ni en el scraper manual y no ejecutan schedules.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {scrapers.map(scraper => (
+                            <div key={scraper.source} className="flex items-center justify-between gap-3 border border-editorial-text/10 px-3 py-2">
+                                <div className="flex flex-col min-w-0">
+                                    <span className="font-sans font-bold text-sm truncate">{scraper.label}</span>
+                                    <span className="font-sans text-[10px] opacity-50">{scraper.active ? 'Habilitado' : 'Deshabilitado'}</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    role="switch"
+                                    aria-checked={scraper.active}
+                                    aria-label={`${scraper.active ? 'Deshabilitar' : 'Habilitar'} ${scraper.label}`}
+                                    onClick={() => handleToggleScraper(scraper)}
+                                    disabled={togglingScraper === scraper.source}
+                                    className={`w-10 h-5 rounded-full relative transition-colors flex-shrink-0 disabled:opacity-50 ${scraper.active ? 'bg-green-500' : 'bg-editorial-text/20'}`}
+                                >
+                                    <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${scraper.active ? 'left-[21px]' : 'left-0.5'}`}></span>
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    {scrapers.length === 0 && (
+                        <div className="text-xs opacity-50 italic py-3 text-center border border-dashed border-editorial-text/20">
+                            No se pudo cargar la lista de scrapers.
+                        </div>
+                    )}
+                </Card>
                 <Header
                     title="Secciones"
                     subtitle="Creá secciones de scraping y asocialas a categorías visibles en los filtros."
@@ -837,12 +902,18 @@ function FuentesTab(props: FuentesTabProps) {
                             <select
                                 value={newSchedSource}
                                 onChange={e => setNewSchedSource(e.target.value)}
-                                className="w-full border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer text-sm"
+                                disabled={activeScrapers.length === 0}
+                                className="w-full border-b border-editorial-text/30 py-2 focus:outline-none focus:border-editorial-text bg-transparent cursor-pointer text-sm disabled:opacity-50"
                             >
-                                {AVAILABLE_SOURCES.map(s => (
-                                    <option key={s} value={s}>{s}</option>
+                                {activeScrapers.map(scraper => (
+                                    <option key={scraper.source} value={scraper.source}>{scraper.label}</option>
                                 ))}
                             </select>
+                            {activeScrapers.length === 0 && (
+                                <div className="text-[10px] font-sans italic opacity-60 mt-2">
+                                    Primero habilitá al menos un scraper.
+                                </div>
+                            )}
                         </div>
                         <CronBuilder
                             value={newSchedCron}
@@ -864,7 +935,7 @@ function FuentesTab(props: FuentesTabProps) {
                                         ? `Agregar todos (${missingScheduleCount})`
                                         : 'Todos agregados'}
                             </button>
-                            <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px]">
+                            <button type="submit" disabled={!newSchedSource} className="bg-editorial-text text-editorial-bg px-4 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px] disabled:opacity-40">
                                 Agregar
                             </button>
                         </div>

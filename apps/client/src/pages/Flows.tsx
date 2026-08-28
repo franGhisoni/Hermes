@@ -237,7 +237,7 @@ export default function Flows() {
             <header className="border-b border-editorial-text/10 px-8 py-6 flex items-center justify-between bg-editorial-bg/95 backdrop-blur z-20 sticky top-0">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
-                        <img src="/logo.png" alt="Logo" className="h-8 w-auto mix-blend-multiply" />
+                        <img src="/logo%20hermes.png" alt="Hermes" className="h-8 w-auto object-contain" />
                     </Link>
                     <span className="text-xl font-black uppercase tracking-widest italic">Flujos y Envíos</span>
                 </div>

@@ -8,6 +8,18 @@ import { AmbitoScraper } from '../scrapers/AmbitoScraper';
 import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { Pagina12Scraper } from '../scrapers/Pagina12Scraper';
 import { MDZScraper } from '../scrapers/MDZScraper';
+import {
+    ElDiarioSurScraper,
+    LaUnionScraper,
+    DiarioConurbanoScraper,
+    ElTermometroWebScraper,
+    AvellanedaHoyScraper,
+    LaTeclaInfoScraper,
+    InfocieloScraper,
+    LaPoliticaOnlineScraper,
+    LetraPScraper,
+    LaDefensaScraper
+} from '../scrapers/PoliticaDelSurScrapers';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 import { ConfigService } from './ConfigService';
@@ -32,7 +44,17 @@ export const SCRAPER_DEFINITIONS = Object.freeze([
     { source: 'Ambito', label: 'Ámbito', scraper: AmbitoScraper },
     { source: 'Cronista', label: 'El Cronista', scraper: CronistaScraper },
     { source: 'Pagina12', label: 'Página/12', scraper: Pagina12Scraper },
-    { source: 'MDZ', label: 'MDZ Online', scraper: MDZScraper }
+    { source: 'MDZ', label: 'MDZ Online', scraper: MDZScraper },
+    { source: 'ElDiarioSur', label: 'El Diario Sur', scraper: ElDiarioSurScraper },
+    { source: 'LaUnion', label: 'La Unión', scraper: LaUnionScraper },
+    { source: 'DiarioConurbano', label: 'Diario Conurbano', scraper: DiarioConurbanoScraper },
+    { source: 'ElTermometroWeb', label: 'El Termómetro Web', scraper: ElTermometroWebScraper },
+    { source: 'AvellanedaHoy', label: 'Avellaneda Hoy', scraper: AvellanedaHoyScraper },
+    { source: 'LaTeclaInfo', label: 'La Tecla Info', scraper: LaTeclaInfoScraper },
+    { source: 'Infocielo', label: 'Infocielo', scraper: InfocieloScraper },
+    { source: 'LaPoliticaOnline', label: 'LaPoliticaOnline', scraper: LaPoliticaOnlineScraper },
+    { source: 'LetraP', label: 'LetraP', scraper: LetraPScraper },
+    { source: 'LaDefensa', label: 'La Defensa de Lanús', scraper: LaDefensaScraper }
 ] as const);
 
 const SCRAPER_REGISTRY: Record<string, any> = Object.fromEntries(

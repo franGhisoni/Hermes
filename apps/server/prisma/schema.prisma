@@ -212,6 +212,7 @@ model Article {
   source   Source @relation(fields: [sourceId], references: [id])
 
   section          String? // e.g. "Politica", "Economia"
+  location         String? // Barrio/zona detectado por el pipeline editorial (preparado para geolocalización)
   originalTitle    String
   originalContent  String
   originalUrl      String   @unique
@@ -228,13 +229,16 @@ model Article {
   rewrittenContent String?
   contentPreview   String?
 
-  featureImageUrl String? // The final image used for publication (Original, Found, or Generated)
-  imageCandidates String[] // Array of candidate image URLs (from search or generation)
-  imageScores     Json? // Map of { "url": score }
+  featureImageUrl        String? // The final image used for publication (Original, Found, or Generated)
+  imageCandidates        String[] // Array of candidate image URLs (from search or generation)
+  imageScores            Json? // Map of { "url": score }
   // Trace of every AI decision made during processing, shown only to admins
   // in the editor for debugging the scoring/protagonist identification.
   // Shape: { imageProtagonist, smartQueries[], imageScoring: [{url, score, reason}], fallbackUsed }
-  aiDecisions     Json?
+  aiDecisions            Json?
+  editorialData          Json? // Rules/personas aplicadas y score original/final
+  publicationBlocked     Boolean  @default(false)
+  publicationBlockReason String?
 
   status ArticleStatus @default(PENDING)
 
@@ -245,6 +249,7 @@ model Article {
   @@index([status, createdAt])
   @@index([status, interestScore])
   @@index([sourceId, createdAt])
+  @@index([publicationBlocked, status])
 }
 
 enum ArticleStatus {
@@ -304,6 +309,49 @@ enum PromptType {
   INTEREST
   STYLE
   IMAGE_SELECT
+}
+
+enum EditorialRuleMatchType {
+  GLOBAL
+  SECTION
+  SCORE_RANGE
+  LOCATION
+}
+
+model EditorialRule {
+  id               String                 @id @default(uuid())
+  name             String
+  active           Boolean                @default(true)
+  priority         Int                    @default(0)
+  matchType        EditorialRuleMatchType @default(GLOBAL)
+  section          String?
+  minScore         Int?
+  maxScore         Int?
+  location         String?
+  styleInstruction String
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([active, priority])
+  @@index([matchType])
+}
+
+enum BlockedPersonAction {
+  LOWER_SCORE
+  BLOCK_PUBLICATION
+}
+
+model BlockedPerson {
+  id               String              @id @default(uuid())
+  name             String              @unique
+  aliases          String[]            @default([])
+  action           BlockedPersonAction @default(LOWER_SCORE)
+  scoreWhenMatched Int                 @default(2)
+  active           Boolean             @default(true)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([active])
 }
 
 model PublicationTarget {

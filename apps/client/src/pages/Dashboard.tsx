@@ -372,7 +372,7 @@ function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel
                 </div>
                 <span className={`px-2 py-0.5 border ${article.status === 'PUBLISHED' ? 'bg-editorial-text text-editorial-bg border-editorial-text' : 'border-editorial-text/20'
                     }`}>
-                    {article.status}
+                    {article.publicationBlocked ? 'NO PUBLICAR' : article.status}
                 </span>
             </div>
 

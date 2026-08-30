@@ -32,6 +32,10 @@ export interface Article {
     rewrittenContent?: string;
     contentPreview?: string;
     interestScore?: number;
+    location?: string | null;
+    editorialData?: Record<string, any> | null;
+    publicationBlocked?: boolean;
+    publicationBlockReason?: string | null;
     status: 'PENDING' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
     createdAt: string;
     source?: {

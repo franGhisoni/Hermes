@@ -8,6 +8,7 @@ import { AIService } from './AIService';
 import { ImageService } from './ImageService';
 import { notificationService } from './NotificationService';
 import { prisma } from '../lib/prisma';
+import { EditorialService } from './EditorialService';
 
 interface RunStats {
     targetsTotal: number;
@@ -23,6 +24,7 @@ export class SchedulerService {
     private articleService: ArticleService;
     private configService: ConfigService;
     private aiService: AIService;
+    private editorialService: EditorialService;
     private activeJobs: Map<string, ScheduledTask> = new Map();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
@@ -31,6 +33,7 @@ export class SchedulerService {
         this.mailService = new MailService();
         this.configService = new ConfigService();
         this.aiService = new AIService();
+        this.editorialService = new EditorialService();
     }
 
     public async initialize() {
@@ -281,6 +284,7 @@ export class SchedulerService {
                 ?? await this.configService.getDefaultArticleWindowHours();
             const where: any = {
                 status: 'PENDING',
+                publicationBlocked: false,
                 createdAt: { gte: new Date(Date.now() - windowHours * 60 * 60 * 1000) }
             };
             if (fresh.section) where.section = fresh.section;
@@ -395,7 +399,14 @@ export class SchedulerService {
      * underlying Article row stays as it was after the first publish.
      */
     private async buildRepublishedVariant(article: Article): Promise<Article> {
-        const rewritten = await this.aiService.rewriteContent(article.originalTitle, article.originalContent);
+        const editorial = await this.editorialService.evaluate({
+            title: article.originalTitle,
+            content: article.originalContent,
+            section: article.section,
+            location: article.location,
+            score: article.interestScore ?? 5
+        });
+        const rewritten = await this.aiService.rewriteContent(article.originalTitle, article.originalContent, editorial.style);
 
         const imageService = new ImageService();
         const { images: searchResults } = await imageService.searchImages({

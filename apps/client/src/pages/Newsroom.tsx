@@ -267,6 +267,10 @@ export default function Newsroom() {
 
     const handlePublish = async () => {
         if (!id || !article || !selectedTargetId) return;
+        if (article.publicationBlocked) {
+            alert(article.publicationBlockReason || 'Esta nota está bloqueada para publicación por la configuración editorial.');
+            return;
+        }
         setPublishing(true);
 
         if (isDemo) {
@@ -334,12 +338,16 @@ export default function Newsroom() {
                         </button>
                         <button
                             onClick={openPublishModal}
+                            disabled={article.publicationBlocked}
+                            title={article.publicationBlocked ? (article.publicationBlockReason || 'Nota bloqueada para publicación') : undefined}
                             className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors ${article.status === 'PUBLISHED'
                                 ? 'bg-green-700 text-white hover:bg-green-800'
-                                : 'bg-editorial-text text-editorial-bg hover:bg-editorial-text/90'
+                                : article.publicationBlocked
+                                    ? 'bg-red-100 text-red-800 cursor-not-allowed'
+                                    : 'bg-editorial-text text-editorial-bg hover:bg-editorial-text/90'
                                 }`}
                         >
-                            {article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
+                            {article.publicationBlocked ? 'Publicación bloqueada' : article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
                         </button>
                 </div>
             </header>
@@ -505,6 +513,11 @@ export default function Newsroom() {
                                 <span className="bg-editorial-text text-editorial-bg text-xs font-bold px-2 py-0.5 rounded-full font-mono">
                                     {article.interestScore}/10
                                 </span>
+                                {article.publicationBlocked && (
+                                    <span className="bg-red-100 text-red-800 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest" title={article.publicationBlockReason || undefined}>
+                                        No publicar
+                                    </span>
+                                )}
                             </div>
                         </div>
 

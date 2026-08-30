@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X, FileText, UserRound } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
@@ -54,6 +54,31 @@ interface ScraperConfig {
     active: boolean;
 }
 
+type EditorialRuleMatchType = 'GLOBAL' | 'SECTION' | 'SCORE_RANGE' | 'LOCATION';
+type BlockedPersonAction = 'LOWER_SCORE' | 'BLOCK_PUBLICATION';
+
+interface EditorialRule {
+    id: string;
+    name: string;
+    active: boolean;
+    priority: number;
+    matchType: EditorialRuleMatchType;
+    section: string | null;
+    minScore: number | null;
+    maxScore: number | null;
+    location: string | null;
+    styleInstruction: string;
+}
+
+interface BlockedPerson {
+    id: string;
+    name: string;
+    aliases: string[];
+    action: BlockedPersonAction;
+    scoreWhenMatched: number;
+    active: boolean;
+}
+
 const CRON_PRESETS = [
     { label: 'Cada 1 hora', value: '0 */1 * * *' },
     { label: 'Cada 2 horas', value: '0 */2 * * *' },
@@ -64,11 +89,12 @@ const CRON_PRESETS = [
     { label: 'Dos veces al día (8AM y 6PM)', value: '0 8,18 * * *' },
 ];
 
-type TabKey = 'prompts' | 'fuentes' | 'sistema' | 'imagenes';
+type TabKey = 'prompts' | 'fuentes' | 'editorial' | 'sistema' | 'imagenes';
 
 const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'prompts', label: 'Prompts IA', icon: Sparkles },
     { key: 'fuentes', label: 'Fuentes', icon: Layers },
+    { key: 'editorial', label: 'Editorial', icon: FileText },
     { key: 'imagenes', label: 'Imágenes', icon: ImageIcon },
     { key: 'sistema', label: 'Sistema', icon: SlidersHorizontal }
 ];
@@ -139,6 +165,20 @@ export default function Settings() {
     const [imageMinScore, setImageMinScore] = useState(6);
     const [extended, setExtended] = useState<ExtendedSettings | null>(null);
     const [togglingScraper, setTogglingScraper] = useState<string | null>(null);
+    const [editorialRules, setEditorialRules] = useState<EditorialRule[]>([]);
+    const [blockedPeople, setBlockedPeople] = useState<BlockedPerson[]>([]);
+    const [newRuleName, setNewRuleName] = useState('');
+    const [newRuleMatchType, setNewRuleMatchType] = useState<EditorialRuleMatchType>('GLOBAL');
+    const [newRuleSection, setNewRuleSection] = useState('');
+    const [newRuleMinScore, setNewRuleMinScore] = useState('');
+    const [newRuleMaxScore, setNewRuleMaxScore] = useState('');
+    const [newRuleLocation, setNewRuleLocation] = useState('');
+    const [newRulePriority, setNewRulePriority] = useState('0');
+    const [newRuleInstruction, setNewRuleInstruction] = useState('');
+    const [newPersonName, setNewPersonName] = useState('');
+    const [newPersonAliases, setNewPersonAliases] = useState('');
+    const [newPersonAction, setNewPersonAction] = useState<BlockedPersonAction>('LOWER_SCORE');
+    const [newPersonScore, setNewPersonScore] = useState('2');
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
@@ -150,11 +190,12 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes] = await Promise.all([
+            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes, editorialRes] = await Promise.all([
                 api.get('/api/config/sections'),
                 api.get('/api/config/scrapers'),
                 api.get('/api/config/filter-categories'),
-                api.get('/api/scrape-schedules')
+                api.get('/api/scrape-schedules'),
+                api.get('/api/config/editorial')
             ]);
             setSections(sectionsRes.data);
             setScrapers(scrapersRes.data);
@@ -163,6 +204,8 @@ export default function Settings() {
                 : scrapersRes.data.find((scraper: ScraperConfig) => scraper.active)?.source || '');
             setFilterCategories(categoriesRes.data);
             setSchedules(schedulesRes.data);
+            setEditorialRules(editorialRes.data.rules || []);
+            setBlockedPeople(editorialRes.data.blockedPeople || []);
         } catch (e) {
             console.error(e);
         }
@@ -368,6 +411,89 @@ export default function Settings() {
         }
     };
 
+    const handleCreateEditorialRule = async (event: React.FormEvent) => {
+        event.preventDefault();
+        try {
+            await api.post('/api/config/editorial/rules', {
+                name: newRuleName,
+                matchType: newRuleMatchType,
+                section: newRuleSection || null,
+                minScore: newRuleMinScore || null,
+                maxScore: newRuleMaxScore || null,
+                location: newRuleLocation || null,
+                priority: parseInt(newRulePriority || '0', 10),
+                styleInstruction: newRuleInstruction
+            });
+            setNewRuleName('');
+            setNewRuleSection('');
+            setNewRuleMinScore('');
+            setNewRuleMaxScore('');
+            setNewRuleLocation('');
+            setNewRulePriority('0');
+            setNewRuleInstruction('');
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo crear la regla editorial'));
+        }
+    };
+
+    const handleUpdateEditorialRule = async (id: string, data: Partial<EditorialRule>) => {
+        try {
+            await api.put(`/api/config/editorial/rules/${id}`, data);
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo actualizar la regla'));
+        }
+    };
+
+    const handleDeleteEditorialRule = async (id: string) => {
+        if (!confirm('¿Eliminar esta regla editorial?')) return;
+        try {
+            await api.delete(`/api/config/editorial/rules/${id}`);
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo eliminar la regla'));
+        }
+    };
+
+    const handleCreateBlockedPerson = async (event: React.FormEvent) => {
+        event.preventDefault();
+        try {
+            await api.post('/api/config/editorial/people', {
+                name: newPersonName,
+                aliases: newPersonAliases,
+                action: newPersonAction,
+                scoreWhenMatched: parseInt(newPersonScore || '2', 10)
+            });
+            setNewPersonName('');
+            setNewPersonAliases('');
+            setNewPersonAction('LOWER_SCORE');
+            setNewPersonScore('2');
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo agregar la persona'));
+        }
+    };
+
+    const handleUpdateBlockedPerson = async (id: string, data: Partial<BlockedPerson>) => {
+        try {
+            await api.put(`/api/config/editorial/people/${id}`, data);
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo actualizar la persona'));
+        }
+    };
+
+    const handleDeleteBlockedPerson = async (id: string) => {
+        if (!confirm('¿Eliminar esta persona de la lista sensible?')) return;
+        try {
+            await api.delete(`/api/config/editorial/people/${id}`);
+            await fetchData();
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo eliminar la persona'));
+        }
+    };
+
     const handleCreateAllSchedules = async () => {
         const missingCount = scrapers.filter(scraper => scraper.active).filter(
             scraper => !schedules.some(schedule => schedule.source === scraper.source)
@@ -541,6 +667,43 @@ export default function Settings() {
                             />
                         );
                     })()}
+
+                    {activeTab === 'editorial' && (
+                        <EditorialTab
+                            rules={editorialRules}
+                            blockedPeople={blockedPeople}
+                            newRuleName={newRuleName}
+                            setNewRuleName={setNewRuleName}
+                            newRuleMatchType={newRuleMatchType}
+                            setNewRuleMatchType={setNewRuleMatchType}
+                            newRuleSection={newRuleSection}
+                            setNewRuleSection={setNewRuleSection}
+                            newRuleMinScore={newRuleMinScore}
+                            setNewRuleMinScore={setNewRuleMinScore}
+                            newRuleMaxScore={newRuleMaxScore}
+                            setNewRuleMaxScore={setNewRuleMaxScore}
+                            newRuleLocation={newRuleLocation}
+                            setNewRuleLocation={setNewRuleLocation}
+                            newRulePriority={newRulePriority}
+                            setNewRulePriority={setNewRulePriority}
+                            newRuleInstruction={newRuleInstruction}
+                            setNewRuleInstruction={setNewRuleInstruction}
+                            newPersonName={newPersonName}
+                            setNewPersonName={setNewPersonName}
+                            newPersonAliases={newPersonAliases}
+                            setNewPersonAliases={setNewPersonAliases}
+                            newPersonAction={newPersonAction}
+                            setNewPersonAction={setNewPersonAction}
+                            newPersonScore={newPersonScore}
+                            setNewPersonScore={setNewPersonScore}
+                            onCreateRule={handleCreateEditorialRule}
+                            onToggleRule={(rule) => handleUpdateEditorialRule(rule.id, { active: !rule.active })}
+                            onDeleteRule={handleDeleteEditorialRule}
+                            onCreatePerson={handleCreateBlockedPerson}
+                            onUpdatePerson={handleUpdateBlockedPerson}
+                            onDeletePerson={handleDeleteBlockedPerson}
+                        />
+                    )}
 
                     {activeTab === 'imagenes' && extended && (
                         <ImagenesTab
@@ -1521,6 +1684,119 @@ function SistemaTab(props: SistemaTabProps) {
                     </div>
                 </div>
             )}
+        </section>
+    );
+}
+
+// ---------- Editorial Tab ----------
+
+interface EditorialTabProps {
+    rules: EditorialRule[];
+    blockedPeople: BlockedPerson[];
+    newRuleName: string;
+    setNewRuleName: (value: string) => void;
+    newRuleMatchType: EditorialRuleMatchType;
+    setNewRuleMatchType: (value: EditorialRuleMatchType) => void;
+    newRuleSection: string;
+    setNewRuleSection: (value: string) => void;
+    newRuleMinScore: string;
+    setNewRuleMinScore: (value: string) => void;
+    newRuleMaxScore: string;
+    setNewRuleMaxScore: (value: string) => void;
+    newRuleLocation: string;
+    setNewRuleLocation: (value: string) => void;
+    newRulePriority: string;
+    setNewRulePriority: (value: string) => void;
+    newRuleInstruction: string;
+    setNewRuleInstruction: (value: string) => void;
+    newPersonName: string;
+    setNewPersonName: (value: string) => void;
+    newPersonAliases: string;
+    setNewPersonAliases: (value: string) => void;
+    newPersonAction: BlockedPersonAction;
+    setNewPersonAction: (value: BlockedPersonAction) => void;
+    newPersonScore: string;
+    setNewPersonScore: (value: string) => void;
+    onCreateRule: (event: React.FormEvent) => Promise<void>;
+    onToggleRule: (rule: EditorialRule) => Promise<void>;
+    onDeleteRule: (id: string) => Promise<void>;
+    onCreatePerson: (event: React.FormEvent) => Promise<void>;
+    onUpdatePerson: (id: string, data: Partial<BlockedPerson>) => Promise<void>;
+    onDeletePerson: (id: string) => Promise<void>;
+}
+
+function EditorialTab(props: EditorialTabProps) {
+    const matchLabels: Record<EditorialRuleMatchType, string> = {
+        GLOBAL: 'Todas las notas',
+        SECTION: 'Por sección',
+        SCORE_RANGE: 'Por rango de score',
+        LOCATION: 'Por barrio / zona'
+    };
+
+    return (
+        <section className="space-y-10">
+            <div>
+                <Header title="Criterio editorial" subtitle="Aplicá instrucciones de redacción según el contexto de cada nota. Las reglas de mayor prioridad se envían primero a la IA." />
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <Card>
+                        <CardHeading title="Nueva regla de estilo" description="Podés combinar una sección, un rango de score o una condición futura de ubicación." />
+                        <form onSubmit={props.onCreateRule} className="space-y-3 font-sans">
+                            <input value={props.newRuleName} onChange={e => props.setNewRuleName(e.target.value)} required placeholder="Nombre (ej. Política local)" className="w-full border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none focus:border-editorial-text" />
+                            <div className="grid grid-cols-2 gap-3">
+                                <select value={props.newRuleMatchType} onChange={e => props.setNewRuleMatchType(e.target.value as EditorialRuleMatchType)} className="border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none">
+                                    {Object.entries(matchLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                </select>
+                                <input type="number" value={props.newRulePriority} onChange={e => props.setNewRulePriority(e.target.value)} placeholder="Prioridad" title="A mayor número, antes se aplica" className="border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none" />
+                            </div>
+                            {props.newRuleMatchType === 'SECTION' && <input value={props.newRuleSection} onChange={e => props.setNewRuleSection(e.target.value)} required placeholder="Sección exacta (ej. Política)" className="w-full border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none" />}
+                            {props.newRuleMatchType === 'SCORE_RANGE' && <div className="grid grid-cols-2 gap-3"><input type="number" min="1" max="10" value={props.newRuleMinScore} onChange={e => props.setNewRuleMinScore(e.target.value)} placeholder="Score mínimo" className="border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none" /><input type="number" min="1" max="10" value={props.newRuleMaxScore} onChange={e => props.setNewRuleMaxScore(e.target.value)} placeholder="Score máximo" className="border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none" /></div>}
+                            {props.newRuleMatchType === 'LOCATION' && <div><input value={props.newRuleLocation} onChange={e => props.setNewRuleLocation(e.target.value)} required placeholder="Barrio o zona" className="w-full border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none" /><p className="text-[10px] opacity-50 mt-1">Queda preparado para cuando el detector de ubicación complete este dato.</p></div>}
+                            <textarea value={props.newRuleInstruction} onChange={e => props.setNewRuleInstruction(e.target.value)} required placeholder="Instrucciones: tono, vocabulario, foco, extensión, tratamiento de fuentes..." className="w-full h-28 p-3 bg-editorial-bg/30 border border-editorial-text/20 text-xs font-mono resize-none focus:outline-none focus:border-editorial-text" />
+                            <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-2 font-bold uppercase tracking-widest text-[10px]">Agregar regla</button>
+                        </form>
+                    </Card>
+
+                    <Card>
+                        <CardHeading title={`Reglas guardadas (${props.rules.length})`} description="Una regla desactivada queda guardada y no interviene en nuevas notas ni reescrituras." />
+                        <div className="space-y-2">
+                            {props.rules.map(rule => <div key={rule.id} className="border border-editorial-text/10 p-3 flex items-start gap-3">
+                                <button type="button" role="switch" aria-checked={rule.active} aria-label={`${rule.active ? 'Desactivar' : 'Activar'} ${rule.name}`} onClick={() => props.onToggleRule(rule)} className={`mt-1 w-9 h-5 rounded-full relative flex-shrink-0 ${rule.active ? 'bg-green-500' : 'bg-editorial-text/20'}`}><span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow ${rule.active ? 'left-[18px]' : 'left-0.5'}`} /></button>
+                                <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><span className="font-sans font-bold text-sm">{rule.name}</span><span className="text-[9px] uppercase tracking-widest border border-editorial-text/15 px-1.5 py-0.5 opacity-60">{matchLabels[rule.matchType]}</span><span className="text-[9px] opacity-50">prioridad {rule.priority}</span></div><p className="text-xs text-editorial-text/70 mt-2 whitespace-pre-wrap line-clamp-3">{rule.styleInstruction}</p></div>
+                                <button type="button" onClick={() => props.onDeleteRule(rule.id)} className="text-editorial-text/40 hover:text-red-500" aria-label={`Eliminar regla ${rule.name}`}><Trash2 size={14} /></button>
+                            </div>)}
+                            {props.rules.length === 0 && <p className="text-xs opacity-50 italic text-center py-4 border border-dashed border-editorial-text/20">Todavía no hay reglas editoriales.</p>}
+                        </div>
+                    </Card>
+                </div>
+            </div>
+
+            <div>
+                <Header title="Personas sensibles" subtitle="Si el nombre o un alias aparece en título o cuerpo, Hermes baja el score o bloquea la publicación según la acción elegida." />
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                    <Card>
+                        <CardHeading title="Agregar persona" description="Usá aliases separados por coma para contemplar nombres abreviados, apodos o variantes sin acento." />
+                        <form onSubmit={props.onCreatePerson} className="space-y-3 font-sans">
+                            <div className="flex items-center gap-2 text-editorial-text/60"><UserRound size={16} /><span className="text-[10px] uppercase tracking-widest">Detección por nombre completo</span></div>
+                            <input value={props.newPersonName} onChange={e => props.setNewPersonName(e.target.value)} required placeholder="Nombre de la persona" className="w-full border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none focus:border-editorial-text" />
+                            <input value={props.newPersonAliases} onChange={e => props.setNewPersonAliases(e.target.value)} placeholder="Aliases (separados por coma)" className="w-full border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none focus:border-editorial-text" />
+                            <div className="grid grid-cols-2 gap-3"><select value={props.newPersonAction} onChange={e => props.setNewPersonAction(e.target.value as BlockedPersonAction)} className="border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none"><option value="LOWER_SCORE">Bajar score</option><option value="BLOCK_PUBLICATION">No publicar</option></select><input type="number" min="1" max="10" value={props.newPersonScore} onChange={e => props.setNewPersonScore(e.target.value)} disabled={props.newPersonAction === 'BLOCK_PUBLICATION'} placeholder="Score máximo" title="Score que tendrá la nota cuando coincida" className="border-b border-editorial-text/30 py-2 bg-transparent text-sm focus:outline-none disabled:opacity-40" /></div>
+                            <button type="submit" className="bg-editorial-text text-editorial-bg px-4 py-2 font-bold uppercase tracking-widest text-[10px]">Agregar a la lista</button>
+                        </form>
+                    </Card>
+
+                    <Card>
+                        <CardHeading title={`Lista configurada (${props.blockedPeople.length})`} description="Podés desactivar una persona temporalmente sin perder su configuración." />
+                        <div className="space-y-2">
+                            {props.blockedPeople.map(person => <div key={person.id} className="border border-editorial-text/10 p-3 flex items-start gap-3">
+                                <button type="button" role="switch" aria-checked={person.active} aria-label={`${person.active ? 'Desactivar' : 'Activar'} ${person.name}`} onClick={() => props.onUpdatePerson(person.id, { active: !person.active })} className={`mt-1 w-9 h-5 rounded-full relative flex-shrink-0 ${person.active ? 'bg-green-500' : 'bg-editorial-text/20'}`}><span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow ${person.active ? 'left-[18px]' : 'left-0.5'}`} /></button>
+                                <div className="min-w-0 flex-1"><div className="font-sans font-bold text-sm">{person.name}</div>{person.aliases.length > 0 && <div className="text-[10px] opacity-50 mt-0.5">También: {person.aliases.join(', ')}</div>}<div className="mt-2"><select value={person.action} onChange={e => props.onUpdatePerson(person.id, { action: e.target.value as BlockedPersonAction })} className="text-[10px] border border-editorial-text/15 bg-white px-1.5 py-1 focus:outline-none"><option value="LOWER_SCORE">Bajar score a {person.scoreWhenMatched}</option><option value="BLOCK_PUBLICATION">Bloquear publicación</option></select></div></div>
+                                <button type="button" onClick={() => props.onDeletePerson(person.id)} className="text-editorial-text/40 hover:text-red-500" aria-label={`Eliminar ${person.name}`}><Trash2 size={14} /></button>
+                            </div>)}
+                            {props.blockedPeople.length === 0 && <p className="text-xs opacity-50 italic text-center py-4 border border-dashed border-editorial-text/20">La lista está vacía.</p>}
+                        </div>
+                    </Card>
+                </div>
+            </div>
         </section>
     );
 }

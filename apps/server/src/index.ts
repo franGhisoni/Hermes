@@ -3,7 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { QueueService, SCRAPER_DEFINITIONS, ensureRegisteredScrapers } from './services/QueueService';
 import { ArticleService, buildContentPreview } from './services/ArticleService';
-import { ScrapeRunTrigger } from '@prisma/client';
+import { BlockedPersonAction, EditorialRuleMatchType, ScrapeRunTrigger } from '@prisma/client';
 import { prisma } from './lib/prisma';
 
 const app = express();
@@ -220,7 +220,217 @@ app.use('/api/notifications', notificationRouter);
 app.use('/api/config', requireAdmin);
 
 import { ConfigService } from './services/ConfigService';
+import { buildEditorialData, EditorialService } from './services/EditorialService';
 const configService = new ConfigService();
+const editorialService = new EditorialService();
+
+const EDITORIAL_MATCH_TYPES = ['GLOBAL', 'SECTION', 'SCORE_RANGE', 'LOCATION'] as const;
+const BLOCKED_PERSON_ACTIONS = ['LOWER_SCORE', 'BLOCK_PUBLICATION'] as const;
+
+function optionalScore(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 1 && parsed <= 10 ? parsed : null;
+}
+
+function normalizeAliases(value: unknown): string[] {
+    const values = Array.isArray(value)
+        ? value
+        : typeof value === 'string' ? value.split(',') : [];
+    return Array.from(new Set(values
+        .map(item => String(item).trim())
+        .filter(Boolean)));
+}
+
+// Editorial policy configuration. Rules are intentionally independent from
+// prompts so section/score/location conditions can evolve without replacing
+// the global rewrite prompt.
+app.get('/api/config/editorial', async (_req, res) => {
+    try {
+        const [rules, blockedPeople] = await Promise.all([
+            prisma.editorialRule.findMany({ orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }] }),
+            prisma.blockedPerson.findMany({ orderBy: { name: 'asc' } })
+        ]);
+        res.json({ rules, blockedPeople });
+    } catch (error) {
+        console.error('Failed to fetch editorial configuration:', error);
+        res.status(500).json({ error: 'No se pudo cargar la configuración editorial' });
+    }
+});
+
+app.post('/api/config/editorial/rules', async (req, res) => {
+    const body = req.body || {};
+    const matchType = body.matchType as EditorialRuleMatchType;
+    const minScore = optionalScore(body.minScore);
+    const maxScore = optionalScore(body.maxScore);
+    if (!body.name?.trim() || !body.styleInstruction?.trim()) {
+        return res.status(400).json({ error: 'name y styleInstruction son obligatorios' });
+    }
+    if (!(EDITORIAL_MATCH_TYPES as readonly string[]).includes(matchType)) {
+        return res.status(400).json({ error: 'matchType inválido' });
+    }
+    if (matchType === 'SECTION' && !body.section?.trim()) {
+        return res.status(400).json({ error: 'section es obligatoria para una regla por sección' });
+    }
+    if (matchType === 'SCORE_RANGE' && minScore === null && maxScore === null) {
+        return res.status(400).json({ error: 'Definí al menos un límite de score' });
+    }
+    if (matchType === 'LOCATION' && !body.location?.trim()) {
+        return res.status(400).json({ error: 'location es obligatoria para una regla por ubicación' });
+    }
+    if (minScore !== null && maxScore !== null && minScore > maxScore) {
+        return res.status(400).json({ error: 'minScore no puede ser mayor que maxScore' });
+    }
+
+    try {
+        const rule = await prisma.editorialRule.create({
+            data: {
+                name: body.name.trim(),
+                active: body.active !== false,
+                priority: Number.isInteger(Number(body.priority)) ? Number(body.priority) : 0,
+                matchType,
+                section: body.section?.trim() || null,
+                minScore,
+                maxScore,
+                location: body.location?.trim() || null,
+                styleInstruction: body.styleInstruction.trim()
+            }
+        });
+        res.status(201).json(rule);
+    } catch (error) {
+        console.error('Failed to create editorial rule:', error);
+        res.status(500).json({ error: 'No se pudo crear la regla editorial' });
+    }
+});
+
+app.put('/api/config/editorial/rules/:id', async (req, res) => {
+    const current = await prisma.editorialRule.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: 'Regla editorial no encontrada' });
+    const body = req.body || {};
+    const matchType = (body.matchType ?? current.matchType) as EditorialRuleMatchType;
+    const minScore = optionalScore(body.minScore ?? current.minScore);
+    const maxScore = optionalScore(body.maxScore ?? current.maxScore);
+    if (!(EDITORIAL_MATCH_TYPES as readonly string[]).includes(matchType)) {
+        return res.status(400).json({ error: 'matchType inválido' });
+    }
+    if (matchType === 'SECTION' && !(body.section ?? current.section)?.trim()) {
+        return res.status(400).json({ error: 'section es obligatoria para una regla por sección' });
+    }
+    if (matchType === 'SCORE_RANGE' && minScore === null && maxScore === null) {
+        return res.status(400).json({ error: 'Definí al menos un límite de score' });
+    }
+    if (matchType === 'LOCATION' && !(body.location ?? current.location)?.trim()) {
+        return res.status(400).json({ error: 'location es obligatoria para una regla por ubicación' });
+    }
+    if (minScore !== null && maxScore !== null && minScore > maxScore) {
+        return res.status(400).json({ error: 'minScore no puede ser mayor que maxScore' });
+    }
+
+    try {
+        const rule = await prisma.editorialRule.update({
+            where: { id: current.id },
+            data: {
+                name: typeof body.name === 'string' ? body.name.trim() : current.name,
+                active: typeof body.active === 'boolean' ? body.active : current.active,
+                priority: body.priority === undefined ? current.priority : Number(body.priority),
+                matchType,
+                section: (body.section ?? current.section)?.trim() || null,
+                minScore,
+                maxScore,
+                location: (body.location ?? current.location)?.trim() || null,
+                styleInstruction: typeof body.styleInstruction === 'string'
+                    ? body.styleInstruction.trim()
+                    : current.styleInstruction
+            }
+        });
+        res.json(rule);
+    } catch (error) {
+        console.error('Failed to update editorial rule:', error);
+        res.status(500).json({ error: 'No se pudo actualizar la regla editorial' });
+    }
+});
+
+app.delete('/api/config/editorial/rules/:id', async (req, res) => {
+    try {
+        await prisma.editorialRule.delete({ where: { id: req.params.id } });
+        res.json({ message: 'Regla editorial eliminada' });
+    } catch (error) {
+        res.status(500).json({ error: 'No se pudo eliminar la regla editorial' });
+    }
+});
+
+app.post('/api/config/editorial/people', async (req, res) => {
+    const body = req.body || {};
+    const action = body.action as BlockedPersonAction;
+    const scoreWhenMatched = body.scoreWhenMatched === undefined
+        ? 2
+        : optionalScore(body.scoreWhenMatched);
+    if (!body.name?.trim()) return res.status(400).json({ error: 'name es obligatorio' });
+    if (!(BLOCKED_PERSON_ACTIONS as readonly string[]).includes(action)) {
+        return res.status(400).json({ error: 'action inválida' });
+    }
+    if (scoreWhenMatched === null) {
+        return res.status(400).json({ error: 'scoreWhenMatched debe estar entre 1 y 10' });
+    }
+
+    try {
+        const person = await prisma.blockedPerson.create({
+            data: {
+                name: body.name.trim(),
+                aliases: normalizeAliases(body.aliases),
+                action,
+                scoreWhenMatched,
+                active: body.active !== false
+            }
+        });
+        res.status(201).json(person);
+    } catch (error) {
+        console.error('Failed to create blocked person:', error);
+        res.status(500).json({ error: 'No se pudo crear la persona sensible' });
+    }
+});
+
+app.put('/api/config/editorial/people/:id', async (req, res) => {
+    const current = await prisma.blockedPerson.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: 'Persona sensible no encontrada' });
+    const body = req.body || {};
+    const action = (body.action ?? current.action) as BlockedPersonAction;
+    const scoreWhenMatched = body.scoreWhenMatched === undefined
+        ? current.scoreWhenMatched
+        : optionalScore(body.scoreWhenMatched);
+    if (!(BLOCKED_PERSON_ACTIONS as readonly string[]).includes(action)) {
+        return res.status(400).json({ error: 'action inválida' });
+    }
+    if (scoreWhenMatched === null) {
+        return res.status(400).json({ error: 'scoreWhenMatched debe estar entre 1 y 10' });
+    }
+
+    try {
+        const person = await prisma.blockedPerson.update({
+            where: { id: current.id },
+            data: {
+                name: typeof body.name === 'string' ? body.name.trim() : current.name,
+                aliases: body.aliases === undefined ? current.aliases : normalizeAliases(body.aliases),
+                action,
+                scoreWhenMatched,
+                active: typeof body.active === 'boolean' ? body.active : current.active
+            }
+        });
+        res.json(person);
+    } catch (error) {
+        console.error('Failed to update blocked person:', error);
+        res.status(500).json({ error: 'No se pudo actualizar la persona sensible' });
+    }
+});
+
+app.delete('/api/config/editorial/people/:id', async (req, res) => {
+    try {
+        await prisma.blockedPerson.delete({ where: { id: req.params.id } });
+        res.json({ message: 'Persona sensible eliminada' });
+    } catch (error) {
+        res.status(500).json({ error: 'No se pudo eliminar la persona sensible' });
+    }
+});
 
 // POST /api/scrape - Manual Trigger
 // Body: { source, limit?, sectionId? }
@@ -557,6 +767,29 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             });
         }
 
+        const editorial = await editorialService.evaluate({
+            title: article.originalTitle,
+            content: article.originalContent,
+            section: article.section,
+            location: article.location,
+            score: article.interestScore ?? 5
+        });
+        if (article.publicationBlocked || editorial.publicationBlocked) {
+            if (!article.publicationBlocked || !editorial.publicationBlocked) {
+                await prisma.article.update({
+                    where: { id: article.id },
+                    data: {
+                        status: 'REJECTED',
+                        publicationBlocked: true,
+                        publicationBlockReason: editorial.publicationBlockReason || article.publicationBlockReason
+                    }
+                });
+            }
+            return res.status(409).json({
+                error: article.publicationBlockReason || editorial.publicationBlockReason || 'La nota está bloqueada para publicación.'
+            });
+        }
+
         const target = await prisma.target.findUnique({ where: { id: targetId } });
         if (!target) return res.status(404).json({ error: 'Target not found' });
 
@@ -623,14 +856,26 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Not found' });
 
         const aiService = new AIService();
-        const result = await aiService.rewriteContent(article.originalTitle, article.originalContent);
+        const editorial = await editorialService.evaluate({
+            title: article.originalTitle,
+            content: article.originalContent,
+            section: article.section,
+            location: article.location,
+            score: article.interestScore ?? 5
+        });
+        const result = await aiService.rewriteContent(article.originalTitle, article.originalContent, editorial.style);
 
         const updated = await prisma.article.update({
             where: { id: article.id },
             data: {
                 rewrittenTitle: result.title,
                 rewrittenContent: result.content,
-                contentPreview: buildContentPreview(result.content)
+                contentPreview: buildContentPreview(result.content),
+                interestScore: editorial.effectiveScore,
+                editorialData: buildEditorialData(editorial),
+                publicationBlocked: editorial.publicationBlocked,
+                publicationBlockReason: editorial.publicationBlockReason,
+                status: editorial.publicationBlocked ? 'REJECTED' : article.status
             }
         });
 

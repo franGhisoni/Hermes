@@ -51,6 +51,10 @@ export class ArticleService {
         imageCandidates?: string[];
         imageScores?: Record<string, number>;
         aiDecisions?: any;
+        editorialData?: any;
+        location?: string;
+        publicationBlocked?: boolean;
+        publicationBlockReason?: string | null;
         sourceId: string;
         section?: string;
         embedding: number[];
@@ -71,6 +75,7 @@ export class ArticleService {
                 id,
                 sourceId: data.sourceId,
                 section: data.section,
+                location: data.location,
                 originalTitle: data.originalTitle,
                 originalContent: data.originalContent,
                 originalUrl: data.originalUrl,
@@ -79,6 +84,9 @@ export class ArticleService {
                 imageCandidates: data.imageCandidates || [],
                 imageScores: data.imageScores || {},
                 aiDecisions: data.aiDecisions ?? undefined,
+                editorialData: data.editorialData ?? undefined,
+                publicationBlocked: data.publicationBlocked ?? false,
+                publicationBlockReason: data.publicationBlockReason ?? undefined,
                 rewrittenTitle: data.rewrittenTitle,
                 rewrittenContent: data.rewrittenContent,
                 contentPreview: buildContentPreview(data.rewrittenContent || data.originalContent),
@@ -184,6 +192,8 @@ export class ArticleService {
                     originalImageUrl: true,
                     featureImageUrl: true,
                     interestScore: true,
+                    publicationBlocked: true,
+                    publicationBlockReason: true,
                     status: true,
                     createdAt: true,
                     section: true,

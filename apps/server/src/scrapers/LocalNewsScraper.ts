@@ -304,7 +304,7 @@ export const LOCAL_NEWS_CONFIGS = {
         'AvellanedaHoy',
         'https://avellanedahoy.com.ar',
         url => /^\/nota\/\d+\/[^/]+\/?$/i.test(url.pathname),
-        ['article .nota-contenido p', 'article .entry-content p', '.nota-contenido p', ...DEFAULT_CONTENT_SELECTORS]
+        ['.wysiwyg p', '.nota-contenido p', 'article .entry-content p', ...DEFAULT_CONTENT_SELECTORS]
     ),
     LaTeclaInfo: config(
         'LaTeclaInfo',
@@ -329,7 +329,7 @@ export const LOCAL_NEWS_CONFIGS = {
         'LetraP',
         'https://www.letrap.com.ar',
         url => /^\/[^/]+\.html\/?$/i.test(url.pathname) ||
-            hasArticleLikePath(url, ['/wp-content/', '/contacto', '/nosotros', '/tag/', '/categoria/']),
+            hasArticleLikePath(url, ['/wp-content/', '/contacto', '/nosotros', '/tag/', '/categoria/', '/seccion/', '/region/', '/contenidos/', '/perfil/', '/newsletter']),
         ['article .article-body p', 'article .entry-content p', '.article-body p', ...DEFAULT_CONTENT_SELECTORS]
     ),
     LaDefensa: config(

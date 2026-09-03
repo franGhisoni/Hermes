@@ -19,6 +19,12 @@ interface RunStats {
     articlesRefilled: number;
 }
 
+interface PublicationSlot {
+    target: any;
+    section?: string;
+    excludedSections: Set<string>;
+}
+
 export class SchedulerService {
     private queueService: QueueService;
     private mailService: MailService;
@@ -270,7 +276,7 @@ export class SchedulerService {
         const targets = [...sortedTargets.slice(cursor), ...sortedTargets.slice(0, cursor)];
 
         const stats: RunStats = {
-            targetsTotal: targets.length,
+            targetsTotal: 0,
             targetsCovered: 0,
             targetsSkipped: 0,
             articlesUnique: 0,
@@ -296,12 +302,21 @@ export class SchedulerService {
                 where.interestScore = { gte: fresh.minScore };
             }
 
-            // Pool size equals the number of destinations: we never need more
-            // unique articles than targets, and we don't want fewer either.
+            const slots = this.buildPublicationSlots(fresh, targets);
+            stats.targetsTotal = slots.length;
+            if (slots.length === 0) {
+                const msg = 'El flujo no tiene cupos de publicación configurados.';
+                await this.recordRun(workflow.id, 'EMPTY', startedAt, stats, msg);
+                return;
+            }
+
+            // Fetch enough candidates to satisfy all medium/section quotas. The
+            // extra headroom lets a section override find an eligible note even
+            // when newer notes belong to another section.
             const articles = await prisma.article.findMany({
                 where,
                 orderBy: { createdAt: 'desc' },
-                take: targets.length
+                take: Math.min(Math.max(slots.length * 4, 100), 2000)
             });
 
             if (articles.length === 0) {
@@ -311,69 +326,55 @@ export class SchedulerService {
                 return;
             }
 
-            stats.articlesUnique = articles.length;
+            const usedArticleIds = new Set<string>();
+            for (const slot of slots) {
+                const article = this.takeArticleForSlot(articles, slot, usedArticleIds, fresh.allowRepublish);
+                if (!article) {
+                    stats.targetsSkipped++;
+                    continue;
+                }
 
-            // Phase 1: 1:1 distribution — first N targets get the N unique articles.
-            const publishedIds = new Set<string>();
-            for (let i = 0; i < articles.length; i++) {
-                const article = articles[i];
-                const target = targets[i];
-                const category = fresh.targetCategory || article.section || undefined;
-                const ok = await this.dispatchToTarget(target, article, category);
-                if (ok) {
+                const isRefill = usedArticleIds.has(article.id);
+                if (!isRefill) {
+                    usedArticleIds.add(article.id);
+                }
+
+                const target = slot.target;
+                try {
+                    const dispatchArticle = isRefill
+                        ? await this.buildRepublishedVariant(article)
+                        : article;
+                    const category = fresh.targetCategory || dispatchArticle.section || undefined;
+                    const ok = await this.dispatchToTarget(target, dispatchArticle, category);
+                    if (!ok) continue;
+
                     stats.targetsCovered++;
-                    if (!article.featureImageUrl && !article.originalImageUrl) {
+                    if (isRefill) stats.articlesRefilled++;
+                    if (!dispatchArticle.featureImageUrl && !dispatchArticle.originalImageUrl) {
                         await notificationService.emit({
                             level: 'WARN',
                             source: 'PUBLISH',
-                            title: `Publicación sin imagen`,
-                            message: `"${article.rewrittenTitle || article.originalTitle}" se envió a ${target.name} sin imagen destacada.`,
+                            title: 'Publicación sin imagen',
+                            message: `"${dispatchArticle.rewrittenTitle || dispatchArticle.originalTitle}" se envió a ${target.name} sin imagen destacada.`,
                             metadata: { workflowId: fresh.id, workflowName: fresh.name, articleId: article.id, targetName: target.name }
                         });
                     }
-                }
-
-                if (!publishedIds.has(article.id)) {
-                    publishedIds.add(article.id);
                     await prisma.article.update({
                         where: { id: article.id },
                         data: { status: 'PUBLISHED' }
                     });
+                } catch (err) {
+                    console.error(`[CRON-PUBLISH] Publication failed for target ${target.name}:`, err);
                 }
             }
 
-            // Phase 2: refill remaining targets (if any) when allowed.
-            const remainingTargets = targets.slice(articles.length);
-            if (remainingTargets.length > 0) {
-                if (fresh.allowRepublish) {
-                    for (let i = 0; i < remainingTargets.length; i++) {
-                        const sourceArticle = articles[i % articles.length];
-                        const target = remainingTargets[i];
-                        try {
-                            const variant = await this.buildRepublishedVariant(sourceArticle);
-                            const category = fresh.targetCategory || sourceArticle.section || undefined;
-                            const ok = await this.dispatchToTarget(target, variant, category);
-                            if (ok) {
-                                stats.targetsCovered++;
-                                stats.articlesRefilled++;
-                            }
-                        } catch (err) {
-                            console.error(`[CRON-PUBLISH] Refill failed for target ${target.name}:`, err);
-                        }
-                    }
-                } else {
-                    stats.targetsSkipped = remainingTargets.length;
-                    console.log(`[CRON-PUBLISH] ${fresh.name}: ${remainingTargets.length} destino(s) omitidos (republicación desactivada, pool=${articles.length} / destinos=${targets.length}).`);
-                }
-            }
+            stats.articlesUnique = usedArticleIds.size;
 
-            // Advance the cursor by the number of unique articles dispatched so
-            // the next execution starts on the destinations skipped here (or,
-            // when republish is on, just rotates which target gets the unique
-            // version each cycle).
+            // Rotate the first medium on each run so a multi-medium workflow
+            // does not always receive the newest notes first.
             const newCursor = sortedTargets.length === 0
                 ? 0
-                : (cursor + articles.length) % sortedTargets.length;
+                : (cursor + 1) % sortedTargets.length;
             await prisma.workflow.update({
                 where: { id: workflow.id },
                 data: { nextTargetIndex: newCursor }
@@ -383,9 +384,9 @@ export class SchedulerService {
             if (stats.targetsCovered === 0) status = 'ERROR';
             else if (stats.targetsCovered < stats.targetsTotal) status = 'PARTIAL';
 
-            const parts: string[] = [`${stats.targetsCovered}/${stats.targetsTotal} destinos cubiertos`];
+            const parts: string[] = [`${stats.targetsCovered}/${stats.targetsTotal} publicaciones procesadas`];
             if (stats.articlesRefilled > 0) parts.push(`${stats.articlesRefilled} republicación(es)`);
-            if (stats.targetsSkipped > 0) parts.push(`${stats.targetsSkipped} omitido(s) por falta de notas`);
+            if (stats.targetsSkipped > 0) parts.push(`${stats.targetsSkipped} cupo(s) omitido(s) por falta de notas`);
             const summary = parts.join(' · ');
 
             console.log(`[CRON-PUBLISH] ${fresh.name}: ${summary}`);
@@ -394,6 +395,59 @@ export class SchedulerService {
             console.error(`[CRON-PUBLISH] Failed workflow ${fresh.name}:`, error);
             await this.recordRun(workflow.id, 'ERROR', startedAt, stats, error?.message || 'Error desconocido', error?.message);
         }
+    }
+
+    private buildPublicationSlots(workflow: any, targets: any[]): PublicationSlot[] {
+        const limits = new Map<string, Map<string, number>>();
+        for (const row of workflow.targetLimits || []) {
+            if (!limits.has(row.targetId)) limits.set(row.targetId, new Map());
+            limits.get(row.targetId)!.set(row.section || '', row.limit);
+        }
+
+        const slots: PublicationSlot[] = [];
+        for (const target of targets) {
+            const targetLimits = limits.get(target.id) || new Map<string, number>();
+            const defaultLimit = targetLimits.get('') ?? 1;
+            const overrides = [...targetLimits.entries()].filter(([section]) => section !== '');
+
+            if (workflow.section) {
+                const limit = targetLimits.get(workflow.section) ?? defaultLimit;
+                for (let i = 0; i < limit; i++) {
+                    slots.push({ target, section: workflow.section, excludedSections: new Set() });
+                }
+                continue;
+            }
+
+            const excludedSections = new Set(overrides.map(([section]) => section));
+            for (const [section, limit] of overrides.sort(([a], [b]) => a.localeCompare(b))) {
+                for (let i = 0; i < limit; i++) {
+                    slots.push({ target, section, excludedSections: new Set() });
+                }
+            }
+            for (let i = 0; i < defaultLimit; i++) {
+                slots.push({ target, excludedSections });
+            }
+        }
+        return slots;
+    }
+
+    private takeArticleForSlot(
+        articles: Article[],
+        slot: PublicationSlot,
+        usedArticleIds: Set<string>,
+        allowRepublish: boolean
+    ): Article | null {
+        const matches = (article: Article) => {
+            if (slot.section && article.section !== slot.section) return false;
+            if (!slot.section && slot.excludedSections.has(article.section || '')) return false;
+            return true;
+        };
+
+        const unique = articles.find(article => !usedArticleIds.has(article.id) && matches(article));
+        if (unique) return unique;
+        if (!allowRepublish) return null;
+
+        return articles.find(matches) || null;
     }
 
     private async dispatchToTarget(target: any, article: Article, category?: string): Promise<boolean> {

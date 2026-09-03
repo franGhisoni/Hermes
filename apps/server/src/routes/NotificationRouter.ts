@@ -1,26 +1,32 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma';
-import { isDemoUser } from '../middlewares/auth';
+import { isDemoUser, AuthRequest } from '../middlewares/auth';
 import { getDemoNotifications } from '../services/DemoService';
 
 const router = Router();
 
 // GET /api/notifications — list notifications (most recent first).
 // Query params: take (default 50, max 200), unreadOnly=1 to filter.
-router.get('/', async (req, res) => {
+// Basic users (role !== 'ADMIN') only see PUBLISH status notifications.
+router.get('/', async (req: AuthRequest, res) => {
     try {
         if (isDemoUser(req)) return res.json(getDemoNotifications());
 
         const take = Math.min(parseInt(String(req.query.take ?? '50'), 10) || 50, 200);
         const unreadOnly = req.query.unreadOnly === '1' || req.query.unreadOnly === 'true';
 
+        const isBasicUser = req.user?.role !== 'ADMIN';
+        const whereClause: any = {};
+        if (unreadOnly) whereClause.readAt = null;
+        if (isBasicUser) whereClause.source = 'PUBLISH';
+
         const [items, unreadCount] = await Promise.all([
             prisma.notification.findMany({
-                where: unreadOnly ? { readAt: null } : undefined,
+                where: whereClause,
                 orderBy: { createdAt: 'desc' },
                 take
             }),
-            prisma.notification.count({ where: { readAt: null } })
+            prisma.notification.count({ where: whereClause })
         ]);
 
         res.json({ items, unreadCount });
@@ -31,10 +37,14 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/notifications/read-all — mark all as read.
-router.post('/read-all', async (_req, res) => {
+router.post('/read-all', async (req: AuthRequest, res) => {
     try {
+        const isBasicUser = req.user?.role !== 'ADMIN';
         await prisma.notification.updateMany({
-            where: { readAt: null },
+            where: {
+                readAt: null,
+                ...(isBasicUser ? { source: 'PUBLISH' } : {})
+            },
             data: { readAt: new Date() }
         });
         res.json({ success: true });

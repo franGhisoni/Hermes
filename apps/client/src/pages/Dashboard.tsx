@@ -170,7 +170,7 @@ export default function Dashboard() {
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
                 <div className="flex gap-4 items-center">
-                    {user?.role === 'ADMIN' && <NotificationsPanel />}
+                    <NotificationsPanel />
                     <ScraperControl />
                     {user?.role === 'ADMIN' && (
                         <>

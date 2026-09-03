@@ -4,6 +4,7 @@ import { Copy, Check, Eye, Code, Sparkles } from 'lucide-react';
 import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { NotificationsPanel } from '../components/NotificationsPanel';
 
 interface Target {
     id: string;
@@ -481,8 +482,9 @@ export default function Newsroom() {
                     <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
-                <div className="flex gap-3">
-                        <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
+                <div className="flex gap-3 items-center">
+                    <NotificationsPanel />
+                    <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                             Rechazar
                         </button>
                         <button

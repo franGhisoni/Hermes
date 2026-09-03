@@ -22,6 +22,7 @@ import userRouter from './routes/UserRouter';
 import sectionRouter from './routes/SectionRouter';
 import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
+import { publishQueueService } from './services/PublishQueueService';
 import { requireAuth, requireAdmin, requireReadOnly } from './middlewares/auth';
 
 import { SchedulerService } from './services/SchedulerService';
@@ -970,44 +971,19 @@ app.post('/api/articles/:id/publish', async (req, res) => {
                 finalVolanta = finalVolanta || generated.volanta;
                 finalBajada = finalBajada || generated.bajada;
                 finalTags = finalTags || generated.tags;
-
-                // Persist this generated SEO version
-                await prisma.article.update({
-                    where: { id: article.id },
-                    data: {
-                        editorialData: {
-                            ...articleEditorial,
-                            seo: generated
-                        }
-                    }
-                });
             }
 
-            const result = await vorknewsPublishService.publishArticle(articleForTarget as any, {
-                mode: vorknewsMode || targetConfig.publishMode,
-                sectionId: vorknewsSectionId || targetConfig.defaultSectionId || (category ? vorknewsPublishService.resolveSectionId(category) : undefined),
-                author: vorknewsAuthor || targetConfig.defaultAuthor,
-                volanta: finalVolanta,
-                bajada: finalBajada,
-                tags: finalTags,
-                title: finalTitle,
-                contentHtml: finalContentHtml
-            });
-
-            if (!result.success) {
-                return res.status(500).json({ error: result.error || 'Failed to publish to Vorknews' });
-            }
-
-            // Update article status and persist final SEO content in the database
+            // Immediately persist editor's latest SEO content and mark publishing in progress
             const updatedArticle = await prisma.article.update({
                 where: { id: req.params.id },
                 data: {
-                    status: 'PUBLISHED',
                     rewrittenTitle: finalTitle,
                     rewrittenContent: finalContentHtml,
                     contentPreview: buildContentPreview(finalBajada || finalContentHtml),
                     editorialData: {
                         ...articleEditorial,
+                        publishing: true,
+                        publishError: null,
                         seo: {
                             title: finalTitle,
                             content: finalContentHtml,
@@ -1020,11 +996,25 @@ app.post('/api/articles/:id/publish', async (req, res) => {
                 include: { source: true }
             });
 
-            const modeLabel = result.mode === 'DRAFT' ? 'borrador' : 'publicada';
+            // Enqueue non-blocking background publication
+            await publishQueueService.enqueue({
+                articleId: article.id,
+                targetId: target.id,
+                mode: vorknewsMode || targetConfig.publishMode || 'DRAFT',
+                sectionId: vorknewsSectionId || targetConfig.defaultSectionId || (category ? vorknewsPublishService.resolveSectionId(category) : undefined),
+                author: vorknewsAuthor || targetConfig.defaultAuthor || 'Juan Bautista Vega',
+                volanta: finalVolanta,
+                bajada: finalBajada,
+                tags: finalTags,
+                title: finalTitle,
+                contentHtml: finalContentHtml,
+                category
+            });
+
             return res.json({
                 success: true,
-                message: `Nota guardada con formato SEO como ${modeLabel} en Política del Sur${result.vorknewsId ? ` (ID: ${result.vorknewsId})` : ''}`,
-                data: result,
+                queued: true,
+                message: `La nota se envió a la cola de publicación para Política del Sur. Podés continuar trabajando; recibirás una notificación al completarse.`,
                 article: updatedArticle
             });
         }
@@ -1034,18 +1024,33 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             return res.status(400).json({ error: 'Target has no email address configured' });
         }
 
-        // Use provided category, or fall back to article's section
         const articleCategory = category || article.section || undefined;
-        const sent = await mailService.sendArticleToTarget(target.email, articleForTarget as any, articleCategory);
-        if (!sent) return res.status(500).json({ error: 'Failed to send email' });
 
-        // Update article status to PUBLISHED
-        await prisma.article.update({
+        // Persist and enqueue email dispatch
+        const updatedArticle = await prisma.article.update({
             where: { id: req.params.id },
-            data: { status: 'PUBLISHED' }
+            data: {
+                editorialData: {
+                    ...((article.editorialData as any) || {}),
+                    publishing: true,
+                    publishError: null
+                }
+            },
+            include: { source: true }
         });
 
-        res.json({ success: true, message: `Article published to ${target.name}` });
+        await publishQueueService.enqueue({
+            articleId: article.id,
+            targetId: target.id,
+            category: articleCategory
+        });
+
+        res.json({
+            success: true,
+            queued: true,
+            message: `La nota se está despachando por email a ${target.name} en segundo plano.`,
+            article: updatedArticle
+        });
     } catch (error: any) {
         console.error('Error publishing article:', error);
         res.status(500).json({ error: error.message || 'Failed to publish article' });

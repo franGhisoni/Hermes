@@ -389,7 +389,7 @@ export class SchedulerService {
         const slots: PublicationSlot[] = [];
         for (const target of targets) {
             const targetLimits = limits.get(target.id) || new Map<string, number>();
-            const defaultLimit = targetLimits.get('') ?? 1;
+            const defaultLimit = workflow.defaultArticleLimit ?? 1;
             const overrides = [...targetLimits.entries()].filter(([section]) => section !== '');
 
             if (workflow.section) {

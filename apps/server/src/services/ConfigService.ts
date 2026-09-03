@@ -46,7 +46,10 @@ export class ConfigService {
             ai_image_scoring_content_chars: '1200',
             dedup_threshold: '0.15',
             embedding_text_chars: '1000',
-            workflow_default_window_hours: '24'
+            workflow_default_window_hours: '24',
+            vorknews_publish_mode: 'DRAFT',
+            vorknews_default_author: 'Juan Bautista Vega',
+            vorknews_default_section_id: '64'
         };
 
         const rows = await prisma.systemSetting.findMany({
@@ -235,6 +238,21 @@ export class ConfigService {
 
     async getDefaultArticleWindowHours(): Promise<number> {
         return this.getIntSetting('workflow_default_window_hours', 24);
+    }
+
+    // ---- Vorknews CMS Settings ----
+
+    async getVorknewsPublishMode(): Promise<'DRAFT' | 'PUBLISHED'> {
+        const val = (await this.getSetting('vorknews_publish_mode', 'DRAFT')).toUpperCase();
+        return val === 'PUBLISHED' ? 'PUBLISHED' : 'DRAFT';
+    }
+
+    async getVorknewsDefaultAuthor(): Promise<string> {
+        return this.getSetting('vorknews_default_author', 'Juan Bautista Vega');
+    }
+
+    async getVorknewsDefaultSectionId(): Promise<string> {
+        return this.getSetting('vorknews_default_section_id', '64');
     }
 
     // ---- helpers ----

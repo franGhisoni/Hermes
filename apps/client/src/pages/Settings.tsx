@@ -179,6 +179,12 @@ export default function Settings() {
     const [newPersonAliases, setNewPersonAliases] = useState('');
     const [newPersonAction, setNewPersonAction] = useState<BlockedPersonAction>('LOWER_SCORE');
     const [newPersonScore, setNewPersonScore] = useState('2');
+    const [vorknewsSettings, setVorknewsSettings] = useState<{ mode: 'DRAFT' | 'PUBLISHED', author: string, sectionId: string }>({
+        mode: 'DRAFT',
+        author: 'Juan Bautista Vega',
+        sectionId: '64'
+    });
+    const [vorknewsSections, setVorknewsSections] = useState<Array<{ id: string, name: string }>>([]);
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
@@ -190,12 +196,14 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes, editorialRes] = await Promise.all([
+            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes, editorialRes, vkRes, vkSecRes] = await Promise.all([
                 api.get('/api/config/sections'),
                 api.get('/api/config/scrapers'),
                 api.get('/api/config/filter-categories'),
                 api.get('/api/scrape-schedules'),
-                api.get('/api/config/editorial')
+                api.get('/api/config/editorial'),
+                api.get('/api/config/vorknews').catch(() => ({ data: null })),
+                api.get('/api/vorknews/sections').catch(() => ({ data: [] }))
             ]);
             setSections(sectionsRes.data);
             setScrapers(scrapersRes.data);
@@ -206,8 +214,20 @@ export default function Settings() {
             setSchedules(schedulesRes.data);
             setEditorialRules(editorialRes.data.rules || []);
             setBlockedPeople(editorialRes.data.blockedPeople || []);
+            if (vkRes.data) setVorknewsSettings(vkRes.data);
+            if (vkSecRes.data) setVorknewsSections(vkSecRes.data);
         } catch (e) {
             console.error(e);
+        }
+    };
+
+    const updateVorknews = async (patch: Partial<typeof vorknewsSettings>) => {
+        const next = { ...vorknewsSettings, ...patch };
+        setVorknewsSettings(next);
+        try {
+            await api.put('/api/config/vorknews', next);
+        } catch (e: any) {
+            alert('Error guardando configuración de Vorknews: ' + (e?.response?.data?.error || e?.message));
         }
     };
 
@@ -724,6 +744,9 @@ export default function Settings() {
                             setArticleCleanupCron={setArticleCleanupCron}
                             extended={extended}
                             updateExtended={updateExtended}
+                            vorknewsSettings={vorknewsSettings}
+                            vorknewsSections={vorknewsSections}
+                            updateVorknews={updateVorknews}
                         />
                     )}
                 </main>
@@ -750,15 +773,27 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
             {loading ? <div>Cargando configuración...</div> : (
                 <div className="space-y-6">
                     {prompts.map(prompt => (
-                        <Card key={prompt.id}>
+                        <Card key={prompt.id} className={prompt.type === 'REWRITE_VORKNEWS' ? 'border-purple-300 ring-1 ring-purple-300/30' : ''}>
                             <div className="flex justify-between items-baseline mb-3">
-                                <h3 className="text-base font-bold">{prompt.name}</h3>
+                                <div className="flex items-center gap-2">
+                                    <h3 className="text-base font-bold">{prompt.name}</h3>
+                                    {prompt.type === 'REWRITE_VORKNEWS' && (
+                                        <span className="font-sans text-[9px] font-bold uppercase tracking-wider bg-editorial-text text-editorial-bg px-2 py-0.5 rounded">
+                                            SEO HTML
+                                        </span>
+                                    )}
+                                    {prompt.type === 'SOCIAL_COPY' && (
+                                        <span className="font-sans text-[9px] font-bold uppercase tracking-wider bg-editorial-text/10 text-editorial-text px-2 py-0.5 rounded border border-editorial-text/20">
+                                            REDES SOCIALES
+                                        </span>
+                                    )}
+                                </div>
                                 <span className="font-sans text-[10px] uppercase tracking-widest bg-editorial-text/5 px-2 py-1 rounded">
                                     {prompt.type}
                                 </span>
                             </div>
                             <textarea
-                                className="w-full h-48 p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none leading-relaxed"
+                                className={`w-full ${prompt.type === 'REWRITE_VORKNEWS' ? 'h-72' : 'h-48'} p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none leading-relaxed`}
                                 defaultValue={prompt.template}
                                 onBlur={(e) => savePrompt(prompt.id, e.target.value)}
                             />
@@ -1508,6 +1543,9 @@ interface SistemaTabProps {
     setArticleCleanupCron: (v: string) => void;
     extended: ExtendedSettings | null;
     updateExtended: <K extends keyof ExtendedSettings>(key: K, value: ExtendedSettings[K]) => Promise<void>;
+    vorknewsSettings: { mode: 'DRAFT' | 'PUBLISHED'; author: string; sectionId: string };
+    vorknewsSections: Array<{ id: string; name: string }>;
+    updateVorknews: (patch: Partial<{ mode: 'DRAFT' | 'PUBLISHED'; author: string; sectionId: string }>) => Promise<void>;
 }
 
 function SistemaTab(props: SistemaTabProps) {
@@ -1515,11 +1553,79 @@ function SistemaTab(props: SistemaTabProps) {
         scrapeLimit, setScrapeLimit,
         articleRetentionHours, setArticleRetentionHours,
         articleCleanupCron, setArticleCleanupCron,
-        extended, updateExtended
+        extended, updateExtended,
+        vorknewsSettings, vorknewsSections, updateVorknews
     } = props;
 
     return (
         <section className="space-y-10">
+            <div>
+                <Header
+                    title="CMS Vorknews (Política del Sur)"
+                    subtitle="Configuración para la publicación automática y manual al CMS de politicadelsur.com."
+                />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Card>
+                        <CardHeading
+                            title="Modo de publicación por defecto"
+                            description="Elegí si los envíos automáticos o por defecto se guardan como borrador (vorknews_noticias_borrador) o se publican directamente (vorknews_noticias)."
+                        />
+                        <div className="grid grid-cols-2 gap-2 mt-3 font-sans text-xs">
+                            <button
+                                type="button"
+                                onClick={() => updateVorknews({ mode: 'DRAFT' })}
+                                className={`p-2 border text-center font-bold uppercase tracking-wider transition-colors rounded ${vorknewsSettings.mode === 'DRAFT' ? 'border-purple-800 bg-purple-800 text-white' : 'border-editorial-text/20 bg-white hover:bg-purple-50'}`}
+                            >
+                                Modo Borrador
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => updateVorknews({ mode: 'PUBLISHED' })}
+                                className={`p-2 border text-center font-bold uppercase tracking-wider transition-colors rounded ${vorknewsSettings.mode === 'PUBLISHED' ? 'border-purple-800 bg-purple-800 text-white' : 'border-editorial-text/20 bg-white hover:bg-purple-50'}`}
+                            >
+                                Modo Publicar
+                            </button>
+                        </div>
+                    </Card>
+
+                    <Card>
+                        <CardHeading
+                            title="Firma de autor por defecto"
+                            description="Nombre de la firma que se completará en el campo Autor de Vorknews."
+                        />
+                        <input
+                            key={vorknewsSettings.author}
+                            type="text"
+                            defaultValue={vorknewsSettings.author}
+                            onBlur={(e) => {
+                                const val = e.target.value.trim();
+                                if (val && val !== vorknewsSettings.author) {
+                                    updateVorknews({ author: val });
+                                }
+                            }}
+                            className="w-full border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-sm font-bold py-1.5 mt-3 bg-transparent font-sans"
+                            placeholder="Juan Bautista Vega"
+                        />
+                    </Card>
+
+                    <Card>
+                        <CardHeading
+                            title="Sección por defecto en Vorknews"
+                            description="Sección predeterminada si la nota no coincide con un municipio o temática específica."
+                        />
+                        <select
+                            value={vorknewsSettings.sectionId}
+                            onChange={(e) => updateVorknews({ sectionId: e.target.value })}
+                            className="w-full border border-editorial-text/20 p-2 font-sans text-xs focus:outline-none focus:border-editorial-text mt-3 bg-white rounded"
+                        >
+                            {vorknewsSections.map(s => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                            ))}
+                        </select>
+                    </Card>
+                </div>
+            </div>
+
             <div>
                 <Header
                     title="Operación"

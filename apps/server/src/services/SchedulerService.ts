@@ -9,6 +9,7 @@ import { ImageService } from './ImageService';
 import { notificationService } from './NotificationService';
 import { prisma } from '../lib/prisma';
 import { EditorialService } from './EditorialService';
+import { VorknewsPublishService } from './VorknewsPublishService';
 
 interface RunStats {
     targetsTotal: number;
@@ -25,6 +26,7 @@ export class SchedulerService {
     private configService: ConfigService;
     private aiService: AIService;
     private editorialService: EditorialService;
+    private vorknewsPublishService: VorknewsPublishService;
     private activeJobs: Map<string, ScheduledTask> = new Map();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
@@ -34,6 +36,7 @@ export class SchedulerService {
         this.configService = new ConfigService();
         this.aiService = new AIService();
         this.editorialService = new EditorialService();
+        this.vorknewsPublishService = new VorknewsPublishService();
     }
 
     public async initialize() {
@@ -316,7 +319,7 @@ export class SchedulerService {
                 const article = articles[i];
                 const target = targets[i];
                 const category = fresh.targetCategory || article.section || undefined;
-                const ok = await this.mailService.sendArticleToTarget(target.email, article, category);
+                const ok = await this.dispatchToTarget(target, article, category);
                 if (ok) {
                     stats.targetsCovered++;
                     if (!article.featureImageUrl && !article.originalImageUrl) {
@@ -349,7 +352,7 @@ export class SchedulerService {
                         try {
                             const variant = await this.buildRepublishedVariant(sourceArticle);
                             const category = fresh.targetCategory || sourceArticle.section || undefined;
-                            const ok = await this.mailService.sendArticleToTarget(target.email, variant, category);
+                            const ok = await this.dispatchToTarget(target, variant, category);
                             if (ok) {
                                 stats.targetsCovered++;
                                 stats.articlesRefilled++;
@@ -391,6 +394,32 @@ export class SchedulerService {
             console.error(`[CRON-PUBLISH] Failed workflow ${fresh.name}:`, error);
             await this.recordRun(workflow.id, 'ERROR', startedAt, stats, error?.message || 'Error desconocido', error?.message);
         }
+    }
+
+    private async dispatchToTarget(target: any, article: Article, category?: string): Promise<boolean> {
+        if (target.type === 'VORKNEWS') {
+            const targetConfig = (target.config as any) || {};
+            const result = await this.vorknewsPublishService.publishArticle(article, {
+                mode: targetConfig.publishMode,
+                sectionId: targetConfig.defaultSectionId || (category ? this.vorknewsPublishService.resolveSectionId(category) : undefined),
+                author: targetConfig.defaultAuthor,
+                title: article.rewrittenTitle || article.originalTitle,
+                contentHtml: article.rewrittenContent || article.originalContent
+            });
+            if (!result.success) {
+                console.error(`[CRON-PUBLISH] Failed to publish to Vorknews target ${target.name}:`, result.error);
+                return false;
+            }
+            console.log(`[CRON-PUBLISH] Published to Vorknews target ${target.name} (mode: ${result.mode}, ID: ${result.vorknewsId || 'OK'})`);
+            return true;
+        }
+
+        if (!target.email) {
+            console.error(`[CRON-PUBLISH] Target ${target.name} has no email configured`);
+            return false;
+        }
+
+        return this.mailService.sendArticleToTarget(target.email, article, category);
     }
 
     /**

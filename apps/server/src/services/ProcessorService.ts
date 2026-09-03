@@ -168,9 +168,13 @@ export class ProcessorService {
                 + `blocked=${editorial.publicationBlocked}`);
         }
 
-        // 4. Rewrite Content
-        console.log(`[Processor] Rewriting content...`);
-        const rewritten = await this.aiService.rewriteContent(article.title, article.content, editorial.style);
+        // 4. Rewrite Content (Structured SEO Vorknews format)
+        console.log(`[Processor] Rewriting content with SEO Vorknews format...`);
+        const vorknewsRewrite = await this.aiService.rewriteForVorknews(article.title, article.content, editorial.style);
+        const rewritten = {
+            title: vorknewsRewrite.title,
+            content: vorknewsRewrite.content
+        };
 
         // 5. Image Strategy
         // Original image is treated as last resort — it often has text overlays,
@@ -341,7 +345,10 @@ export class ProcessorService {
                 imageCandidates: imageCandidates,
                 imageScores: imageScoresDict,
                 aiDecisions: aiTrace,
-                editorialData: buildEditorialData(editorial),
+                editorialData: {
+                    ...buildEditorialData(editorial),
+                    seo: vorknewsRewrite
+                },
                 embedding,
                 rewrittenTitle: rewritten.title,
                 rewrittenContent: rewritten.content,

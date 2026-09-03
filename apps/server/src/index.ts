@@ -70,6 +70,36 @@ async function initSections() {
 }
 initSections();
 
+async function initDefaultTargets() {
+    try {
+        const existing = await prisma.target.findFirst({
+            where: {
+                OR: [
+                    { type: 'VORKNEWS' },
+                    { name: 'Política del Sur' }
+                ]
+            }
+        });
+        if (!existing) {
+            await prisma.target.create({
+                data: {
+                    name: 'Política del Sur',
+                    type: 'VORKNEWS',
+                    config: {
+                        publishMode: 'DRAFT',
+                        defaultAuthor: 'Juan Bautista Vega',
+                        defaultSectionId: '64'
+                    }
+                }
+            });
+            console.log('Seeded default Vorknews target: Política del Sur');
+        }
+    } catch (e) {
+        console.error('Failed to init default targets:', e);
+    }
+}
+initDefaultTargets();
+
 // Open routes
 app.use('/api/auth', authRouter);
 
@@ -125,6 +155,19 @@ app.get('/api/articles/:id', async (req, res) => {
     try {
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Not found' });
+
+        const editorial = (article.editorialData as any) || {};
+        if (!editorial.seo) {
+            editorial.seo = {
+                title: article.rewrittenTitle || article.originalTitle,
+                volanta: article.location ? article.location.toUpperCase() : (article.section ? article.section.toUpperCase() : 'POLÍTICA'),
+                bajada: article.contentPreview || (article.originalContent ? article.originalContent.slice(0, 180) + '...' : ''),
+                content: article.rewrittenContent || article.originalContent,
+                tags: [article.section, article.location].filter(Boolean).join(', ')
+            };
+            article.editorialData = editorial;
+        }
+
         res.json(article);
     } catch (error) {
         console.error('Error fetching article:', error);
@@ -738,15 +781,108 @@ app.put('/api/config/prompts/:id', async (req, res) => {
     }
 });
 
-// POST /api/articles/:id/publish - Publish article to a target (send email)
+// POST /api/articles/:id/publish - Publish article to a target (send email or publish to Vorknews)
 import { MailService } from './services/MailService';
 import { AIService } from './services/AIService';
+import { VorknewsPublishService } from './services/VorknewsPublishService';
 const mailService = new MailService();
 const aiService = new AIService();
+const vorknewsPublishService = new VorknewsPublishService();
+
+// GET /api/vorknews/sections - List Vorknews sections
+app.get('/api/vorknews/sections', (req, res) => {
+    res.json(vorknewsPublishService.getSections());
+});
+
+// GET /api/config/vorknews - Get Vorknews settings
+app.get('/api/config/vorknews', async (req, res) => {
+    try {
+        const mode = await configService.getVorknewsPublishMode();
+        const author = await configService.getVorknewsDefaultAuthor();
+        const sectionId = await configService.getVorknewsDefaultSectionId();
+        res.json({ mode, author, sectionId });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message || 'Failed to get Vorknews settings' });
+    }
+});
+
+// PUT /api/config/vorknews - Update Vorknews settings
+app.put('/api/config/vorknews', async (req, res) => {
+    try {
+        const { mode, author, sectionId } = req.body;
+        if (mode) await configService.setSetting('vorknews_publish_mode', mode);
+        if (author !== undefined) await configService.setSetting('vorknews_default_author', author);
+        if (sectionId) await configService.setSetting('vorknews_default_section_id', sectionId);
+        res.json({ success: true, mode, author, sectionId });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message || 'Failed to update Vorknews settings' });
+    }
+});
+
+// POST /api/articles/:id/rewrite-vorknews - Generate SEO-optimized Vorknews rewrite
+app.post('/api/articles/:id/rewrite-vorknews', async (req, res) => {
+    try {
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        const instructions = req.body?.instructions || req.body?.comments;
+        const rewritten = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent, 'neutral', instructions);
+        const existingData = (article.editorialData as any) || {};
+        const updated = await prisma.article.update({
+            where: { id: article.id },
+            data: {
+                editorialData: {
+                    ...existingData,
+                    seo: rewritten
+                }
+            }
+        });
+        res.json({ ...rewritten, editorialData: updated.editorialData });
+    } catch (error: any) {
+        console.error('Error generating Vorknews rewrite:', error);
+        res.status(500).json({ error: 'Failed to generate Vorknews rewrite' });
+    }
+});
+
+// POST /api/articles/:id/generate-social - Generate social media copy
+app.post('/api/articles/:id/generate-social', async (req, res) => {
+    try {
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        const social = await aiService.generateSocialCopy(article.originalTitle, article.originalContent);
+        const existingData = (article.editorialData as any) || {};
+        const updated = await prisma.article.update({
+            where: { id: article.id },
+            data: {
+                editorialData: {
+                    ...existingData,
+                    social
+                }
+            }
+        });
+        res.json({ ...social, editorialData: updated.editorialData });
+    } catch (error: any) {
+        console.error('Error generating social copy:', error);
+        res.status(500).json({ error: 'Failed to generate social copy' });
+    }
+});
 
 app.post('/api/articles/:id/publish', async (req, res) => {
-    const { targetId, category, rewrittenTitle, rewrittenContent } = req.body;
-    if (!targetId) return res.status(400).json({ error: 'targetId is required' });
+    const {
+        targetId,
+        category,
+        rewrittenTitle,
+        rewrittenContent,
+        vorknewsMode,
+        vorknewsSectionId,
+        vorknewsAuthor,
+        vorknewsTitle,
+        vorknewsContentHtml,
+        vorknewsVolanta,
+        vorknewsBajada,
+        vorknewsTags
+    } = req.body;
 
     try {
         const draftUpdates: { rewrittenTitle?: string; rewrittenContent?: string; contentPreview?: string } = {};
@@ -790,16 +926,113 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             });
         }
 
-        const target = await prisma.target.findUnique({ where: { id: targetId } });
+        let target: any = null;
+        if (targetId && targetId !== 'VORKNEWS' && targetId !== 'vorknews') {
+            target = await prisma.target.findUnique({ where: { id: targetId } });
+        }
+        if (!target) {
+            target = await prisma.target.findFirst({
+                where: {
+                    OR: [
+                        { type: 'VORKNEWS' },
+                        { name: 'Política del Sur' }
+                    ]
+                }
+            });
+        }
         if (!target) return res.status(404).json({ error: 'Target not found' });
 
-        console.log(`[MANUAL-PUBLISH] Publishing article to target: ${target.name}`);
+        console.log(`[MANUAL-PUBLISH] Publishing article to target: ${target.name} (${target.type})`);
 
         const articleForTarget = {
             ...article,
             rewrittenTitle: article.rewrittenTitle || article.originalTitle,
             rewrittenContent: article.rewrittenContent || article.originalContent
         };
+
+        if (target.type === 'VORKNEWS') {
+            const targetConfig = (target.config as any) || {};
+            const articleEditorial = (article.editorialData as any) || {};
+            const savedSeo = articleEditorial.seo || {};
+
+            let finalTitle = vorknewsTitle || savedSeo.title;
+            let finalContentHtml = vorknewsContentHtml || savedSeo.content;
+            let finalVolanta = vorknewsVolanta !== undefined ? vorknewsVolanta : (savedSeo.volanta || '');
+            let finalBajada = vorknewsBajada !== undefined ? vorknewsBajada : (savedSeo.bajada || '');
+            let finalTags = vorknewsTags !== undefined ? vorknewsTags : (savedSeo.tags || '');
+
+            // ALWAYS publish with SEO format: if not generated yet, generate it on the fly!
+            if (!finalContentHtml || !finalTitle) {
+                console.log(`[MANUAL-PUBLISH] Generating SEO version on-the-fly for Vorknews publication...`);
+                const generated = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent);
+                finalTitle = finalTitle || generated.title;
+                finalContentHtml = finalContentHtml || generated.content;
+                finalVolanta = finalVolanta || generated.volanta;
+                finalBajada = finalBajada || generated.bajada;
+                finalTags = finalTags || generated.tags;
+
+                // Persist this generated SEO version
+                await prisma.article.update({
+                    where: { id: article.id },
+                    data: {
+                        editorialData: {
+                            ...articleEditorial,
+                            seo: generated
+                        }
+                    }
+                });
+            }
+
+            const result = await vorknewsPublishService.publishArticle(articleForTarget as any, {
+                mode: vorknewsMode || targetConfig.publishMode,
+                sectionId: vorknewsSectionId || targetConfig.defaultSectionId || (category ? vorknewsPublishService.resolveSectionId(category) : undefined),
+                author: vorknewsAuthor || targetConfig.defaultAuthor,
+                volanta: finalVolanta,
+                bajada: finalBajada,
+                tags: finalTags,
+                title: finalTitle,
+                contentHtml: finalContentHtml
+            });
+
+            if (!result.success) {
+                return res.status(500).json({ error: result.error || 'Failed to publish to Vorknews' });
+            }
+
+            // Update article status and persist final SEO content in the database
+            const updatedArticle = await prisma.article.update({
+                where: { id: req.params.id },
+                data: {
+                    status: 'PUBLISHED',
+                    rewrittenTitle: finalTitle,
+                    rewrittenContent: finalContentHtml,
+                    contentPreview: buildContentPreview(finalBajada || finalContentHtml),
+                    editorialData: {
+                        ...articleEditorial,
+                        seo: {
+                            title: finalTitle,
+                            content: finalContentHtml,
+                            volanta: finalVolanta,
+                            bajada: finalBajada,
+                            tags: finalTags
+                        }
+                    }
+                },
+                include: { source: true }
+            });
+
+            const modeLabel = result.mode === 'DRAFT' ? 'borrador' : 'publicada';
+            return res.json({
+                success: true,
+                message: `Nota guardada con formato SEO como ${modeLabel} en Política del Sur${result.vorknewsId ? ` (ID: ${result.vorknewsId})` : ''}`,
+                data: result,
+                article: updatedArticle
+            });
+        }
+
+        // Standard Email (Postie / WordPress)
+        if (!target.email) {
+            return res.status(400).json({ error: 'Target has no email address configured' });
+        }
 
         // Use provided category, or fall back to article's section
         const articleCategory = category || article.section || undefined;
@@ -813,9 +1046,9 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         });
 
         res.json({ success: true, message: `Article published to ${target.name}` });
-    } catch (error) {
+    } catch (error: any) {
         console.error('Error publishing article:', error);
-        res.status(500).json({ error: 'Failed to publish article' });
+        res.status(500).json({ error: error.message || 'Failed to publish article' });
     }
 });
 
@@ -832,16 +1065,23 @@ app.delete('/api/articles/:id', async (req, res) => {
 // PUT /api/articles/:id - Update article
 app.put('/api/articles/:id', async (req, res) => {
     try {
-        const { rewrittenTitle, rewrittenContent } = req.body;
+        const { rewrittenTitle, rewrittenContent, editorialData } = req.body;
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Article not found' });
+        
+        const updateData: any = {};
+        if (typeof rewrittenTitle === 'string') updateData.rewrittenTitle = rewrittenTitle;
+        if (typeof rewrittenContent === 'string') {
+            updateData.rewrittenContent = rewrittenContent;
+            updateData.contentPreview = buildContentPreview(rewrittenContent || article.originalContent);
+        }
+        if (editorialData !== undefined) {
+            updateData.editorialData = editorialData;
+        }
+
         const updated = await prisma.article.update({
             where: { id: req.params.id },
-            data: {
-                rewrittenTitle,
-                rewrittenContent,
-                contentPreview: buildContentPreview(rewrittenContent || article.originalContent)
-            }
+            data: updateData
         });
         res.json(updated);
     } catch (error) {
@@ -863,16 +1103,24 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
             location: article.location,
             score: article.interestScore ?? 5
         });
-        const result = await aiService.rewriteContent(article.originalTitle, article.originalContent, editorial.style);
+        const instructions = req.body?.instructions || req.body?.comments;
+        const result = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent, editorial.style, instructions);
+
+        const existingData = (article.editorialData as any) || {};
+        const updatedEditorial = {
+            ...existingData,
+            ...buildEditorialData(editorial),
+            seo: result
+        };
 
         const updated = await prisma.article.update({
             where: { id: article.id },
             data: {
                 rewrittenTitle: result.title,
                 rewrittenContent: result.content,
-                contentPreview: buildContentPreview(result.content),
+                contentPreview: buildContentPreview(result.bajada || result.content),
                 interestScore: editorial.effectiveScore,
-                editorialData: buildEditorialData(editorial),
+                editorialData: updatedEditorial,
                 publicationBlocked: editorial.publicationBlocked,
                 publicationBlockReason: editorial.publicationBlockReason,
                 status: editorial.publicationBlocked ? 'REJECTED' : article.status

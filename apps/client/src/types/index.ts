@@ -106,3 +106,20 @@ export interface ScrapeRun {
     cancelRequested: boolean;
     cancelledAt?: string | null;
 }
+
+export interface Target {
+    id: string;
+    name: string;
+    email?: string | null;
+    type?: 'EMAIL' | 'VORKNEWS';
+    config?: {
+        publishMode?: 'DRAFT' | 'PUBLISHED';
+        defaultSectionId?: string;
+        defaultAuthor?: string;
+    } | null;
+}
+
+export interface VorknewsSection {
+    id: string;
+    name: string;
+}

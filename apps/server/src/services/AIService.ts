@@ -144,6 +144,150 @@ export class AIService {
         };
     }
 
+    async rewriteForVorknews(
+        title: string,
+        content: string,
+        style: string = 'neutral',
+        customInstructions?: string
+    ): Promise<{ title: string; volanta: string; bajada: string; content: string; tags: string }> {
+        const config = await this.promptService.getPromptByType('REWRITE_VORKNEWS') ||
+                       await this.promptService.getPromptByName('Vorknews / Política del Sur (SEO HTML)') ||
+                       await this.promptService.getPromptByType('REWRITE');
+        
+        const promptTemplate = config?.template || '';
+        const contentChars = await this.configService.getRewriteContentChars();
+        const model = await this.configService.getRewriteModel();
+        const maxTokens = await this.configService.getRewriteMaxTokens();
+
+        const sourceContent = content.substring(0, contentChars);
+        let prompt = promptTemplate
+            .replace('{{style}}', style)
+            .replace('{{title}}', title)
+            .replace('{{content}}', sourceContent);
+
+        if (customInstructions && customInstructions.trim()) {
+            prompt += `\n\nINDICACIONES ESPECÍFICAS / SUGERENCIAS DEL EDITOR:\n"${customInstructions.trim()}"\nTené en cuenta especialmente estas indicaciones para modular el tono, enfoque, datos a resaltar o cambios solicitados.`;
+        }
+
+        const runOnce = async (messages: any[]) => {
+            const completion = await this.openai.chat.completions.create({
+                messages,
+                model,
+                response_format: { type: "json_object" },
+                max_tokens: Math.max(maxTokens, 2500),
+            });
+            return completion.choices[0].message.content || '{}';
+        };
+
+        const parseJson = (raw: string): any => {
+            try {
+                const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(cleaned);
+            } catch (e) {
+                console.error('[AIService] Failed to parse JSON response in rewriteForVorknews:', e);
+                return null;
+            }
+        };
+
+        try {
+            const rawContent = await runOnce([{ role: "user", content: prompt }]);
+            const result = parseJson(rawContent);
+            if (result && result.title && result.content) {
+                return {
+                    title: result.title,
+                    volanta: result.volanta || '',
+                    bajada: result.bajada || '',
+                    content: result.content,
+                    tags: result.tags || ''
+                };
+            }
+        } catch (error) {
+            console.error('[AIService] Error in rewriteForVorknews:', error);
+        }
+
+        // Fallback: format paragraphs into clean semantic HTML
+        const htmlFallback = content
+            .split(/\n\s*\n/)
+            .map(p => p.trim())
+            .filter(Boolean)
+            .map(p => `<p>${p}</p>`)
+            .join('\n');
+
+        return {
+            title,
+            volanta: '',
+            bajada: '',
+            content: htmlFallback,
+            tags: ''
+        };
+    }
+
+    async generateSocialCopy(
+        title: string,
+        content: string
+    ): Promise<{ twitter: string; instagram: string; facebook: string; hashtags: string }> {
+        const model = await this.configService.getRewriteModel();
+        const contentChars = await this.configService.getRewriteContentChars();
+        const snippet = content.substring(0, contentChars);
+
+        const config = await this.promptService.getPromptByType('SOCIAL_COPY') ||
+                       await this.promptService.getPromptByName('Copy para Redes Sociales (Política del Sur)');
+
+        let prompt: string;
+        if (config?.template) {
+            prompt = config.template
+                .replace('{{title}}', title)
+                .replace('{{content}}', snippet);
+        } else {
+            prompt = `
+Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo Política del Sur / Gran Buenos Aires).
+A partir de la siguiente noticia, generá los textos (copys) optimizados para publicar en redes sociales.
+
+Título original: ${title}
+Contenido: ${snippet}
+
+Instrucciones:
+1. "twitter": Texto para X (Twitter). Máximo 260 caracteres. Directo, impactante, con gancho o pregunta, 1-2 emojis y 2 hashtags clave.
+2. "instagram": Texto para Instagram (feed / carrusel). Gancho inicial en mayúsculas/destacado, 2 o 3 párrafos cortos explicando lo principal, llamado a la acción ("Comentá qué opinás", "Leé la nota completa en el link de la bio"), y un bloque de hashtags al final.
+3. "facebook": Texto para Facebook. Tono informativo y cercano, 2 párrafos breves, enlace al medio y llamado a debatir en comentarios.
+4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad.
+
+Responde ÚNICAMENTE un JSON con esta estructura exacta:
+{
+  "twitter": "...",
+  "instagram": "...",
+  "facebook": "...",
+  "hashtags": "#Politica #Lanus #..."
+}
+`;
+        }
+
+        try {
+            const completion = await this.openai.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model,
+                response_format: { type: "json_object" },
+                max_tokens: 1500,
+            });
+            const raw = completion.choices[0].message.content || '{}';
+            const parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
+            return {
+                twitter: parsed.twitter || '',
+                instagram: parsed.instagram || '',
+                facebook: parsed.facebook || '',
+                hashtags: parsed.hashtags || ''
+            };
+        } catch (err) {
+            console.error('[AIService] Failed to generate social copy:', err);
+            return {
+                twitter: `${title}\n\n#Noticias`,
+                instagram: `🚨 ${title}\n\n${content.slice(0, 200)}...\n\n#Noticias`,
+                facebook: `${title}\n\n${content.slice(0, 300)}...`,
+                hashtags: '#Noticias'
+            };
+        }
+    }
+
     private getRewriteLengthIssue(source: string, rewritten: string | undefined | null): string | null {
         const sourceLength = this.normalizedLength(source);
         const rewrittenLength = this.normalizedLength(rewritten || '');

@@ -24,6 +24,7 @@ export class NAScraper extends BaseScraper {
     // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         this.resetDiagnostics(limit);
+        await this.loadScrapeSettings();
         console.log(`[NA] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 
         const allArticles: ScrapedArticle[] = [];

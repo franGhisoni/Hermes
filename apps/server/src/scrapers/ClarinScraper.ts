@@ -1,14 +1,303 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
-import { Page } from 'puppeteer';
+import puppeteerExtra from 'puppeteer-extra';
+import { Frame, Page } from 'puppeteer';
 import * as cheerio from 'cheerio';
 
 export class ClarinScraper extends BaseScraper {
     name = 'Clarin';
     baseUrl = 'https://www.clarin.com';
 
-    // Override the entire scrape method to bypass Puppeteer and avoid Cloudflare blocks
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
         await this.loadScrapeSettings();
+        const email = process.env.CLARIN_EMAIL?.trim();
+        const password = process.env.CLARIN_PASSWORD;
+
+        if (email && password) {
+            try {
+                return await this.scrapeAuthenticated(limit, email, password);
+            } catch (error) {
+                // Authentication is an optional enhancement. Preserve the existing
+                // social-crawler scraper when Clarín changes its login UI or rejects
+                // the session, and never include credentials in the diagnostic.
+                console.warn('[Clarin] Authenticated scrape unavailable; falling back to public fetch:', this.safeError(error));
+            }
+        } else {
+            console.warn('[Clarin] CLARIN_EMAIL / CLARIN_PASSWORD not set; using public fetch.');
+        }
+
+        return this.scrapePublic(limit);
+    }
+
+    private async scrapeAuthenticated(limit: number, email: string, password: string): Promise<ScrapedArticle[]> {
+        this.resetDiagnostics(limit);
+        console.log(`[Clarin] Starting authenticated browser scrape for ${this.baseUrl} with limit ${limit}...`);
+
+        const browser = await puppeteerExtra.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--window-size=1920,1080',
+                '--disable-blink-features=AutomationControlled'
+            ]
+        });
+
+        try {
+            const page = await browser.newPage();
+            await page.setViewport({ width: 1920, height: 1080 });
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setExtraHTTPHeaders({
+                'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8,en;q=0.7'
+            });
+
+            const loggedIn = await this.login(page, email, password);
+            if (!loggedIn) throw new Error('Clarín rejected the login or kept the authentication form open.');
+
+            const sectionUrl = this.sectionUrl();
+            console.log(`[Clarin] Authenticated session ready. Fetching section page: ${sectionUrl}`);
+            await page.goto(sectionUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+            const sectionSegment = new URL(sectionUrl).pathname.split('/').filter(Boolean).pop() || 'lo-ultimo';
+            const links = await page.evaluate((segment) => {
+                const seen = new Set<string>();
+                const result: string[] = [];
+                const articlePattern = new RegExp(`^https://www\\.clarin\\.com/${segment}/.+\\.html`);
+
+                document.querySelectorAll('a[href]').forEach(anchor => {
+                    const rawHref = anchor.getAttribute('href');
+                    if (!rawHref) return;
+                    const href = new URL(rawHref, 'https://www.clarin.com').href;
+                    if (!articlePattern.test(href) || seen.has(href)) return;
+                    seen.add(href);
+                    result.push(href);
+                });
+                return result;
+            }, sectionSegment);
+
+            const relevantLinks = links.filter(link =>
+                !link.includes('/videos/') &&
+                !link.includes('/fotogalerias/') &&
+                !this.isQuoteFiller(link)
+            );
+
+            this.recordCandidates(relevantLinks);
+            const articles: ScrapedArticle[] = [];
+            const sectionName = sectionSegment.charAt(0).toUpperCase() + sectionSegment.slice(1);
+
+            for (const link of relevantLinks) {
+                if (articles.length >= limit) break;
+                this.recordVisit(link);
+
+                try {
+                    console.log(`[Clarin] Visiting with authenticated session: ${link}`);
+                    try {
+                        await page.goto(link, { waitUntil: 'domcontentloaded', timeout: 60000 });
+                    } catch (navigationError) {
+                        const message = this.safeError(navigationError);
+                        const currentUrl = page.url().split('#')[0];
+                        // Some subscriber articles abort Chromium's navigation after
+                        // committing the document. If the page did land on the target,
+                        // keep extracting from that authenticated DOM.
+                        if (!message.includes('ERR_ABORTED')) throw navigationError;
+                        if (currentUrl === link.split('#')[0]) {
+                            console.warn(`[Clarin] Navigation reported ERR_ABORTED after commit; continuing with loaded article: ${link}`);
+                        } else {
+                            // When Chromium does not expose the committed document,
+                            // replay the request with the authenticated session cookies.
+                            const cookies = await page.cookies('https://www.clarin.com');
+                            const cookieHeader = cookies.map(cookie => `${cookie.name}=${cookie.value}`).join('; ');
+                            const response = await fetch(link, {
+                                headers: {
+                                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                                    'Accept': 'text/html,application/xhtml+xml',
+                                    'Accept-Language': 'es-AR,es-419;q=0.9,es;q=0.8',
+                                    'Cookie': cookieHeader
+                                }
+                            });
+                            if (!response.ok) throw navigationError;
+                            await page.setContent(await response.text(), { waitUntil: 'domcontentloaded', timeout: 60000 });
+                            console.warn(`[Clarin] Recovered aborted navigation with authenticated HTTP fetch: ${link}`);
+                        }
+                    }
+                    await page.waitForSelector('.body-nota p, .body-article p, article p, .content-nota p, .entry-content p', {
+                        timeout: 10000
+                    }).catch(() => null);
+
+                    const publishedAt = await this.extractPublishedDate(page);
+                    if (!this.isFromToday(publishedAt)) {
+                        this.recordDateSkip(link, publishedAt);
+                        continue;
+                    }
+
+                    const data = await page.evaluate(() => {
+                        const title =
+                            (document.querySelector('h1') as HTMLElement)?.innerText.trim() ||
+                            (document.querySelector('.title') as HTMLElement)?.innerText.trim() ||
+                            '';
+                        const selectors = ['.body-nota', '.body-article', 'article', '.content-nota', '.entry-content', 'div[class*="body"]'];
+                        const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
+                        let paragraphs: string[] = [];
+
+                        for (const selector of selectors) {
+                            const candidates = Array.from(document.querySelectorAll(`${selector} p`));
+                            if (candidates.length <= 2) continue;
+                            paragraphs = candidates
+                                .filter(element => !element.closest(embedAncestor))
+                                .map(element => (element as HTMLElement).innerText.trim())
+                                .filter(Boolean);
+                            if (paragraphs.length > 0) break;
+                        }
+
+                        const structuredPaywall = Array.from(document.querySelectorAll('script[type="application/ld+json"]')).some(script => {
+                            try {
+                                const parsed = JSON.parse(script.textContent || 'null');
+                                const pending = Array.isArray(parsed) ? [...parsed] : [parsed];
+                                while (pending.length > 0) {
+                                    const node = pending.shift();
+                                    if (!node || typeof node !== 'object') continue;
+                                    if (node.isAccessibleForFree === false || String(node.isAccessibleForFree).toLowerCase() === 'false') return true;
+                                    if (Array.isArray(node['@graph'])) pending.push(...node['@graph']);
+                                }
+                            } catch {
+                                // Ignore malformed JSON-LD and continue with visible article signals.
+                            }
+                            return false;
+                        });
+                        const articleRoot = document.querySelector('article');
+                        const articleText = (articleRoot as HTMLElement | null)?.innerText || '';
+                        const paywalled = structuredPaywall ||
+                            Boolean(articleRoot?.querySelector('[class*="paywall"], [class*="loginwall"]')) ||
+                            /solo suscriptores|suscribite para seguir leyendo|ingres[aá] para continuar/i.test(articleText);
+                        const image =
+                            document.querySelector('picture img')?.getAttribute('src') ||
+                            document.querySelector('article img')?.getAttribute('src') ||
+                            document.querySelector('meta[property="og:image"]')?.getAttribute('content');
+
+                        return { title, paragraphs, image, paywalled };
+                    });
+
+                    const content = this.cleanParagraphs(data.paragraphs).join('\n\n');
+                    if (data.paywalled && content.length < 500) {
+                        this.recordContentSkip(link, data.title, `La sesión no abrió el contenido para suscriptores; solo se extrajeron ${content.length} caracteres.`);
+                        continue;
+                    }
+
+                    if (!data.title || !content) {
+                        this.recordContentSkip(link, data.title, `Contenido insuficiente: ${content.length} caracteres extraídos.`);
+                        continue;
+                    }
+
+                    articles.push({
+                        title: data.title,
+                        content,
+                        url: link,
+                        imageUrl: data.image || undefined,
+                        publishedAt: publishedAt ?? new Date(),
+                        section: sectionName
+                    });
+                    this.recordAccepted(
+                        link,
+                        data.title,
+                        publishedAt,
+                        content.length,
+                        data.paywalled ? 'Nota para suscriptores obtenida con la sesión autenticada.' : 'Fecha y contenido válidos con sesión autenticada.'
+                    );
+                    console.log(`[Clarin] Success${data.paywalled ? ' (subscriber)' : ''}: ${data.title.substring(0, 30)}...`);
+                } catch (error) {
+                    this.recordFailure(error, link);
+                    console.error(`[Clarin] Error processing authenticated article ${link}:`, this.safeError(error));
+                }
+            }
+
+            console.log(`[Clarin] Authenticated scrape returned ${articles.length} articles.`);
+            return articles;
+        } finally {
+            await browser.close();
+        }
+    }
+
+    private async login(page: Page, email: string, password: string): Promise<boolean> {
+        console.log('[Clarin] Opening subscriber login...');
+        await page.goto('https://www.clarin.com/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        const alreadyLoggedIn = await page.evaluate(() =>
+            !Array.from(document.querySelectorAll('button')).some(button => /ingresar/i.test((button as HTMLElement).innerText || ''))
+        );
+        if (alreadyLoggedIn) return true;
+
+        const clicked = await page.evaluate(() => {
+            const button = Array.from(document.querySelectorAll('button, a')).find(element =>
+                /^ingresar$/i.test(((element as HTMLElement).innerText || '').trim()) ||
+                /boton ingresar/i.test(element.getAttribute('aria-label') || '')
+            );
+            if (!button) return false;
+            (button as HTMLElement).click();
+            return true;
+        });
+        if (!clicked) return false;
+
+        const context = await this.waitForLoginContext(page);
+        if (!context) return false;
+
+        const emailSelector = 'input[name="username"], input[type="email"], input#username, input#email';
+        const passwordSelector = 'input[name="password"], input[type="password"], input#password';
+        const emailInput = await context.waitForSelector(emailSelector, { visible: true, timeout: 15000 }).catch(() => null);
+        if (!emailInput) return false;
+        await emailInput.type(email, { delay: 20 });
+
+        const emailSubmit = await context.$('button[type="submit"], input[type="submit"]');
+        if (!emailSubmit) return false;
+        await emailSubmit.click();
+
+        const passwordInput = await context.waitForSelector(passwordSelector, { visible: true, timeout: 30000 }).catch(() => null);
+        if (!passwordInput) return false;
+        await passwordInput.type(password, { delay: 20 });
+
+        const passwordSubmit = await context.$('button[type="submit"], input[type="submit"]');
+        if (!passwordSubmit) return false;
+        await passwordSubmit.click();
+
+        await page.waitForFunction(() =>
+            !Array.from(document.querySelectorAll('button')).some(button => /ingresar/i.test((button as HTMLElement).innerText || '')),
+            { timeout: 30000 }
+        ).catch(() => null);
+
+        const passwordStillVisible = await context.$(passwordSelector)
+            .then(element => Boolean(element))
+            .catch(() => false);
+        const loginButtonStillVisible = await page.evaluate(() =>
+            Array.from(document.querySelectorAll('button')).some(button => /ingresar/i.test((button as HTMLElement).innerText || ''))
+        ).catch(() => true);
+
+        const ok = !passwordStillVisible && !loginButtonStillVisible;
+        console.log(`[Clarin] Login ${ok ? 'OK' : 'failed'}.`);
+        return ok;
+    }
+
+    private async waitForLoginContext(page: Page): Promise<Page | Frame | null> {
+        const deadline = Date.now() + 15000;
+        while (Date.now() < deadline) {
+            if (/micuenta\.clarin\.com|login|authorize/i.test(page.url())) return page;
+            const frame = page.frames().find(candidate => /micuenta\.clarin\.com|login|authorize/i.test(candidate.url()));
+            if (frame) return frame;
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        return null;
+    }
+
+    private sectionUrl(): string {
+        const parsed = new URL(this.baseUrl);
+        const segment = parsed.pathname.split('/').filter(Boolean).pop() || 'lo-ultimo';
+        return `https://www.clarin.com/${segment}/`;
+    }
+
+    private safeError(error: unknown): string {
+        return error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300);
+    }
+
+    // Public fallback bypasses Puppeteer to avoid Cloudflare blocks.
+    private async scrapePublic(limit: number = 5): Promise<ScrapedArticle[]> {
         this.resetDiagnostics(limit);
         console.log(`[Clarin] Starting native fetch scrape for ${this.baseUrl} with limit ${limit}...`);
 

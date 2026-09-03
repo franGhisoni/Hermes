@@ -23,12 +23,18 @@ router.get('/', async (req, res) => {
 
 // POST /api/targets
 router.post('/', requireAdmin, async (req, res) => {
-    const { name, email } = req.body;
-    if (!name || !email) return res.status(400).json({ error: 'Name and email are required' });
+    const { name, email, type = 'EMAIL', config } = req.body;
+    if (!name) return res.status(400).json({ error: 'Name is required' });
+    if (type === 'EMAIL' && !email) return res.status(400).json({ error: 'Email is required for EMAIL target' });
 
     try {
         const target = await prisma.target.create({
-            data: { name, email }
+            data: {
+                name,
+                email: email || null,
+                type: type || 'EMAIL',
+                config: config || undefined
+            }
         });
         res.json(target);
     } catch (error: any) {
@@ -41,11 +47,17 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // PUT /api/targets/:id
 router.put('/:id', requireAdmin, async (req, res) => {
-    const { name, email } = req.body;
+    const { name, email, type, config } = req.body;
     try {
+        const data: any = {};
+        if (name !== undefined) data.name = name;
+        if (email !== undefined) data.email = email;
+        if (type !== undefined) data.type = type;
+        if (config !== undefined) data.config = config;
+
         const target = await prisma.target.update({
             where: { id: req.params.id },
-            data: { name, email }
+            data
         });
         res.json(target);
     } catch (error) {

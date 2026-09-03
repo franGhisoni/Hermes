@@ -9,7 +9,9 @@ import { CronBuilder } from '../components/CronBuilder';
 interface Target {
     id: string;
     name: string;
-    email: string;
+    email?: string | null;
+    type?: 'EMAIL' | 'VORKNEWS';
+    config?: any;
 }
 
 interface WorkflowRun {
@@ -57,6 +59,7 @@ export default function Flows() {
     // Form states
     const [targetName, setTargetName] = useState('');
     const [targetEmail, setTargetEmail] = useState('');
+    const [targetType, setTargetType] = useState<'EMAIL' | 'VORKNEWS'>('EMAIL');
 
     const [wfName, setWfName] = useState('');
     const [wfSection, setWfSection] = useState('');
@@ -110,9 +113,14 @@ export default function Flows() {
     const handleCreateTarget = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/api/targets', { name: targetName, email: targetEmail });
+            await api.post('/api/targets', {
+                name: targetName,
+                email: targetType === 'EMAIL' ? targetEmail : null,
+                type: targetType
+            });
             setTargetName('');
             setTargetEmail('');
+            setTargetType('EMAIL');
             fetchData();
         } catch (error: any) {
             alert('Error: ' + (error.response?.data?.error || 'Failed to create medium'));
@@ -397,17 +405,30 @@ export default function Flows() {
 
                     {/* Medios column */}
                     <section className="flex flex-col gap-3">
-                        <ColumnHeader icon={Mail} label="Medios" count={targets.length} />
+                        <ColumnHeader icon={Mail} label="Medios / Destinos" count={targets.length} />
                         <div className="bg-white border border-editorial-text/15 p-4">
                             <form onSubmit={handleCreateTarget} className="flex flex-col gap-2 font-sans mb-4 pb-4 border-b border-editorial-text/10">
+                                <div>
+                                    <label className="text-[9px] font-bold uppercase tracking-wider text-editorial-text/50 block mb-0.5">Tipo de destino</label>
+                                    <select
+                                        value={targetType}
+                                        onChange={e => setTargetType(e.target.value as 'EMAIL' | 'VORKNEWS')}
+                                        className="w-full border-b border-editorial-text/30 bg-transparent py-1 focus:outline-none text-xs font-bold"
+                                    >
+                                        <option value="EMAIL">Email (WordPress / Postie)</option>
+                                        <option value="VORKNEWS">Vorknews (Política del Sur)</option>
+                                    </select>
+                                </div>
                                 <input
-                                    type="text" placeholder="Nombre" value={targetName} onChange={e => setTargetName(e.target.value)} required
+                                    type="text" placeholder={targetType === 'VORKNEWS' ? 'Nombre (ej. Política del Sur)' : 'Nombre'} value={targetName} onChange={e => setTargetName(e.target.value)} required
                                     className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
                                 />
-                                <input
-                                    type="email" placeholder="Email" value={targetEmail} onChange={e => setTargetEmail(e.target.value)} required
-                                    className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
-                                />
+                                {targetType === 'EMAIL' && (
+                                    <input
+                                        type="email" placeholder="Email destino" value={targetEmail} onChange={e => setTargetEmail(e.target.value)} required
+                                        className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
+                                    />
+                                )}
                                 <button type="submit" className="bg-editorial-text text-editorial-bg px-3 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px] mt-1">
                                     Añadir
                                 </button>
@@ -417,8 +438,17 @@ export default function Flows() {
                                 {targets.map(t => (
                                     <div key={t.id} className="flex justify-between items-start p-2 bg-editorial-text/5 text-sm font-sans group hover:bg-editorial-text/10 transition-colors">
                                         <div className="min-w-0 flex-1">
-                                            <div className="font-bold text-xs truncate">{t.name}</div>
-                                            <div className="text-[10px] opacity-60 truncate">{t.email}</div>
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-bold text-xs truncate">{t.name}</span>
+                                                {t.type === 'VORKNEWS' && (
+                                                    <span className="text-[8px] font-bold uppercase px-1 py-0.2 bg-purple-100 text-purple-800 rounded">
+                                                        Vorknews
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-[10px] opacity-60 truncate">
+                                                {t.type === 'VORKNEWS' ? 'politicadelsur.com/vadmin' : t.email}
+                                            </div>
                                         </div>
                                         <button onClick={() => handleDeleteTarget(t.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all ml-2 flex-shrink-0">
                                             <Trash2 size={12} />

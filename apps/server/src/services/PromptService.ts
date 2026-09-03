@@ -13,6 +13,12 @@ export class PromptService {
         });
     }
 
+    async getPromptByName(name: string) {
+        return prisma.promptConfig.findFirst({
+            where: { name }
+        });
+    }
+
     async updatePrompt(id: string, template: string) {
         return prisma.promptConfig.update({
             where: { id },
@@ -72,6 +78,54 @@ Contenido original:
 {{content}}`);
         }
 
+        // Rewrite Vorknews (SEO HTML)
+        const vorknewsRewrite = await this.getPromptByType('REWRITE_VORKNEWS');
+        if (!vorknewsRewrite) {
+            await this.createPrompt('Vorknews / Política del Sur (SEO HTML)', 'REWRITE_VORKNEWS',
+                `Sos un redactor periodístico y especialista en SEO para el portal de noticias "Política del Sur" (portal líder del Gran Buenos Aires y la Provincia). Reescribí el siguiente artículo para que sea 100% original, atractivo, de alto impacto y optimizado para posicionamiento en motores de búsqueda (SEO), conservando toda la información factual.
+
+ESTILO PERIODÍSTICO
+- Neutral, dinámico, riguroso, en español rioplatense periodístico.
+- Tono informativo adaptado a la audiencia del conurbano bonaerense y la provincia de Buenos Aires.
+
+ESTRUCTURA SEO Y CÓDIGO HTML
+- El contenido del cuerpo (campo "content") DEBE estar formateado en CÓDIGO FUENTE HTML listo para insertar directamente en el editor (modo "Fuente HTML").
+- Usá etiquetas semánticas:
+  * Párrafos claros encerrados en <p>...</p>.
+  * Subtítulos informativos con <h2>...</h2> intercalados cada 2 o 3 párrafos, que contengan palabras clave relevantes de la noticia.
+  * Resaltá nombres de figuras clave, datos duros, cifras y conceptos determinantes con <strong>...</strong> para facilitar la lectura rápida y mejorar el rastreo SEO.
+  * Si hay declaraciones textuales extensas, usá <blockquote>...</blockquote>.
+  * PROHIBIDO usar <h1> (el título ya actúa como H1).
+  * PROHIBIDO usar formato Markdown (no uses **, ##, ni guiones de lista markdown; usá etiquetas HTML puras <p>, <h2>, <ul><li> si aplica).
+
+CAMPOS REQUERIDOS EN EL JSON
+- "title": Título atractivo, claro, optimizado para SEO (ideal entre 50 y 70 caracteres, con la entidad o hecho principal al inicio, sin comillas al empezar).
+- "volanta": Sobretítulo / volanta breve en mayúsculas que ubique el tema o la localidad (ej: "CONURBANO BONAERENSE", "LANÚS", "LEGISLATURA BONAERENSE", "JUDICIALES", "GREMIALES").
+- "bajada": Copete periodístico de 1 a 2 oraciones (texto plano sin etiquetas HTML) que amplíe el titular con los datos fundamentales de la noticia.
+- "content": Cuerpo completo de la nota en HTML válido (<p>, <h2>, <strong>, etc.).
+- "tags": Entre 4 y 6 palabras o frases clave separadas por comas (ej: "Lanús, Julián Álvarez, Conurbano bonaerense, Obras públicas").
+
+REGLAS INVIOLABLES
+- NUNCA menciones medios fuente ni competencia (Clarín, La Nación, Infobae, TN, C5N, Ámbito, Cronista, Página/12, MDZ, Télam, NA, Noticias Argentinas, Reuters, EFE, etc.).
+- Eliminá firmas ajenas, fechas de cables de agencia y datelines de inicio ("Buenos Aires, 15 de marzo (NA)...").
+- Citas textuales: mantené lo dicho entre comillas verbatim, cambiando atribuciones de medios ajenos por fórmulas neutrales ("afirmó", "expresó", "señaló").
+- Prohibido cualquier carácter fuera del alfabeto latino + tildes/ñ/¿¡.
+- Respuesta en formato JSON estricto sin code fences de markdown.
+
+SALIDA (JSON ESTRICTO):
+{
+  "title": "Nuevo título optimizado",
+  "volanta": "VOLANTA TEMÁTICA",
+  "bajada": "Bajada o copete conciso sin HTML.",
+  "content": "<p>Párrafo inicial con <strong>datos clave</strong>...</p><h2>Subtítulo descriptivo con keywords</h2><p>Segundo párrafo...</p>",
+  "tags": "Etiqueta 1, Etiqueta 2, Etiqueta 3"
+}
+
+Título original: {{title}}
+Contenido original:
+{{content}}`);
+        }
+
         // Interest
         const interest = await this.getPromptByType('INTEREST');
         if (!interest) {
@@ -117,6 +171,32 @@ Return a JSON object:
 }
 - Use 0-based index for the best image
 - Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`);
+        }
+
+        // Social Media Copy
+        const socialCopy = await this.getPromptByType('SOCIAL_COPY');
+        if (!socialCopy) {
+            await this.createPrompt('Copy para Redes Sociales (Política del Sur)', 'SOCIAL_COPY',
+                `Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo Política del Sur / Gran Buenos Aires).
+A partir de la siguiente noticia, generá los textos (copys) optimizados para publicar en redes sociales.
+
+Título original: {{title}}
+Contenido:
+{{content}}
+
+Instrucciones:
+1. "twitter": Texto para X (Twitter). Máximo 260 caracteres. Directo, impactante, con gancho o pregunta, 1-2 emojis sobrios y 2 hashtags clave.
+2. "instagram": Texto para Instagram (feed / carrusel). Gancho inicial en mayúsculas/destacado, 2 o 3 párrafos cortos explicando lo principal, llamado a la acción ("Comentá qué opinás", "Leé la nota completa en el link de la bio"), y un bloque de hashtags al final.
+3. "facebook": Texto para Facebook. Tono informativo y cercano, 2 párrafos breves, enlace al medio y llamado a debatir en comentarios.
+4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad.
+
+Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
+{
+  "twitter": "...",
+  "instagram": "...",
+  "facebook": "...",
+  "hashtags": "#Politica #Lanus #..."
+}`);
         }
     }
 }

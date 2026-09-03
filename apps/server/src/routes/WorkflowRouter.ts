@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { Prisma } from '@prisma/client';
 import { requireAdmin, isDemoUser } from '../middlewares/auth';
 import { prisma } from '../lib/prisma';
 import { getDemoWorkflowRuns, getDemoWorkflows } from '../services/DemoService';
@@ -18,6 +19,54 @@ function parseArticleWindow(value: unknown): number | null | undefined | 'invali
     return parsed;
 }
 
+type WorkflowTargetLimitInput = {
+    targetId?: unknown;
+    section?: unknown;
+    limit?: unknown;
+};
+
+function parseTargetLimits(value: unknown, targetIds: string[]): Array<{ targetId: string; section: string; limit: number }> | 'invalid' {
+    const selected = new Set(targetIds);
+    const rows = value === undefined ? [] : value;
+    if (!Array.isArray(rows)) return 'invalid';
+
+    const parsed: Array<{ targetId: string; section: string; limit: number }> = [];
+    const seen = new Set<string>();
+    for (const row of rows as WorkflowTargetLimitInput[]) {
+        const targetId = typeof row?.targetId === 'string' ? row.targetId : '';
+        const section = typeof row?.section === 'string' ? row.section.trim() : '';
+        const limit = Number(row?.limit);
+        if (!targetId || !selected.has(targetId) || !Number.isInteger(limit) || limit <= 0 || limit > 100) {
+            return 'invalid';
+        }
+        const key = `${targetId}\u0000${section}`;
+        if (seen.has(key)) return 'invalid';
+        seen.add(key);
+        parsed.push({ targetId, section, limit });
+    }
+
+    return parsed;
+}
+
+async function syncTargetLimits(
+    workflowId: string,
+    targetIds: string[],
+    input: unknown,
+    tx: Prisma.TransactionClient = prisma
+) {
+    const parsed = parseTargetLimits(input, targetIds);
+    if (parsed === 'invalid') throw new Error('targetLimits must contain positive limits between 1 and 100 for selected targets');
+
+    const rows = parsed.length > 0
+        ? parsed
+        : targetIds.map(targetId => ({ targetId, section: '', limit: 1 }));
+
+    await tx.workflowTargetLimit.deleteMany({ where: { workflowId } });
+    await tx.workflowTargetLimit.createMany({
+        data: rows.map(row => ({ workflowId, ...row }))
+    });
+}
+
 // GET /api/workflows
 router.get('/', async (req, res) => {
     try {
@@ -26,6 +75,7 @@ router.get('/', async (req, res) => {
         const workflows = await prisma.workflow.findMany({
             include: {
                 targets: true,
+                targetLimits: { orderBy: [{ targetId: 'asc' }, { section: 'asc' }] },
                 runs: { orderBy: { startedAt: 'desc' }, take: 1 }
             },
             orderBy: { createdAt: 'desc' }
@@ -82,7 +132,7 @@ import { schedulerService } from '../index';
 
 // POST /api/workflows
 router.post('/', requireAdmin, async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, allowRepublish, articleWindowHours } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, targetLimits, allowRepublish, articleWindowHours } = req.body;
     if (!name || !cron || !targetIds || !Array.isArray(targetIds) || targetIds.length === 0) {
         return res.status(400).json({ error: 'name, cron, and at least one targetId are required' });
     }
@@ -91,22 +141,32 @@ router.post('/', requireAdmin, async (req, res) => {
     if (parsedWindow === 'invalid') {
         return res.status(400).json({ error: 'articleWindowHours must be a positive integer' });
     }
+    if (parseTargetLimits(targetLimits, targetIds) === 'invalid') {
+        return res.status(400).json({ error: 'targetLimits debe contener cantidades enteras entre 1 y 100 para los medios seleccionados' });
+    }
 
     try {
-        const workflow = await prisma.workflow.create({
-            data: {
-                name,
-                section: section || null,
-                sources: Array.isArray(sources) ? sources : [],
-                minScore: minScore ? parseInt(minScore) : null,
-                targetCategory: targetCategory || null,
-                cron,
-                articleWindowHours: parsedWindow,
-                allowRepublish: Boolean(allowRepublish),
-                targets: { connect: targetIds.map((id: string) => ({ id })) },
-                isActive: true
-            },
-            include: { targets: true }
+        const workflow = await prisma.$transaction(async tx => {
+            const created = await tx.workflow.create({
+                data: {
+                    name,
+                    section: section || null,
+                    sources: Array.isArray(sources) ? sources : [],
+                    minScore: minScore ? parseInt(minScore) : null,
+                    targetCategory: targetCategory || null,
+                    cron,
+                    articleWindowHours: parsedWindow,
+                    allowRepublish: Boolean(allowRepublish),
+                    targets: { connect: targetIds.map((id: string) => ({ id })) },
+                    isActive: true
+                },
+                include: { targets: true }
+            });
+            await syncTargetLimits(created.id, targetIds, targetLimits, tx);
+            return tx.workflow.findUnique({
+                where: { id: created.id },
+                include: { targets: true, targetLimits: true }
+            });
         });
         schedulerService.scheduleWorkflow(workflow);
         res.json(workflow);
@@ -117,7 +177,7 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // PUT /api/workflows/:id
 router.put('/:id', requireAdmin, async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, isActive, allowRepublish, articleWindowHours } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, targetLimits, isActive, allowRepublish, articleWindowHours } = req.body;
 
     if (targetIds && (!Array.isArray(targetIds) || targetIds.length === 0)) {
         return res.status(400).json({ error: 'targetIds must be a non-empty array' });
@@ -128,33 +188,49 @@ router.put('/:id', requireAdmin, async (req, res) => {
         return res.status(400).json({ error: 'articleWindowHours must be a positive integer' });
     }
 
+    const selectedTargetIds = targetIds || (await prisma.workflow.findUnique({ where: { id: req.params.id }, select: { targets: { select: { id: true } } } }))?.targets.map(target => target.id) || [];
+    if (targetLimits !== undefined && parseTargetLimits(targetLimits, selectedTargetIds) === 'invalid') {
+        return res.status(400).json({ error: 'targetLimits debe contener cantidades enteras entre 1 y 100 para los medios seleccionados' });
+    }
+
     try {
-        const data: any = {
-            name,
-            section: section || null,
-            sources: Array.isArray(sources) ? sources : [],
-            minScore: minScore ? parseInt(minScore) : null,
-            targetCategory: targetCategory || null,
-            cron,
-            isActive
-        };
+        const workflow = await prisma.$transaction(async tx => {
+            const data: any = {
+                name,
+                section: section || null,
+                sources: Array.isArray(sources) ? sources : [],
+                minScore: minScore ? parseInt(minScore) : null,
+                targetCategory: targetCategory || null,
+                cron,
+                isActive
+            };
 
-        if (articleWindowHours !== undefined) {
-            data.articleWindowHours = parsedWindow;
-        }
+            if (articleWindowHours !== undefined) {
+                data.articleWindowHours = parsedWindow;
+            }
 
-        if (typeof allowRepublish === 'boolean') {
-            data.allowRepublish = allowRepublish;
-        }
+            if (typeof allowRepublish === 'boolean') {
+                data.allowRepublish = allowRepublish;
+            }
 
-        if (targetIds) {
-            data.targets = { set: targetIds.map((id: string) => ({ id })) };
-        }
+            if (targetIds) {
+                data.targets = { set: targetIds.map((id: string) => ({ id })) };
+            }
 
-        const workflow = await prisma.workflow.update({
-            where: { id: req.params.id },
-            data,
-            include: { targets: true }
+            const updated = await tx.workflow.update({
+                where: { id: req.params.id },
+                data,
+                include: { targets: true }
+            });
+
+            if (targetLimits !== undefined) {
+                await syncTargetLimits(updated.id, selectedTargetIds, targetLimits, tx);
+            }
+
+            return tx.workflow.findUnique({
+                where: { id: updated.id },
+                include: { targets: true, targetLimits: true }
+            });
         });
         schedulerService.scheduleWorkflow(workflow);
         res.json(workflow);

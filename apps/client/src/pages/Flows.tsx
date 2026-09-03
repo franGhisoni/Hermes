@@ -30,6 +30,13 @@ interface WorkflowRunWithFlow extends WorkflowRun {
     workflow: { id: string; name: string };
 }
 
+interface WorkflowTargetLimit {
+    id?: string;
+    targetId: string;
+    section: string;
+    limit: number;
+}
+
 interface Workflow {
     id: string;
     name: string;
@@ -41,6 +48,7 @@ interface Workflow {
     isActive: boolean;
     allowRepublish?: boolean;
     articleWindowHours?: number | null;
+    targetLimits?: WorkflowTargetLimit[];
     targets?: Target[];
     runs?: WorkflowRun[];
 }
@@ -65,6 +73,7 @@ export default function Flows() {
     const [wfTargetCategory, setWfTargetCategory] = useState('');
     const [wfCron, setWfCron] = useState('0 8 * * *');
     const [wfTargetIds, setWfTargetIds] = useState<string[]>([]);
+    const [wfTargetLimits, setWfTargetLimits] = useState<Record<string, { defaultLimit: string; sections: Record<string, string> }>>({});
     const [wfAllowRepublish, setWfAllowRepublish] = useState(false);
     const [wfArticleWindowHours, setWfArticleWindowHours] = useState<string>('');
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -139,6 +148,7 @@ export default function Flows() {
         setWfTargetCategory('');
         setWfCron('0 8 * * *');
         setWfTargetIds(targets.length > 0 ? [targets[0].id] : []);
+        setWfTargetLimits({});
         setWfAllowRepublish(false);
         setWfArticleWindowHours('');
     };
@@ -159,9 +169,39 @@ export default function Flows() {
         setWfTargetCategory(wf.targetCategory || '');
         setWfCron(wf.cron);
         setWfTargetIds(wf.targets?.map(t => t.id) || []);
+        const limits: Record<string, { defaultLimit: string; sections: Record<string, string> }> = {};
+        for (const target of wf.targets || []) {
+            limits[target.id] = { defaultLimit: '1', sections: {} };
+        }
+        for (const row of wf.targetLimits || []) {
+            const current = limits[row.targetId] || { defaultLimit: '1', sections: {} };
+            if (row.section) current.sections[row.section] = String(row.limit);
+            else current.defaultLimit = String(row.limit);
+            limits[row.targetId] = current;
+        }
+        setWfTargetLimits(limits);
         setWfAllowRepublish(Boolean(wf.allowRepublish));
         setWfArticleWindowHours(wf.articleWindowHours != null ? String(wf.articleWindowHours) : '');
         setTimeout(() => formRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    };
+
+    const updateWorkflowTargetIds = (ids: string[]) => {
+        setWfTargetIds(ids);
+        setWfTargetLimits(previous => {
+            const next: typeof previous = {};
+            for (const id of ids) {
+                next[id] = previous[id] || { defaultLimit: '1', sections: {} };
+            }
+            return next;
+        });
+    };
+
+    const updateWorkflowTargetLimit = (targetId: string, section: string, value: string) => {
+        setWfTargetLimits(previous => {
+            const current = previous[targetId] || { defaultLimit: '1', sections: {} };
+            if (!section) return { ...previous, [targetId]: { ...current, defaultLimit: value } };
+            return { ...previous, [targetId]: { ...current, sections: { ...current.sections, [section]: value } } };
+        });
     };
 
     const startEditById = (workflowId: string) => {
@@ -179,6 +219,15 @@ export default function Flows() {
             targetCategory: wfTargetCategory || undefined,
             cron: wfCron,
             targetIds: wfTargetIds,
+            targetLimits: wfTargetIds.flatMap(targetId => {
+                const config = wfTargetLimits[targetId] || { defaultLimit: '1', sections: {} };
+                return [
+                    { targetId, section: '', limit: parseInt(config.defaultLimit || '1', 10) },
+                    ...Object.entries(config.sections)
+                        .filter(([, value]) => value.trim() !== '')
+                        .map(([section, value]) => ({ targetId, section, limit: parseInt(value, 10) }))
+                ];
+            }),
             allowRepublish: wfAllowRepublish,
             articleWindowHours: wfArticleWindowHours.trim() === '' ? null : parseInt(wfArticleWindowHours, 10)
         };
@@ -293,9 +342,51 @@ export default function Flows() {
                             <MultiSelect
                                 options={targets.map(t => ({ id: t.id, label: t.name }))}
                                 selectedIds={wfTargetIds}
-                                onChange={setWfTargetIds}
+                                onChange={updateWorkflowTargetIds}
                                 placeholder="Seleccionar destinos..."
                             />
+                        </div>
+
+                        <div className="md:col-span-2 lg:col-span-4 border border-editorial-text/15 p-4 bg-editorial-text/[0.02]">
+                            <div className="flex items-baseline justify-between gap-3 mb-2">
+                                <label className="text-[10px] font-bold uppercase tracking-widest opacity-60">Notas por medio y sección</label>
+                                <span className="text-[10px] opacity-50">Vacío = usa el valor por defecto del medio</span>
+                            </div>
+                            <p className="text-[11px] opacity-60 mb-3 leading-snug">
+                                Definí cuántas notas recibe cada medio por ejecución. Los valores de sección sobrescriben el default; si el flujo filtra una sección, solo se usa esa sección.
+                            </p>
+                            {wfTargetIds.length > 0 ? (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs">
+                                        <thead>
+                                            <tr className="text-left border-b border-editorial-text/10">
+                                                <th className="py-2 pr-3 font-bold">Medio</th>
+                                                <th className="py-2 px-2 font-bold min-w-[120px]">Por defecto</th>
+                                                {sections.map(section => <th key={section.id} className="py-2 px-2 font-bold min-w-[120px]">{section.name}</th>)}
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {wfTargetIds.map(targetId => {
+                                                const target = targets.find(item => item.id === targetId);
+                                                const config = wfTargetLimits[targetId] || { defaultLimit: '1', sections: {} };
+                                                return (
+                                                    <tr key={targetId} className="border-b border-editorial-text/5 last:border-0">
+                                                        <td className="py-2 pr-3 font-bold whitespace-nowrap">{target?.name || targetId}</td>
+                                                        <td className="py-2 px-2">
+                                                            <input type="number" min="1" max="100" value={config.defaultLimit} onChange={e => updateWorkflowTargetLimit(targetId, '', e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-1 focus:outline-none focus:border-editorial-text" />
+                                                        </td>
+                                                        {sections.map(section => (
+                                                            <td key={section.id} className="py-2 px-2">
+                                                                <input type="number" min="1" max="100" value={config.sections[section.name] || ''} placeholder={config.defaultLimit || '1'} onChange={e => updateWorkflowTargetLimit(targetId, section.name, e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-1 focus:outline-none focus:border-editorial-text" />
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : <p className="text-[11px] opacity-50 italic">Seleccioná al menos un medio para configurar sus cupos.</p>}
                         </div>
 
                         <div>

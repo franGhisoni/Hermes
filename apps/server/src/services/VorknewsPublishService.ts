@@ -148,26 +148,30 @@ export class VorknewsPublishService {
             const page = await browser.newPage();
             await page.setViewport({ width: 1920, height: 1080 });
 
+            page.on('dialog', async dialog => {
+                console.log('[VorknewsPublishService] Dialog intercepted:', dialog.type(), dialog.message());
+                await dialog.accept().catch(() => {});
+            });
+
             // Target form URL based on mode
             const formUrl = mode === 'DRAFT'
                 ? 'https://politicadelsur.com/vadmin/?section=vorknews_noticias_borrador&sub=edit'
                 : 'https://politicadelsur.com/vadmin/?section=vorknews_noticias&sub=edit';
 
             console.log(`[VorknewsPublishService] Navigating to: ${formUrl}`);
-            await page.goto(formUrl, { waitUntil: 'networkidle2', timeout: 35000 });
+            await page.goto(formUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
 
             // Handle login if redirected or form_login is present
             const loginForm = await page.$('#form_login');
             if (loginForm) {
                 console.log('[VorknewsPublishService] Logging into Vorknews CMS...');
-                await page.type('input[name="inputEmail"]', username, { delay: 15 });
-                await page.type('input[name="inputPassword"]', password, { delay: 15 });
+                await page.type('input[name="inputEmail"]', username, { delay: 10 });
+                await page.type('input[name="inputPassword"]', password, { delay: 10 });
                 await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 35000 }),
+                    page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }),
                     page.evaluate(() => {
                         const form = document.getElementById('form_login') as HTMLFormElement;
-                        if (form) form.submit();
-                        else (document.querySelector('#form_login button, #form_login input[type="submit"]') as any)?.click();
+                        if (form) HTMLFormElement.prototype.submit.call(form);
                     })
                 ]);
             }
@@ -175,7 +179,7 @@ export class VorknewsPublishService {
             // Ensure we are on the edit page
             if (!page.url().includes('vorknews_noticias') || !page.url().includes('sub=edit')) {
                 console.log(`[VorknewsPublishService] Navigating to edit page: ${formUrl}`);
-                await page.goto(formUrl, { waitUntil: 'networkidle2', timeout: 35000 });
+                await page.goto(formUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
             }
 
             // Wait for core elements
@@ -248,17 +252,21 @@ export class VorknewsPublishService {
 
             // 7. CKEditor Body ("Fuente HTML")
             console.log('[VorknewsPublishService] Setting HTML content in CKEditor via Fuente HTML...');
-            await page.evaluate(async (html) => {
-                // Method A: Check if CKEditor instance is ready and set data
+            await page.evaluate((html) => {
+                // Set CKEditor instance data and sync underlying element
                 if ((window as any).CKEDITOR && (window as any).CKEDITOR.instances['texto']) {
                     const editor = (window as any).CKEDITOR.instances['texto'];
                     editor.setData(html);
+                    try { editor.updateElement(); } catch {}
                 }
 
-                // Method B: Also populate underlying textarea
+                // Populate underlying textarea and ensure it doesn't fail HTML5 validation
                 const textarea = document.getElementById('texto') as HTMLTextAreaElement;
                 if (textarea) {
                     textarea.value = html;
+                    textarea.removeAttribute('required');
+                    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    textarea.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             }, htmlContent);
 
@@ -267,7 +275,7 @@ export class VorknewsPublishService {
                 const sourceBtn = await page.$('.cke_button__source, a[title="Fuente HTML"]');
                 if (sourceBtn) {
                     await sourceBtn.click();
-                    await new Promise(r => setTimeout(r, 400));
+                    await new Promise(r => setTimeout(r, 200));
 
                     // Set value in cke_source textarea if visible
                     await page.evaluate((html) => {
@@ -281,7 +289,7 @@ export class VorknewsPublishService {
 
                     // Toggle back to WYSIWYG
                     await sourceBtn.click();
-                    await new Promise(r => setTimeout(r, 400));
+                    await new Promise(r => setTimeout(r, 200));
                 }
             } catch (err: any) {
                 console.warn('[VorknewsPublishService] Note on source button click:', err.message);
@@ -308,38 +316,46 @@ export class VorknewsPublishService {
                 }
             }
 
-            // 9. Submit form
+            // 9. Submit form natively and wait for navigation
             console.log(`[VorknewsPublishService] Submitting form (Mode: ${mode})...`);
-            let submitSelector = '#submit';
-            if (mode === 'DRAFT') {
-                const draftBtn = await page.$('#submit_borrador');
-                if (draftBtn) {
-                    submitSelector = '#submit_borrador';
-                }
-            }
-
             const currentUrl = page.url();
 
             await Promise.all([
-                page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 35000 }).catch(e => {
-                    console.log('[VorknewsPublishService] Navigation wait resolved or timed out:', e.message);
+                page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 20000 }).catch(e => {
+                    console.log('[VorknewsPublishService] Navigation wait notice:', e.message);
                 }),
-                page.click(submitSelector).catch(async () => {
-                    // Fallback submit
-                    await page.evaluate(() => {
-                        const form = document.querySelector('form[name="formulario"]') as HTMLFormElement
-                            || document.querySelector('form[method="post"]') as HTMLFormElement;
-                        if (form) form.submit();
-                    });
+                page.evaluate(() => {
+                    const submitBtn = document.getElementById('submit') as HTMLButtonElement;
+                    const form = (submitBtn ? submitBtn.closest('form') : null)
+                        || (document.querySelector('form[name="formulario"]') as HTMLFormElement)
+                        || (document.querySelector('form[method="post"]') as HTMLFormElement);
+
+                    if (form) {
+                        HTMLFormElement.prototype.submit.call(form);
+                    } else if (submitBtn) {
+                        submitBtn.click();
+                    }
                 })
             ]);
 
             const finalUrl = page.url();
             console.log(`[VorknewsPublishService] Post-submit URL: ${finalUrl}`);
 
-            // Extract Vorknews ID from URL or hidden input if available
+            // Extract Vorknews ID from URL or from first row in the redirected list
+            let vorknewsId: string | undefined;
             const idMatch = finalUrl.match(/[?&]id=(\d+)/) || currentUrl.match(/[?&]id=(\d+)/);
-            const vorknewsId = idMatch ? idMatch[1] : undefined;
+            if (idMatch) {
+                vorknewsId = idMatch[1];
+            } else {
+                vorknewsId = await page.evaluate(() => {
+                    const firstLink = document.querySelector('table tbody tr a[href*="id="]') as HTMLAnchorElement;
+                    if (firstLink) {
+                        const m = firstLink.href.match(/[?&]id=(\d+)/);
+                        return m ? m[1] : undefined;
+                    }
+                    return undefined;
+                }).catch(() => undefined);
+            }
 
             return {
                 success: true,

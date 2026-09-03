@@ -25,6 +25,11 @@ type WorkflowTargetLimitInput = {
     limit?: unknown;
 };
 
+function parsePublicationLimit(value: unknown): number | 'invalid' {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 && parsed <= 100 ? parsed : 'invalid';
+}
+
 function parseTargetLimits(value: unknown, targetIds: string[]): Array<{ targetId: string; section: string; limit: number }> | 'invalid' {
     const selected = new Set(targetIds);
     const rows = value === undefined ? [] : value;
@@ -36,7 +41,7 @@ function parseTargetLimits(value: unknown, targetIds: string[]): Array<{ targetI
         const targetId = typeof row?.targetId === 'string' ? row.targetId : '';
         const section = typeof row?.section === 'string' ? row.section.trim() : '';
         const limit = Number(row?.limit);
-        if (!targetId || !selected.has(targetId) || !Number.isInteger(limit) || limit <= 0 || limit > 100) {
+        if (!targetId || !selected.has(targetId) || !section || !Number.isInteger(limit) || limit <= 0 || limit > 100) {
             return 'invalid';
         }
         const key = `${targetId}\u0000${section}`;
@@ -57,14 +62,12 @@ async function syncTargetLimits(
     const parsed = parseTargetLimits(input, targetIds);
     if (parsed === 'invalid') throw new Error('targetLimits must contain positive limits between 1 and 100 for selected targets');
 
-    const rows = parsed.length > 0
-        ? parsed
-        : targetIds.map(targetId => ({ targetId, section: '', limit: 1 }));
-
     await tx.workflowTargetLimit.deleteMany({ where: { workflowId } });
-    await tx.workflowTargetLimit.createMany({
-        data: rows.map(row => ({ workflowId, ...row }))
-    });
+    if (parsed.length > 0) {
+        await tx.workflowTargetLimit.createMany({
+            data: parsed.map(row => ({ workflowId, ...row }))
+        });
+    }
 }
 
 // GET /api/workflows
@@ -132,7 +135,7 @@ import { schedulerService } from '../index';
 
 // POST /api/workflows
 router.post('/', requireAdmin, async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, targetLimits, allowRepublish, articleWindowHours } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, defaultArticleLimit, targetLimits, allowRepublish, articleWindowHours } = req.body;
     if (!name || !cron || !targetIds || !Array.isArray(targetIds) || targetIds.length === 0) {
         return res.status(400).json({ error: 'name, cron, and at least one targetId are required' });
     }
@@ -140,6 +143,10 @@ router.post('/', requireAdmin, async (req, res) => {
     const parsedWindow = parseArticleWindow(articleWindowHours);
     if (parsedWindow === 'invalid') {
         return res.status(400).json({ error: 'articleWindowHours must be a positive integer' });
+    }
+    const parsedDefaultLimit = parsePublicationLimit(defaultArticleLimit ?? 1);
+    if (parsedDefaultLimit === 'invalid') {
+        return res.status(400).json({ error: 'defaultArticleLimit debe ser un entero entre 1 y 100' });
     }
     const parsedLimits = parseTargetLimits(targetLimits, targetIds);
     if (parsedLimits === 'invalid') {
@@ -156,6 +163,7 @@ router.post('/', requireAdmin, async (req, res) => {
                     minScore: minScore ? parseInt(minScore) : null,
                     targetCategory: targetCategory || null,
                     cron,
+                    defaultArticleLimit: parsedDefaultLimit,
                     articleWindowHours: parsedWindow,
                     allowRepublish: Boolean(allowRepublish),
                     targets: { connect: targetIds.map((id: string) => ({ id })) },
@@ -178,7 +186,7 @@ router.post('/', requireAdmin, async (req, res) => {
 
 // PUT /api/workflows/:id
 router.put('/:id', requireAdmin, async (req, res) => {
-    const { name, section, sources, minScore, targetCategory, cron, targetIds, targetLimits, isActive, allowRepublish, articleWindowHours } = req.body;
+    const { name, section, sources, minScore, targetCategory, cron, targetIds, defaultArticleLimit, targetLimits, isActive, allowRepublish, articleWindowHours } = req.body;
 
     if (targetIds && (!Array.isArray(targetIds) || targetIds.length === 0)) {
         return res.status(400).json({ error: 'targetIds must be a non-empty array' });
@@ -187,6 +195,13 @@ router.put('/:id', requireAdmin, async (req, res) => {
     const parsedWindow = parseArticleWindow(articleWindowHours);
     if (parsedWindow === 'invalid') {
         return res.status(400).json({ error: 'articleWindowHours must be a positive integer' });
+    }
+
+    const parsedDefaultLimit = defaultArticleLimit === undefined
+        ? undefined
+        : parsePublicationLimit(defaultArticleLimit);
+    if (parsedDefaultLimit === 'invalid') {
+        return res.status(400).json({ error: 'defaultArticleLimit debe ser un entero entre 1 y 100' });
     }
 
     const selectedTargetIds = targetIds || (await prisma.workflow.findUnique({ where: { id: req.params.id }, select: { targets: { select: { id: true } } } }))?.targets.map(target => target.id) || [];
@@ -209,6 +224,10 @@ router.put('/:id', requireAdmin, async (req, res) => {
 
             if (articleWindowHours !== undefined) {
                 data.articleWindowHours = parsedWindow;
+            }
+
+            if (parsedDefaultLimit !== undefined) {
+                data.defaultArticleLimit = parsedDefaultLimit;
             }
 
             if (typeof allowRepublish === 'boolean') {

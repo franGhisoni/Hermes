@@ -51,42 +51,43 @@ model Target {
 }
 
 model Workflow {
-  id                 String                @id @default(uuid())
-  name               String
-  section            String? // Optional: only publish articles from this section
-  sources            String[] // Optional: array of source names to constrain extraction
-  minScore           Int? // Optional: minimum interest score required
-  targetCategory     String? // Custom category name for the destination (e.g. WordPress)
-  cron               String
-  isActive           Boolean               @default(true)
+  id                  String                @id @default(uuid())
+  name                String
+  section             String? // Optional: only publish articles from this section
+  sources             String[] // Optional: array of source names to constrain extraction
+  minScore            Int? // Optional: minimum interest score required
+  targetCategory      String? // Custom category name for the destination (e.g. WordPress)
+  cron                String
+  isActive            Boolean               @default(true)
+  defaultArticleLimit Int                   @default(1)
   // Per-workflow window (hours) for pulling eligible PENDING articles. If
   // null, the scheduler falls back to the system-wide default
   // (`workflow_default_window_hours` in SystemSetting, default 24).
-  articleWindowHours Int?
+  articleWindowHours  Int?
   // When true and the article pool is smaller than the number of targets, the
   // workflow refills the missing destinations by reusing articles with a fresh
   // AI rewrite and a fresh image search so each target still receives unique
   // content. When false, missing destinations are skipped and logged.
-  allowRepublish     Boolean               @default(false)
+  allowRepublish      Boolean               @default(false)
   // Round-robin cursor: index into the alphabetically-sorted target list where
   // the next execution should start dispatching. Lets multi-run cron schedules
   // eventually cover every destination when the article pool is smaller than
   // the workflow's target count.
-  nextTargetIndex    Int                   @default(0)
-  targets            Target[] // Implicit many-to-many
-  targetLimits       WorkflowTargetLimit[]
-  runs               WorkflowRun[]
-  createdAt          DateTime              @default(now())
-  updatedAt          DateTime              @updatedAt
+  nextTargetIndex     Int                   @default(0)
+  targets             Target[] // Implicit many-to-many
+  targetLimits        WorkflowTargetLimit[]
+  runs                WorkflowRun[]
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
 }
 
-// Publication quota for one destination inside a workflow. An empty section
-// is the destination default; a named section overrides that default.
+// Publication quota override for one medium + section inside a workflow.
+// Pairs without an override inherit Workflow.defaultArticleLimit.
 model WorkflowTargetLimit {
   id         String   @id @default(uuid())
   workflowId String
   targetId   String
-  section    String   @default("")
+  section    String
   limit      Int      @default(1)
   workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   target     Target   @relation(fields: [targetId], references: [id], onDelete: Cascade)

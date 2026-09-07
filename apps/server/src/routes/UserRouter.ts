@@ -12,9 +12,27 @@ router.use(requireAuth, requireAdmin);
 router.get('/', async (req: AuthRequest, res) => {
     try {
         const users = await prisma.user.findMany({
-            select: { id: true, username: true, role: true, createdAt: true }
+            select: {
+                id: true,
+                username: true,
+                role: true,
+                createdAt: true,
+                vorknewsUsername: true,
+                vorknewsAuthorName: true,
+                vorknewsPassword: true
+            },
+            orderBy: { username: 'asc' }
         });
-        res.json(users);
+        const mapped = users.map(u => ({
+            id: u.id,
+            username: u.username,
+            role: u.role,
+            createdAt: u.createdAt,
+            vorknewsUsername: u.vorknewsUsername,
+            vorknewsAuthorName: u.vorknewsAuthorName,
+            hasVorknewsPassword: Boolean(u.vorknewsPassword)
+        }));
+        res.json(mapped);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch users' });
     }
@@ -22,7 +40,7 @@ router.get('/', async (req: AuthRequest, res) => {
 
 // POST /api/users
 router.post('/', async (req, res) => {
-    const { username, password, role } = req.body;
+    const { username, password, role, vorknewsUsername, vorknewsPassword, vorknewsAuthorName } = req.body;
     if (!username || !password) return res.status(400).json({ error: 'Username and password required' });
 
     try {
@@ -34,14 +52,82 @@ router.post('/', async (req, res) => {
             data: {
                 username,
                 passwordHash,
-                role: role === 'ADMIN' ? 'ADMIN' : role === 'DEMO' ? 'DEMO' : 'EDITOR'
+                role: role === 'ADMIN' ? 'ADMIN' : role === 'DEMO' ? 'DEMO' : 'EDITOR',
+                vorknewsUsername: vorknewsUsername ? String(vorknewsUsername).trim() : null,
+                vorknewsPassword: vorknewsPassword ? String(vorknewsPassword).trim() : null,
+                vorknewsAuthorName: vorknewsAuthorName ? String(vorknewsAuthorName).trim() : null
             },
-            select: { id: true, username: true, role: true }
+            select: {
+                id: true,
+                username: true,
+                role: true,
+                vorknewsUsername: true,
+                vorknewsAuthorName: true,
+                vorknewsPassword: true
+            }
         });
 
-        res.json(user);
+        res.json({
+            id: user.id,
+            username: user.username,
+            role: user.role,
+            vorknewsUsername: user.vorknewsUsername,
+            vorknewsAuthorName: user.vorknewsAuthorName,
+            hasVorknewsPassword: Boolean(user.vorknewsPassword)
+        });
     } catch (error) {
         res.status(500).json({ error: 'Failed to create user' });
+    }
+});
+
+// PUT /api/users/:id - Update user profile / vorknews credentials
+router.put('/:id', async (req, res) => {
+    const { role, vorknewsUsername, vorknewsPassword, vorknewsAuthorName } = req.body;
+
+    const data: any = {};
+    if (role && ['ADMIN', 'EDITOR', 'DEMO'].includes(role)) {
+        data.role = role;
+    }
+    if (vorknewsUsername !== undefined) {
+        data.vorknewsUsername = vorknewsUsername ? String(vorknewsUsername).trim() : null;
+    }
+    if (vorknewsAuthorName !== undefined) {
+        data.vorknewsAuthorName = vorknewsAuthorName ? String(vorknewsAuthorName).trim() : null;
+    }
+    if (vorknewsPassword !== undefined) {
+        if (vorknewsPassword === '' || vorknewsPassword === null) {
+            data.vorknewsPassword = null;
+        } else {
+            data.vorknewsPassword = String(vorknewsPassword).trim();
+        }
+    }
+
+    try {
+        const updated = await prisma.user.update({
+            where: { id: req.params.id },
+            data,
+            select: {
+                id: true,
+                username: true,
+                role: true,
+                createdAt: true,
+                vorknewsUsername: true,
+                vorknewsAuthorName: true,
+                vorknewsPassword: true
+            }
+        });
+
+        res.json({
+            id: updated.id,
+            username: updated.username,
+            role: updated.role,
+            createdAt: updated.createdAt,
+            vorknewsUsername: updated.vorknewsUsername,
+            vorknewsAuthorName: updated.vorknewsAuthorName,
+            hasVorknewsPassword: Boolean(updated.vorknewsPassword)
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update user' });
     }
 });
 

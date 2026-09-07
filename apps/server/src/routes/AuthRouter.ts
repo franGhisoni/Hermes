@@ -22,6 +22,7 @@ router.post('/login', async (req, res) => {
         }
 
         const isValid = await bcrypt.compare(password, user.passwordHash);
+
         if (!isValid) {
             return res.status(401).json({ error: 'Invalid credentials' });
         }
@@ -35,7 +36,14 @@ router.post('/login', async (req, res) => {
 
         res.json({
             token,
-            user: { id: user.id, username: user.username, role: user.role }
+            user: {
+                id: user.id,
+                username: user.username,
+                role: user.role,
+                vorknewsUsername: user.vorknewsUsername,
+                vorknewsAuthorName: user.vorknewsAuthorName,
+                hasVorknewsPassword: Boolean(user.vorknewsPassword)
+            }
         });
 
     } catch (error) {
@@ -48,6 +56,51 @@ router.post('/login', async (req, res) => {
 router.get('/me', requireAuth, (req: AuthRequest, res) => {
     // If it passes requireAuth, the token is valid and user is attached
     res.json({ user: req.user });
+});
+
+// PUT /api/auth/me/vorknews - Update own Vorknews credentials
+router.put('/me/vorknews', requireAuth, async (req: AuthRequest, res) => {
+    if (!req.user?.id) return res.status(401).json({ error: 'Unauthorized' });
+    const { vorknewsUsername, vorknewsPassword, vorknewsAuthorName } = req.body;
+
+    const data: any = {};
+    if (vorknewsUsername !== undefined) data.vorknewsUsername = vorknewsUsername ? String(vorknewsUsername).trim() : null;
+    if (vorknewsAuthorName !== undefined) data.vorknewsAuthorName = vorknewsAuthorName ? String(vorknewsAuthorName).trim() : null;
+    if (vorknewsPassword !== undefined && vorknewsPassword !== '') {
+        data.vorknewsPassword = String(vorknewsPassword).trim();
+    } else if (vorknewsPassword === null) {
+        data.vorknewsPassword = null;
+    }
+
+    try {
+        const updated = await prisma.user.update({
+            where: { id: req.user.id },
+            data,
+            select: {
+                id: true,
+                username: true,
+                role: true,
+                vorknewsUsername: true,
+                vorknewsPassword: true,
+                vorknewsAuthorName: true
+            }
+        });
+
+        res.json({
+            success: true,
+            user: {
+                id: updated.id,
+                username: updated.username,
+                role: updated.role,
+                vorknewsUsername: updated.vorknewsUsername,
+                vorknewsAuthorName: updated.vorknewsAuthorName,
+                hasVorknewsPassword: Boolean(updated.vorknewsPassword)
+            }
+        });
+    } catch (error) {
+        console.error('Error updating Vorknews credentials:', error);
+        res.status(500).json({ error: 'Failed to update Vorknews credentials' });
+    }
 });
 
 export default router;

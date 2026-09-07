@@ -9,6 +9,9 @@ export interface AuthRequest extends Request {
         id: string;
         username: string;
         role: string;
+        vorknewsUsername?: string | null;
+        vorknewsAuthorName?: string | null;
+        hasVorknewsPassword?: boolean;
     };
 }
 
@@ -29,7 +32,7 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
         // not trust a stale role embedded in a long-lived JWT.
         const user = await prisma.user.findUnique({
             where: { id: decoded.id },
-            select: { id: true, username: true, role: true }
+            select: { id: true, username: true, role: true, vorknewsUsername: true, vorknewsPassword: true, vorknewsAuthorName: true }
         });
         if (!user) {
             return res.status(401).json({ error: 'Unauthorized: Invalid token' });
@@ -38,7 +41,10 @@ export const requireAuth = async (req: AuthRequest, res: Response, next: NextFun
         req.user = {
             id: user.id,
             username: user.username,
-            role: user.role
+            role: user.role,
+            vorknewsUsername: user.vorknewsUsername,
+            vorknewsAuthorName: user.vorknewsAuthorName,
+            hasVorknewsPassword: Boolean(user.vorknewsPassword)
         };
 
         next();

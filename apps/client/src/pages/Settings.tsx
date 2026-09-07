@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X, FileText, UserRound } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X, FileText, UserRound, Check } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
 import type { ScrapeRun } from '../types';
+import type { UserData } from './Users';
 
 interface PromptConfig {
     id: string;
@@ -179,12 +180,22 @@ export default function Settings() {
     const [newPersonAliases, setNewPersonAliases] = useState('');
     const [newPersonAction, setNewPersonAction] = useState<BlockedPersonAction>('LOWER_SCORE');
     const [newPersonScore, setNewPersonScore] = useState('2');
-    const [vorknewsSettings, setVorknewsSettings] = useState<{ mode: 'DRAFT' | 'PUBLISHED', author: string, sectionId: string }>({
+    const [vorknewsSettings, setVorknewsSettings] = useState<{
+        mode: 'DRAFT' | 'PUBLISHED';
+        author: string;
+        sectionId: string;
+        defaultUsername?: string;
+        defaultPassword?: string;
+        hasDefaultPassword?: boolean;
+    }>({
         mode: 'DRAFT',
         author: 'Juan Bautista Vega',
-        sectionId: '64'
+        sectionId: '64',
+        defaultUsername: '',
+        hasDefaultPassword: false
     });
     const [vorknewsSections, setVorknewsSections] = useState<Array<{ id: string, name: string }>>([]);
+    const [users, setUsers] = useState<UserData[]>([]);
 
     if (user?.role !== 'ADMIN') {
         return <div className="p-10 font-serif">No tienes permisos para ver esta página.</div>;
@@ -196,14 +207,15 @@ export default function Settings() {
 
     const fetchData = async () => {
         try {
-            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes, editorialRes, vkRes, vkSecRes] = await Promise.all([
+            const [sectionsRes, scrapersRes, categoriesRes, schedulesRes, editorialRes, vkRes, vkSecRes, usersRes] = await Promise.all([
                 api.get('/api/config/sections'),
                 api.get('/api/config/scrapers'),
                 api.get('/api/config/filter-categories'),
                 api.get('/api/scrape-schedules'),
                 api.get('/api/config/editorial'),
                 api.get('/api/config/vorknews').catch(() => ({ data: null })),
-                api.get('/api/vorknews/sections').catch(() => ({ data: [] }))
+                api.get('/api/vorknews/sections').catch(() => ({ data: [] })),
+                api.get('/api/users').catch(() => ({ data: [] }))
             ]);
             setSections(sectionsRes.data);
             setScrapers(scrapersRes.data);
@@ -216,6 +228,7 @@ export default function Settings() {
             setBlockedPeople(editorialRes.data.blockedPeople || []);
             if (vkRes.data) setVorknewsSettings(vkRes.data);
             if (vkSecRes.data) setVorknewsSections(vkSecRes.data);
+            if (usersRes.data) setUsers(usersRes.data);
         } catch (e) {
             console.error(e);
         }
@@ -228,6 +241,17 @@ export default function Settings() {
             await api.put('/api/config/vorknews', next);
         } catch (e: any) {
             alert('Error guardando configuración de Vorknews: ' + (e?.response?.data?.error || e?.message));
+        }
+    };
+
+    const handleUpdateUser = async (id: string, data: { role?: string; vorknewsUsername?: string; vorknewsPassword?: string; vorknewsAuthorName?: string }) => {
+        try {
+            await api.put(`/api/users/${id}`, data);
+            const res = await api.get('/api/users');
+            setUsers(res.data);
+            alert('Credenciales del redactor actualizadas correctamente.');
+        } catch (e: any) {
+            alert('Error actualizando redactor: ' + (e?.response?.data?.error || e?.message));
         }
     };
 
@@ -722,6 +746,8 @@ export default function Settings() {
                             onCreatePerson={handleCreateBlockedPerson}
                             onUpdatePerson={handleUpdateBlockedPerson}
                             onDeletePerson={handleDeleteBlockedPerson}
+                            users={users}
+                            onUpdateUser={handleUpdateUser}
                         />
                     )}
 
@@ -1543,9 +1569,16 @@ interface SistemaTabProps {
     setArticleCleanupCron: (v: string) => void;
     extended: ExtendedSettings | null;
     updateExtended: <K extends keyof ExtendedSettings>(key: K, value: ExtendedSettings[K]) => Promise<void>;
-    vorknewsSettings: { mode: 'DRAFT' | 'PUBLISHED'; author: string; sectionId: string };
+    vorknewsSettings: {
+        mode: 'DRAFT' | 'PUBLISHED';
+        author: string;
+        sectionId: string;
+        defaultUsername?: string;
+        defaultPassword?: string;
+        hasDefaultPassword?: boolean;
+    };
     vorknewsSections: Array<{ id: string; name: string }>;
-    updateVorknews: (patch: Partial<{ mode: 'DRAFT' | 'PUBLISHED'; author: string; sectionId: string }>) => Promise<void>;
+    updateVorknews: (patch: Partial<{ mode: 'DRAFT' | 'PUBLISHED'; author: string; sectionId: string; defaultUsername?: string; defaultPassword?: string }>) => Promise<void>;
 }
 
 function SistemaTab(props: SistemaTabProps) {
@@ -1622,6 +1655,50 @@ function SistemaTab(props: SistemaTabProps) {
                                 <option key={s.id} value={s.id}>{s.name}</option>
                             ))}
                         </select>
+                    </Card>
+
+                    <Card>
+                        <CardHeading
+                            title="Credenciales por defecto del sistema (Fallback)"
+                            description="Se usan en flujos automáticos (cron) o si el redactor no tiene credenciales personales cargadas."
+                        />
+                        <div className="space-y-3 mt-3 font-sans">
+                            <div>
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-editorial-text/60 block mb-1">
+                                    Usuario / Email del Sistema
+                                </label>
+                                <input
+                                    key={vorknewsSettings.defaultUsername}
+                                    type="text"
+                                    defaultValue={vorknewsSettings.defaultUsername || ''}
+                                    onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        if (val !== (vorknewsSettings.defaultUsername || '')) {
+                                            updateVorknews({ defaultUsername: val });
+                                        }
+                                    }}
+                                    className="w-full border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-xs py-1 bg-transparent font-sans"
+                                    placeholder="ej. vegajb@gmail.com"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-[10px] font-bold uppercase tracking-wider text-editorial-text/60 block mb-1">
+                                    Contraseña del Sistema
+                                </label>
+                                <input
+                                    type="password"
+                                    placeholder={vorknewsSettings.hasDefaultPassword ? '•••••••• (Configurada - cambiá para actualizar)' : 'Ingresá contraseña del sistema'}
+                                    onBlur={(e) => {
+                                        const val = e.target.value.trim();
+                                        if (val) {
+                                            updateVorknews({ defaultPassword: val });
+                                            e.target.value = '';
+                                        }
+                                    }}
+                                    className="w-full border-b-2 border-editorial-text/20 focus:border-editorial-text outline-none text-xs py-1 bg-transparent font-sans"
+                                />
+                            </div>
+                        </div>
                     </Card>
                 </div>
             </div>
@@ -1829,6 +1906,8 @@ interface EditorialTabProps {
     onCreatePerson: (event: React.FormEvent) => Promise<void>;
     onUpdatePerson: (id: string, data: Partial<BlockedPerson>) => Promise<void>;
     onDeletePerson: (id: string) => Promise<void>;
+    users: UserData[];
+    onUpdateUser: (id: string, data: { role?: string; vorknewsUsername?: string; vorknewsPassword?: string; vorknewsAuthorName?: string }) => Promise<void>;
 }
 
 function EditorialTab(props: EditorialTabProps) {
@@ -1839,8 +1918,195 @@ function EditorialTab(props: EditorialTabProps) {
         LOCATION: 'Por barrio / zona'
     };
 
+    const [editingRedactor, setEditingRedactor] = useState<UserData | null>(null);
+    const [vkUser, setVkUser] = useState('');
+    const [vkPass, setVkPass] = useState('');
+    const [vkAuthor, setVkAuthor] = useState('');
+    const [savingRedactor, setSavingRedactor] = useState(false);
+
+    const handleSaveRedactor = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingRedactor) return;
+        setSavingRedactor(true);
+        try {
+            const data: any = {
+                vorknewsUsername: vkUser.trim(),
+                vorknewsAuthorName: vkAuthor.trim()
+            };
+            if (vkPass.trim()) {
+                data.vorknewsPassword = vkPass.trim();
+            }
+            await props.onUpdateUser(editingRedactor.id, data);
+            setEditingRedactor(null);
+        } finally {
+            setSavingRedactor(false);
+        }
+    };
+
     return (
         <section className="space-y-10">
+            {/* Sección Redactores Vorknews */}
+            <div>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                    <Header
+                        title="Redactores & Cuentas Vorknews (Política del Sur)"
+                        subtitle="Asigná a cada usuario sus credenciales individuales para acceder a Vorknews. Cuando redacten y publiquen desde la Sala de Redacción, se ingresará con su firma y cuenta correspondiente."
+                    />
+                    <Link
+                        to="/users"
+                        className="font-sans text-xs font-bold uppercase tracking-widest text-purple-900 border border-purple-300 hover:bg-purple-100 px-3 py-1.5 rounded transition-colors self-start whitespace-nowrap"
+                    >
+                        Gestionar Usuarios &rarr;
+                    </Link>
+                </div>
+
+                <Card>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-xs">
+                            <thead>
+                                <tr className="border-b border-editorial-text/20 uppercase tracking-widest opacity-60">
+                                    <th className="pb-3 font-semibold">Redactor (Hermes)</th>
+                                    <th className="pb-3 font-semibold">Rol</th>
+                                    <th className="pb-3 font-semibold">Email / Usuario Vorknews</th>
+                                    <th className="pb-3 font-semibold">Firma de Autor en Vorknews</th>
+                                    <th className="pb-3 font-semibold">Clave Vorknews</th>
+                                    <th className="pb-3 font-semibold text-right">Acción</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {props.users.map(u => (
+                                    <tr key={u.id} className="border-b border-editorial-text/10 last:border-0 hover:bg-editorial-text/5 transition-colors">
+                                        <td className="py-3 font-bold text-sm text-editorial-text">{u.username}</td>
+                                        <td className="py-3">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                                u.role === 'ADMIN' ? 'bg-amber-100 text-amber-800' : u.role === 'DEMO' ? 'bg-gray-100 text-gray-700' : 'bg-blue-50 text-blue-800'
+                                            }`}>
+                                                {u.role}
+                                            </span>
+                                        </td>
+                                        <td className="py-3 font-mono text-purple-900 font-semibold">
+                                            {u.vorknewsUsername || <span className="text-editorial-text/40 italic font-sans font-normal">Usa fallback global</span>}
+                                        </td>
+                                        <td className="py-3">
+                                            {u.vorknewsAuthorName ? (
+                                                <span className="font-semibold text-editorial-text">{u.vorknewsAuthorName}</span>
+                                            ) : (
+                                                <span className="text-editorial-text/40 italic">Por defecto</span>
+                                            )}
+                                        </td>
+                                        <td className="py-3">
+                                            {u.hasVorknewsPassword ? (
+                                                <span className="inline-flex items-center gap-1 text-green-700 font-bold text-[10px] uppercase">
+                                                    <Check size={12} /> Configurada
+                                                </span>
+                                            ) : (
+                                                <span className="text-amber-700 text-[10px] uppercase font-semibold">
+                                                    Sin clave personal
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="py-3 text-right">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setEditingRedactor(u);
+                                                    setVkUser(u.vorknewsUsername || '');
+                                                    setVkPass('');
+                                                    setVkAuthor(u.vorknewsAuthorName || '');
+                                                }}
+                                                className="px-2.5 py-1 border border-editorial-text/20 hover:bg-purple-100 hover:border-purple-300 text-purple-900 font-bold uppercase tracking-wider text-[10px] rounded transition-colors"
+                                            >
+                                                Configurar Vorknews
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </Card>
+            </div>
+
+            {/* Modal de edición rápida desde Editorial */}
+            {editingRedactor && (
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-white border border-editorial-text/30 max-w-md w-full p-6 shadow-2xl rounded font-sans">
+                        <div className="flex justify-between items-center pb-3 border-b border-editorial-text/10 mb-4">
+                            <div>
+                                <h3 className="text-base font-bold uppercase tracking-wider">
+                                    Credenciales Vorknews: <span className="text-purple-900">{editingRedactor.username}</span>
+                                </h3>
+                                <p className="text-[11px] text-editorial-text/60">Configurá la cuenta con la que este redactor publicará notas en Vorknews.</p>
+                            </div>
+                            <button onClick={() => setEditingRedactor(null)} className="p-1 hover:bg-editorial-text/10 rounded">
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSaveRedactor} className="space-y-3">
+                            <div>
+                                <label className="text-[11px] font-bold uppercase tracking-wider text-editorial-text/70 block mb-1">
+                                    Usuario / Email en Vorknews
+                                </label>
+                                <input
+                                    type="text"
+                                    value={vkUser}
+                                    onChange={e => setVkUser(e.target.value)}
+                                    placeholder="ej. redactor@politicadelsur.com"
+                                    className="w-full border border-editorial-text/30 p-2 text-xs rounded focus:outline-none focus:border-purple-800"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-[11px] font-bold uppercase tracking-wider text-editorial-text/70 block mb-1">
+                                    Contraseña en Vorknews
+                                </label>
+                                <input
+                                    type="password"
+                                    value={vkPass}
+                                    onChange={e => setVkPass(e.target.value)}
+                                    placeholder={editingRedactor.hasVorknewsPassword ? '•••••••• (Dejar vacío para no cambiar)' : 'Ingresá contraseña'}
+                                    className="w-full border border-editorial-text/30 p-2 text-xs rounded focus:outline-none focus:border-purple-800"
+                                />
+                                {editingRedactor.hasVorknewsPassword && (
+                                    <p className="text-[10px] text-green-700 font-semibold mt-1">✓ Ya tiene clave personal configurada.</p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="text-[11px] font-bold uppercase tracking-wider text-editorial-text/70 block mb-1">
+                                    Firma de Autor en Vorknews
+                                </label>
+                                <input
+                                    type="text"
+                                    value={vkAuthor}
+                                    onChange={e => setVkAuthor(e.target.value)}
+                                    placeholder="ej. Juan Bautista Vega"
+                                    className="w-full border border-editorial-text/30 p-2 text-xs rounded focus:outline-none focus:border-purple-800"
+                                />
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-3 border-t border-editorial-text/10">
+                                <button
+                                    type="button"
+                                    onClick={() => setEditingRedactor(null)}
+                                    className="px-3 py-1.5 border border-editorial-text/20 text-xs font-bold uppercase tracking-wider hover:bg-editorial-text/5 rounded"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingRedactor}
+                                    className="px-4 py-1.5 bg-purple-900 text-white text-xs font-bold uppercase tracking-wider hover:bg-black rounded transition-colors disabled:opacity-50"
+                                >
+                                    {savingRedactor ? 'Guardando...' : 'Guardar'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             <div>
                 <Header title="Criterio editorial" subtitle="Aplicá instrucciones de redacción según el contexto de cada nota. Las reglas de mayor prioridad se envían primero a la IA." />
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

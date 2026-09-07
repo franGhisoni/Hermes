@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Copy, Check, Eye, Code, Sparkles } from 'lucide-react';
+import { Copy, Check, Eye, Code, Sparkles, UserCheck, X } from 'lucide-react';
 import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { useAuth } from '../contexts/AuthContext';
@@ -17,7 +17,7 @@ interface Target {
 export default function Newsroom() {
     const { id } = useParams();
     const navigate = useNavigate();
-    const { user } = useAuth();
+    const { user, updateUser } = useAuth();
     const isDemo = user?.role === 'DEMO';
     const [article, setArticle] = useState<Article | null>(null);
     const [loading, setLoading] = useState(true);
@@ -59,6 +59,12 @@ export default function Newsroom() {
     const [targetSearch, setTargetSearch] = useState('');
     const [publishing, setPublishing] = useState(false);
     const [loadingTargets, setLoadingTargets] = useState(false);
+    const [showCredentialsModal, setShowCredentialsModal] = useState(false);
+    const [credVkUser, setCredVkUser] = useState('');
+    const [credVkPass, setCredVkPass] = useState('');
+    const [credVkAuthor, setCredVkAuthor] = useState('');
+    const [savingCreds, setSavingCreds] = useState(false);
+    const [systemDefaultUsername, setSystemDefaultUsername] = useState('');
 
     function formatToHtml(text: string): string {
         if (!text) return '';
@@ -375,8 +381,12 @@ export default function Newsroom() {
             setVorknewsSections(vkSectionsRes.data || []);
             if (vkConfigRes.data) {
                 setVorknewsMode(vkConfigRes.data.mode || 'DRAFT');
-                setVorknewsAuthor(vkConfigRes.data.author || 'Juan Bautista Vega');
+                setSystemDefaultUsername(vkConfigRes.data.defaultUsername || '');
                 setVorknewsSectionId(vkConfigRes.data.sectionId || '64');
+                const authorToUse = user?.vorknewsAuthorName || vkConfigRes.data.author || 'Juan Bautista Vega';
+                setVorknewsAuthor(authorToUse);
+            } else if (user?.vorknewsAuthorName) {
+                setVorknewsAuthor(user.vorknewsAuthorName);
             }
             const emailTargets = targetsRes.data.filter((t: Target) => t.type !== 'VORKNEWS');
             if (emailTargets.length > 0) {
@@ -386,6 +396,33 @@ export default function Newsroom() {
             console.error('Error fetching publish data:', error);
         } finally {
             setLoadingTargets(false);
+        }
+    };
+
+    const handleSaveMyCredentials = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setSavingCreds(true);
+        try {
+            const payload: any = {
+                vorknewsUsername: credVkUser.trim(),
+                vorknewsAuthorName: credVkAuthor.trim()
+            };
+            if (credVkPass.trim()) {
+                payload.vorknewsPassword = credVkPass.trim();
+            }
+            const res = await api.put('/api/auth/me/vorknews', payload);
+            if (res.data?.user) {
+                updateUser(res.data.user);
+                if (res.data.user.vorknewsAuthorName) {
+                    setVorknewsAuthor(res.data.user.vorknewsAuthorName);
+                }
+            }
+            setShowCredentialsModal(false);
+            alert('Tus credenciales de Vorknews se guardaron con éxito.');
+        } catch (err: any) {
+            alert('Error guardando credenciales: ' + (err?.response?.data?.error || err?.message));
+        } finally {
+            setSavingCreds(false);
         }
     };
 
@@ -650,6 +687,48 @@ export default function Newsroom() {
                                     </span>
                                 </div>
 
+                                {/* Redactor Vorknews que publica */}
+                                <div className="p-3 bg-purple-50/70 border border-purple-200/80 rounded space-y-1 font-sans">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-900 flex items-center gap-1.5">
+                                            <UserCheck size={13} />
+                                            Redactor Vorknews
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setCredVkUser(user?.vorknewsUsername || '');
+                                                setCredVkPass('');
+                                                setCredVkAuthor(user?.vorknewsAuthorName || vorknewsAuthor || '');
+                                                setShowCredentialsModal(true);
+                                            }}
+                                            className="text-[10px] font-bold uppercase tracking-wider text-purple-800 underline hover:text-purple-950"
+                                        >
+                                            {user?.vorknewsUsername ? 'Cambiar credenciales' : '+ Cargar mis credenciales'}
+                                        </button>
+                                    </div>
+                                    <div className="text-xs">
+                                        {user?.vorknewsUsername ? (
+                                            <p className="font-semibold text-purple-950">
+                                                Publicando con cuenta: <span className="font-mono">{user.vorknewsUsername}</span>
+                                                {user.hasVorknewsPassword ? (
+                                                    <span className="ml-1.5 text-green-700 font-bold text-[10px]">✓ Clave OK</span>
+                                                ) : (
+                                                    <span className="ml-1.5 text-amber-700 font-bold text-[10px]">⚠️ Sin clave guardada</span>
+                                                )}
+                                            </p>
+                                        ) : systemDefaultUsername ? (
+                                            <p className="text-editorial-text/70">
+                                                Usando cuenta por defecto: <span className="font-mono text-purple-900 font-bold">{systemDefaultUsername}</span>
+                                            </p>
+                                        ) : (
+                                            <p className="text-amber-700 font-bold">
+                                                ⚠️ No tenés credenciales configuradas. Cargá tu usuario y contraseña de Vorknews para publicar.
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+
                                 <div>
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/60 block mb-1">
                                         Sección en Política del Sur
@@ -807,6 +886,97 @@ export default function Newsroom() {
                                 ) : 'Enviar por Email'}
                             </button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal para configurar credenciales personales de Vorknews */}
+            {showCredentialsModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-6 w-full max-w-md relative">
+                        <button
+                            onClick={() => setShowCredentialsModal(false)}
+                            className="absolute top-4 right-4 text-editorial-text/40 hover:text-editorial-text"
+                        >
+                            <X size={18} />
+                        </button>
+
+                        <div className="flex items-center gap-2 mb-2">
+                            <UserCheck className="w-5 h-5 text-purple-800" />
+                            <h3 className="text-xl font-bold font-serif italic text-editorial-text">
+                                Mis Credenciales de Vorknews
+                            </h3>
+                        </div>
+                        <p className="font-sans text-xs text-editorial-text/60 mb-5 leading-relaxed">
+                            Configurá tu usuario personal de Vorknews (politicadelsur.com/vadmin). Al publicar o guardar borradores, el sistema ingresará automáticamente con tu cuenta de redactor.
+                        </p>
+
+                        <form onSubmit={handleSaveMyCredentials} className="space-y-4 font-sans text-xs">
+                            <div>
+                                <label className="font-bold uppercase tracking-wider text-[10px] text-editorial-text/70 block mb-1">
+                                    Usuario / Email en Vorknews
+                                </label>
+                                <input
+                                    type="text"
+                                    required
+                                    value={credVkUser}
+                                    onChange={e => setCredVkUser(e.target.value)}
+                                    placeholder="ej: redactor@politicadelsur.com o usuario"
+                                    className="w-full bg-white/70 border border-editorial-text/20 px-3 py-2 text-xs rounded focus:outline-none focus:border-editorial-text"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="font-bold uppercase tracking-wider text-[10px] text-editorial-text/70 block mb-1">
+                                    Contraseña en Vorknews
+                                </label>
+                                <input
+                                    type="password"
+                                    value={credVkPass}
+                                    onChange={e => setCredVkPass(e.target.value)}
+                                    placeholder={user?.hasVorknewsPassword ? '•••••••• (dejar en blanco para mantener actual)' : 'Ingresá tu contraseña de Vorknews'}
+                                    className="w-full bg-white/70 border border-editorial-text/20 px-3 py-2 text-xs rounded focus:outline-none focus:border-editorial-text"
+                                />
+                                {user?.hasVorknewsPassword && (
+                                    <span className="text-[10px] text-green-700 font-bold block mt-1">
+                                        ✓ Ya tenés una contraseña guardada. Completá este campo solo si deseás cambiarla.
+                                    </span>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="font-bold uppercase tracking-wider text-[10px] text-editorial-text/70 block mb-1">
+                                    Firma de Autor Habitual (Opcional)
+                                </label>
+                                <input
+                                    type="text"
+                                    value={credVkAuthor}
+                                    onChange={e => setCredVkAuthor(e.target.value)}
+                                    placeholder="ej: Juan Bautista Vega"
+                                    className="w-full bg-white/70 border border-editorial-text/20 px-3 py-2 text-xs rounded focus:outline-none focus:border-editorial-text"
+                                />
+                                <span className="text-[10px] text-editorial-text/50 block mt-1">
+                                    Nombre que aparecerá por defecto en la firma de tus artículos al publicarlos.
+                                </span>
+                            </div>
+
+                            <div className="flex justify-end gap-2 pt-4 border-t border-editorial-text/10">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCredentialsModal(false)}
+                                    className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-xs font-bold uppercase tracking-wider transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={savingCreds || !credVkUser.trim()}
+                                    className="px-5 py-2 bg-editorial-text text-editorial-bg hover:bg-black text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50"
+                                >
+                                    {savingCreds ? 'Guardando...' : 'Guardar Credenciales'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

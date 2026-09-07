@@ -23,7 +23,7 @@ import sectionRouter from './routes/SectionRouter';
 import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
 import { publishQueueService } from './services/PublishQueueService';
-import { requireAuth, requireAdmin, requireReadOnly } from './middlewares/auth';
+import { requireAuth, requireAdmin, requireReadOnly, AuthRequest } from './middlewares/auth';
 
 import { SchedulerService } from './services/SchedulerService';
 import cron from 'node-cron';
@@ -260,13 +260,33 @@ app.use('/api/scrape-schedules', scrapeScheduleRouter);
 import notificationRouter from './routes/NotificationRouter';
 app.use('/api/notifications', notificationRouter);
 
-// Config API (admin-only for the remaining config endpoints)
-app.use('/api/config', requireAdmin);
-
 import { ConfigService } from './services/ConfigService';
 import { buildEditorialData, EditorialService } from './services/EditorialService';
 const configService = new ConfigService();
 const editorialService = new EditorialService();
+
+// GET /api/config/vorknews - Get Vorknews settings (accessible to all authenticated users)
+app.get('/api/config/vorknews', async (req, res) => {
+    try {
+        const mode = await configService.getVorknewsPublishMode();
+        const author = await configService.getVorknewsDefaultAuthor();
+        const sectionId = await configService.getVorknewsDefaultSectionId();
+        const defaultUsername = await configService.getVorknewsDefaultUsername();
+        const defaultPassword = await configService.getVorknewsDefaultPassword();
+        res.json({
+            mode,
+            author,
+            sectionId,
+            defaultUsername,
+            hasDefaultPassword: Boolean(defaultPassword)
+        });
+    } catch (e: any) {
+        res.status(500).json({ error: e.message || 'Failed to get Vorknews settings' });
+    }
+});
+
+// Config API (admin-only for the remaining config endpoints)
+app.use('/api/config', requireAdmin);
 
 const EDITORIAL_MATCH_TYPES = ['GLOBAL', 'SECTION', 'SCORE_RANGE', 'LOCATION'] as const;
 const BLOCKED_PERSON_ACTIONS = ['LOWER_SCORE', 'BLOCK_PUBLICATION'] as const;
@@ -795,26 +815,22 @@ app.get('/api/vorknews/sections', (req, res) => {
     res.json(vorknewsPublishService.getSections());
 });
 
-// GET /api/config/vorknews - Get Vorknews settings
-app.get('/api/config/vorknews', async (req, res) => {
-    try {
-        const mode = await configService.getVorknewsPublishMode();
-        const author = await configService.getVorknewsDefaultAuthor();
-        const sectionId = await configService.getVorknewsDefaultSectionId();
-        res.json({ mode, author, sectionId });
-    } catch (e: any) {
-        res.status(500).json({ error: e.message || 'Failed to get Vorknews settings' });
-    }
-});
-
 // PUT /api/config/vorknews - Update Vorknews settings
 app.put('/api/config/vorknews', async (req, res) => {
     try {
-        const { mode, author, sectionId } = req.body;
+        const { mode, author, sectionId, defaultUsername, defaultPassword } = req.body;
         if (mode) await configService.setSetting('vorknews_publish_mode', mode);
         if (author !== undefined) await configService.setSetting('vorknews_default_author', author);
         if (sectionId) await configService.setSetting('vorknews_default_section_id', sectionId);
-        res.json({ success: true, mode, author, sectionId });
+        if (defaultUsername !== undefined) await configService.setSetting('vorknews_default_username', String(defaultUsername).trim());
+        if (defaultPassword !== undefined) {
+            if (defaultPassword === '' || defaultPassword === null) {
+                await configService.setSetting('vorknews_default_password', '');
+            } else {
+                await configService.setSetting('vorknews_default_password', String(defaultPassword).trim());
+            }
+        }
+        res.json({ success: true, mode, author, sectionId, defaultUsername });
     } catch (e: any) {
         res.status(500).json({ error: e.message || 'Failed to update Vorknews settings' });
     }
@@ -1008,7 +1024,8 @@ app.post('/api/articles/:id/publish', async (req, res) => {
                 tags: finalTags,
                 title: finalTitle,
                 contentHtml: finalContentHtml,
-                category
+                category,
+                userId: (req as AuthRequest).user?.id
             });
 
             return res.json({

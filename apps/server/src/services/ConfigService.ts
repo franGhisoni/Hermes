@@ -49,7 +49,9 @@ export class ConfigService {
             workflow_default_window_hours: '24',
             vorknews_publish_mode: 'DRAFT',
             vorknews_default_author: 'Juan Bautista Vega',
-            vorknews_default_section_id: '64'
+            vorknews_default_section_id: '64',
+            vorknews_default_username: process.env.VORKS_USER || '',
+            vorknews_default_password: process.env.VORKS_PASSWORD || ''
         };
 
         const rows = await prisma.systemSetting.findMany({
@@ -253,6 +255,14 @@ export class ConfigService {
 
     async getVorknewsDefaultSectionId(): Promise<string> {
         return this.getSetting('vorknews_default_section_id', '64');
+    }
+
+    async getVorknewsDefaultUsername(): Promise<string> {
+        return this.getSetting('vorknews_default_username', process.env.VORKS_USER || '');
+    }
+
+    async getVorknewsDefaultPassword(): Promise<string> {
+        return this.getSetting('vorknews_default_password', process.env.VORKS_PASSWORD || '');
     }
 
     // ---- helpers ----

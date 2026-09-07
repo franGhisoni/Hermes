@@ -1,4 +1,4 @@
-﻿import { Queue, Worker } from 'bullmq';
+import { Queue, Worker } from 'bullmq';
 import { prisma } from '../lib/prisma';
 import { VorknewsPublishService } from './VorknewsPublishService';
 import { MailService } from './MailService';
@@ -16,6 +16,7 @@ export interface PublishJobData {
     title?: string;
     contentHtml?: string;
     category?: string;
+    userId?: string;
 }
 
 const connection = process.env.REDIS_URL
@@ -158,7 +159,8 @@ export class PublishQueueService {
                     bajada: jobData.bajada,
                     tags: jobData.tags,
                     title: jobData.title,
-                    contentHtml: jobData.contentHtml
+                    contentHtml: jobData.contentHtml,
+                    userId: jobData.userId
                 });
 
                 if (!result.success) {

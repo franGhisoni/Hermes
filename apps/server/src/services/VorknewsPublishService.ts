@@ -54,6 +54,9 @@ export interface VorknewsPublishOptions {
     tags?: string;
     title?: string;
     contentHtml?: string;
+    userId?: string;
+    vorknewsUsername?: string;
+    vorknewsPassword?: string;
 }
 
 export interface VorknewsPublishResult {
@@ -101,17 +104,30 @@ export class VorknewsPublishService {
         article: Article,
         options: VorknewsPublishOptions = {}
     ): Promise<VorknewsPublishResult> {
-        const username = process.env.VORKS_USER;
-        const password = process.env.VORKS_PASSWORD;
+        let publishingUser: any = null;
+        if (options.userId) {
+            try {
+                publishingUser = await prisma.user.findUnique({ where: { id: options.userId } });
+            } catch (err) {
+                console.warn(`[VorknewsPublishService] Could not lookup user ${options.userId}:`, err);
+            }
+        }
+
+        const defaultUsername = await this.configService.getVorknewsDefaultUsername();
+        const defaultPassword = await this.configService.getVorknewsDefaultPassword();
+
+        const username = (options.vorknewsUsername || publishingUser?.vorknewsUsername || defaultUsername || process.env.VORKS_USER || '').trim();
+        const password = (options.vorknewsPassword || publishingUser?.vorknewsPassword || defaultPassword || process.env.VORKS_PASSWORD || '').trim();
 
         if (!username || !password) {
-            throw new Error('VORKS_USER and VORKS_PASSWORD environment variables are required.');
+            const who = publishingUser?.username ? `el redactor "${publishingUser.username}"` : 'la publicación actual';
+            throw new Error(`No se encontraron credenciales de Vorknews configuradas para ${who} ni a nivel sistema/entorno.`);
         }
 
         const configuredMode = await this.configService.getVorknewsPublishMode();
         const mode = options.mode || configuredMode || 'DRAFT';
         const defaultAuthor = await this.configService.getVorknewsDefaultAuthor();
-        const author = options.author || defaultAuthor || 'Juan Bautista Vega';
+        const author = options.author || publishingUser?.vorknewsAuthorName || defaultAuthor || 'Juan Bautista Vega';
 
         const sectionId = options.sectionId
             || this.resolveSectionId(article.section, article.location)
@@ -164,7 +180,7 @@ export class VorknewsPublishService {
             // Handle login if redirected or form_login is present
             const loginForm = await page.$('#form_login');
             if (loginForm) {
-                console.log('[VorknewsPublishService] Logging into Vorknews CMS...');
+                console.log(`[VorknewsPublishService] Logging into Vorknews CMS as ${username}...`);
                 await page.type('input[name="inputEmail"]', username, { delay: 10 });
                 await page.type('input[name="inputPassword"]', password, { delay: 10 });
                 await Promise.all([
@@ -174,6 +190,16 @@ export class VorknewsPublishService {
                         if (form) HTMLFormElement.prototype.submit.call(form);
                     })
                 ]);
+
+                // Check if login form is still present (indicating login failed)
+                const stillLoginForm = await page.$('#form_login');
+                if (stillLoginForm) {
+                    const errorMsg = await page.evaluate(() => {
+                        const el = document.querySelector('.alert-danger, .alert, #error_login, .error');
+                        return el ? el.textContent?.trim() : null;
+                    });
+                    throw new Error(`Error de autenticación en Vorknews para el usuario "${username}": ${errorMsg || 'Usuario o contraseña incorrectos en Vorknews'}`);
+                }
             }
 
             // Ensure we are on the edit page

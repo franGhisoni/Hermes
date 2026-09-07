@@ -313,12 +313,6 @@ export const LOCAL_NEWS_CONFIGS = {
             hasArticleLikePath(url, ['/actualidad', '/nacionales', '/provincia', '/politica', '/economia', '/informes', '/contacto', '/suscripcion']),
         ['article .nota-texto p', 'article .article-body p', '.nota-texto p', ...DEFAULT_CONTENT_SELECTORS]
     ),
-    Infocielo: config(
-        'Infocielo',
-        'https://www.infocielo.com',
-        url => /^(?:\/politica|\/sociedad|\/deportes|\/economia|\/provincia|\/judiciales|\/policiales|\/la-plata|\/municipios)\/[^/]+\/?$/i.test(url.pathname),
-        ['article .article-content p', 'article .content p', '.article-content p', ...DEFAULT_CONTENT_SELECTORS]
-    ),
     LaPoliticaOnline: config(
         'LaPoliticaOnline',
         'https://www.lapoliticaonline.com',

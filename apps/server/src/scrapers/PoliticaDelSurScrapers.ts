@@ -24,9 +24,7 @@ export class LaTeclaInfoScraper extends LocalNewsScraper {
     constructor() { super(LOCAL_NEWS_CONFIGS.LaTeclaInfo); }
 }
 
-export class InfocieloScraper extends LocalNewsScraper {
-    constructor() { super(LOCAL_NEWS_CONFIGS.Infocielo); }
-}
+export { InfocieloScraper } from './InfocieloScraper';
 
 export class LaPoliticaOnlineScraper extends LocalNewsScraper {
     constructor() { super(LOCAL_NEWS_CONFIGS.LaPoliticaOnline); }

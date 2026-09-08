@@ -136,8 +136,17 @@ export class LaNacionScraper extends BaseScraper {
                     // for a signed-in account that is not entitled to this note.
                     // That wall also contains several <p> nodes, so title/content
                     // alone is not enough to consider an extraction valid.
-                    const visiblePageText = document.body?.innerText || '';
-                    const accessWall = /alcanza\s+el\s+l[ií]mite\s+de\s+art[ií]culos\s+gratuitos|pod[eé]s\s+leer\s+una\s+cantidad\s+limitada\s+de\s+art[ií]culos|beneficios\s+pod[eé]s\s+leer\s+una\s+cantidad\s+limitada/i.test(visiblePageText);
+                    const visiblePageText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+
+                    // The quota page is served with HTTP 200 and has the same
+                    // article-like markup as a real note.  Do not rely on one
+                    // literal: La Nación rotates copy such as "Alcancé el
+                    // límite...", "Oportunidades de suscripción" and
+                    // "Disfrutá de beneficios exclusivos" (the latter two are
+                    // cards shown alongside the quota notice).
+                    const quotaNotice = /alcanz(?:a|[ée])\s+el\s+l[ií]mite\s+de\s+art[ií]culos(?:\s+gratuitos)?|l[ií]mite\s+de\s+art[ií]culos\s+gratuitos|cantidad\s+(?:limitada|restringida)\s+de\s+art[ií]culos|n[uú]mero\s+restringido\s+de\s+art[ií]culos/i.test(visiblePageText);
+                    const subscriptionOffer = /oportunidades\s+de\s+suscripci[oó]n|disfrut[aá]\s+de\s+beneficios\s+exclusivos|credencial\s+de\s+club\s+premium/i.test(visiblePageText);
+                    const accessWall = quotaNotice || subscriptionOffer;
 
                     return { title, paragraphs, image, structuredBody, isPaywalled, accessWall };
                 });

@@ -163,6 +163,16 @@ export class LaNacionScraper extends BaseScraper {
                         'La cuenta llegó al muro de acceso de La Nación; se omitió el aviso de límite gratuito y no se creó una nota.'
                     );
                     console.warn(`[LaNacion] Access wall detected, skipping: ${link}`);
+                } else if (data.isPaywalled && !this.loggedIn) {
+                    // JSON-LD marks this as subscriber-only.  A body embedded
+                    // in that JSON must never be treated as permission to
+                    // republish it when the account session was not verified.
+                    this.recordContentSkip(
+                        link,
+                        data.title,
+                        'Nota exclusiva omitida: la sesión de suscriptor no pudo verificarse en La Nación.'
+                    );
+                    console.warn(`[LaNacion] Subscriber-only article without a verified session, skipping: ${link}`);
                 } else if (data.title && content) {
                     articles.push({
                         title: data.title,
@@ -251,16 +261,27 @@ export class LaNacionScraper extends BaseScraper {
             await page.keyboard.press('Enter');
         }
 
-        // Wait for redirect back to lanacion.com.ar
+        // Auth0 first redirects to ingresar.lanacion.com.ar/auth0-callback.
+        // That redirect alone is not proof that a session was created; the
+        // previous implementation therefore reported false positives.
         await page.waitForFunction(() => {
             return !window.location.hostname.includes('login.lanacion.com.ar') && !window.location.pathname.includes('/u/login');
         }, { timeout: 30000 }).catch(() => null);
 
+        await page.goto('https://www.lanacion.com.ar/', { waitUntil: 'networkidle2', timeout: 60000 }).catch(() => null);
         const ok = await page.evaluate(() => {
-            return !window.location.hostname.includes('login.lanacion.com.ar');
+            const accountLink = Array.from(document.querySelectorAll('a')).find(anchor => {
+                const href = (anchor as HTMLAnchorElement).href || '';
+                const text = (anchor.textContent || '').trim().toLowerCase();
+                return /micuenta\.lanacion\.com\.ar|\/login|\/u\/login/.test(href) || /^(ingresar|inici[aá] sesi[oó]n)$/.test(text);
+            });
+
+            // Guests are shown an "Ingresar" account link.  A verified
+            // session replaces it with the authenticated account control.
+            return !accountLink && window.location.hostname.endsWith('lanacion.com.ar');
         });
 
-        console.log(`[LaNacion] Login ${ok ? 'successful' : 'failed'}.`);
+        console.log(`[LaNacion] Subscriber session ${ok ? 'verified' : 'not verified'}.`);
         return ok;
     }
 }

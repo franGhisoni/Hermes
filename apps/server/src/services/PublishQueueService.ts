@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma';
 import { VorknewsPublishService } from './VorknewsPublishService';
 import { MailService } from './MailService';
 import { notificationService } from './NotificationService';
+import { dailyOperationalLogService } from './DailyOperationalLogService';
 
 export interface PublishJobData {
     articleId: string;
@@ -241,6 +242,10 @@ export class PublishQueueService {
                     metadata: { articleId: article.id, targetName: target.name }
                 });
             }
+
+            await dailyOperationalLogService.recordPublication(true).catch(error => {
+                console.error('[DailyOperationalLog] Failed to record publication counter:', error);
+            });
         } catch (error: any) {
             console.error('[PublishQueue] Error during background publication:', error);
 
@@ -267,6 +272,9 @@ export class PublishQueueService {
                     articleId: jobData.articleId,
                     error: error.message
                 }
+            });
+            await dailyOperationalLogService.recordPublication(false).catch(logError => {
+                console.error('[DailyOperationalLog] Failed to record publication failure counter:', logError);
             });
         }
     }

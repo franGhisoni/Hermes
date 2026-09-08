@@ -107,6 +107,21 @@ export interface ScrapeRun {
     cancelledAt?: string | null;
 }
 
+export interface DailyOperationalLog {
+    id: string;
+    day: string;
+    scrapeRuns: number;
+    candidatesDetected: number;
+    scrapedCount: number;
+    processedCount: number;
+    discardedCount: number;
+    failedCount: number;
+    publishedCount: number;
+    publishFailedCount: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export interface Target {
     id: string;
     name: string;

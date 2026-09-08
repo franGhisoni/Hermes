@@ -25,6 +25,7 @@ import { notificationService } from './NotificationService';
 import { ConfigService } from './ConfigService';
 import { ScrapeRunStatus, ScrapeRunTrigger } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { dailyOperationalLogService } from './DailyOperationalLogService';
 const POSTGRES_INT_MAX = 2_147_483_647;
 
 function durationMsBetween(startedAt: Date, finishedAt: Date): number | null {
@@ -339,6 +340,15 @@ export class QueueService {
                         errorMessage: errorMessage ? errorMessage.slice(0, 1000) : null,
                         diagnostics: diagnostics || undefined
                     }
+                });
+                await dailyOperationalLogService.recordScrapeRun({
+                    status,
+                    scrapedCount,
+                    processedCount,
+                    diagnostics
+                }).catch(error => {
+                    // Audit availability must not turn a successful scrape into a failed one.
+                    console.error('[DailyOperationalLog] Failed to record scrape counters:', error);
                 });
             };
 

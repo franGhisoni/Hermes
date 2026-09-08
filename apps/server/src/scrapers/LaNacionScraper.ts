@@ -132,7 +132,14 @@ export class LaNacionScraper extends BaseScraper {
                         }
                     }
 
-                    return { title, paragraphs, image, structuredBody, isPaywalled };
+                    // La Nación can return HTTP 200 plus a rendered quota wall
+                    // for a signed-in account that is not entitled to this note.
+                    // That wall also contains several <p> nodes, so title/content
+                    // alone is not enough to consider an extraction valid.
+                    const visiblePageText = document.body?.innerText || '';
+                    const accessWall = /alcanza\s+el\s+l[ií]mite\s+de\s+art[ií]culos\s+gratuitos|pod[eé]s\s+leer\s+una\s+cantidad\s+limitada\s+de\s+art[ií]culos|beneficios\s+pod[eé]s\s+leer\s+una\s+cantidad\s+limitada/i.test(visiblePageText);
+
+                    return { title, paragraphs, image, structuredBody, isPaywalled, accessWall };
                 });
 
                 const renderedContent = this.cleanParagraphs(data.paragraphs).join('\n\n');
@@ -140,7 +147,14 @@ export class LaNacionScraper extends BaseScraper {
                 const content = structuredContent.length > renderedContent.length
                     ? structuredContent
                     : renderedContent;
-                if (data.title && content) {
+                if (data.accessWall) {
+                    this.recordContentSkip(
+                        link,
+                        data.title,
+                        'La cuenta llegó al muro de acceso de La Nación; se omitió el aviso de límite gratuito y no se creó una nota.'
+                    );
+                    console.warn(`[LaNacion] Access wall detected, skipping: ${link}`);
+                } else if (data.title && content) {
                     articles.push({
                         title: data.title,
                         content,

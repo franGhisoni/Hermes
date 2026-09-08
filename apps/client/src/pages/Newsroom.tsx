@@ -32,6 +32,7 @@ export default function Newsroom() {
     const [seoBajada, setSeoBajada] = useState('');
     const [seoContent, setSeoContent] = useState('');
     const [seoTags, setSeoTags] = useState('');
+    const visualEditorRef = useRef<HTMLDivElement>(null);
 
     // Social Media Copy fields
     const [socialTwitter, setSocialTwitter] = useState('');
@@ -78,6 +79,19 @@ export default function Newsroom() {
             .map(p => `<p>${p}</p>`)
             .join('\n');
     }
+
+    // React must not replace a contentEditable element while it owns the
+    // selection, otherwise the browser resets the caret to the beginning.
+    // Hydrate the DOM only when the user is not actively editing it.
+    useEffect(() => {
+        const editor = visualEditorRef.current;
+        if (!editor || document.activeElement === editor) return;
+
+        const content = seoContent || '<p>Comenzar a escribir...</p>';
+        if (editor.innerHTML !== content) {
+            editor.innerHTML = content;
+        }
+    }, [seoContent, visualMode, editorTab]);
 
     useEffect(() => {
         if (!id) return;
@@ -1333,6 +1347,7 @@ export default function Newsroom() {
 
                                     {visualMode ? (
                                         <div
+                                            ref={visualEditorRef}
                                             contentEditable
                                             suppressContentEditableWarning
                                             onInput={e => {
@@ -1340,7 +1355,6 @@ export default function Newsroom() {
                                                 setSeoContent(html);
                                                 setArticle(prev => prev ? { ...prev, rewrittenContent: html } : null);
                                             }}
-                                            dangerouslySetInnerHTML={{ __html: seoContent || '<p>Comenzar a escribir...</p>' }}
                                             className="prose prose-base max-w-none border border-editorial-text/15 p-6 bg-white/60 min-h-[380px] leading-relaxed font-serif rounded focus:outline-none focus:border-editorial-text shadow-sm overflow-y-auto"
                                         />
                                     ) : (

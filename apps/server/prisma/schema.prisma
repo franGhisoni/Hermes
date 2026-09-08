@@ -159,6 +159,25 @@ model ScrapeRun {
   @@index([queueJobId])
 }
 
+// Durable daily operational counters. They are incremented when a scrape or
+// publication finishes and are never pruned automatically.
+model DailyOperationalLog {
+  id                  String   @id @default(uuid())
+  day                 DateTime @unique
+  scrapeRuns          Int      @default(0)
+  candidatesDetected  Int      @default(0)
+  scrapedCount        Int      @default(0)
+  processedCount      Int      @default(0)
+  discardedCount      Int      @default(0)
+  failedCount         Int      @default(0)
+  publishedCount      Int      @default(0)
+  publishFailedCount  Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([day])
+}
+
 enum ScrapeRunStatus {
   QUEUED
   RUNNING

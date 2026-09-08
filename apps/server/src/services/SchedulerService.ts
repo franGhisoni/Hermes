@@ -8,6 +8,7 @@ import { AIService } from './AIService';
 import { ImageService } from './ImageService';
 import { notificationService } from './NotificationService';
 import { prisma } from '../lib/prisma';
+import { dailyOperationalLogService } from './DailyOperationalLogService';
 
 interface RunStats {
     targetsTotal: number;
@@ -328,7 +329,16 @@ export class SchedulerService {
                         : article;
                     const category = fresh.targetCategory || dispatchArticle.section || undefined;
                     const ok = await this.mailService.sendArticleToTarget(target.email, dispatchArticle, category);
-                    if (!ok) continue;
+                    if (!ok) {
+                        await dailyOperationalLogService.recordPublication(false).catch(error =>
+                            console.error('[DailyOperationalLog] Failed to record publication failure counter:', error)
+                        );
+                        continue;
+                    }
+
+                    await dailyOperationalLogService.recordPublication(true).catch(error =>
+                        console.error('[DailyOperationalLog] Failed to record publication counter:', error)
+                    );
 
                     stats.targetsCovered++;
                     if (isRefill) stats.articlesRefilled++;
@@ -347,6 +357,9 @@ export class SchedulerService {
                     });
                 } catch (err) {
                     console.error(`[CRON-PUBLISH] Publication failed for target ${target.name}:`, err);
+                    await dailyOperationalLogService.recordPublication(false).catch(error =>
+                        console.error('[DailyOperationalLog] Failed to record publication failure counter:', error)
+                    );
                 }
             }
 

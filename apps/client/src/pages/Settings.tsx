@@ -6,7 +6,7 @@ import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settin
 import { ScraperControl } from '../components/ScraperControl';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
-import type { ScrapeRun } from '../types';
+import type { DailyOperationalLog, ScrapeRun } from '../types';
 
 interface PromptConfig {
     id: string;
@@ -110,6 +110,7 @@ export default function Settings() {
     const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
     const [schedules, setSchedules] = useState<ScrapeSchedule[]>([]);
     const [scrapeRuns, setScrapeRuns] = useState<ScrapeRun[]>([]);
+    const [dailyOperationalLogs, setDailyOperationalLogs] = useState<DailyOperationalLog[]>([]);
     const [promptsLoading, setPromptsLoading] = useState(false);
     const [promptsLoaded, setPromptsLoaded] = useState(false);
     const [scrapeRunsLoaded, setScrapeRunsLoaded] = useState(false);
@@ -184,6 +185,21 @@ export default function Settings() {
         await fetchScrapeRuns();
     };
 
+    const fetchDailyOperationalLogs = async () => {
+        try {
+            const res = await api.get('/api/daily-operational-logs?limit=365');
+            setDailyOperationalLogs(res.data);
+        } catch (error) {
+            console.error('Error fetching daily operational logs:', error);
+        }
+    };
+
+    const deleteDailyOperationalLog = async (day: string) => {
+        if (!window.confirm(`¿Borrar definitivamente el resumen operativo del ${day}?`)) return;
+        await api.delete(`/api/daily-operational-logs/${day}`);
+        await fetchDailyOperationalLogs();
+    };
+
     useEffect(() => {
         api.get('/api/config/settings')
             .then(res => {
@@ -237,7 +253,10 @@ export default function Settings() {
 
         // Let the visible source controls render before loading the heavier
         // audit history table.
-        const timer = window.setTimeout(() => void fetchScrapeRuns(), 250);
+        const timer = window.setTimeout(() => {
+            void fetchScrapeRuns();
+            void fetchDailyOperationalLogs();
+        }, 250);
         return () => window.clearTimeout(timer);
     }, [activeTab, promptsLoaded, scrapeRunsLoaded]);
 
@@ -467,6 +486,7 @@ export default function Settings() {
                             filterCategories={filterCategories}
                             schedules={schedules}
                             scrapeRuns={scrapeRuns}
+                            dailyOperationalLogs={dailyOperationalLogs}
                             scrapeLimit={scrapeLimit}
                             newSecName={newSecName}
                             setNewSecName={setNewSecName}
@@ -496,6 +516,7 @@ export default function Settings() {
                             handleDeleteSchedule={handleDeleteSchedule}
                             refreshScrapeRuns={fetchScrapeRuns}
                             cancelScrapeRun={cancelScrapeRun}
+                            deleteDailyOperationalLog={deleteDailyOperationalLog}
                             onConfigureOverrides={(id) => setOverrideSectionId(id)}
                         />
                     )}
@@ -584,6 +605,7 @@ interface FuentesTabProps {
     filterCategories: FilterCategory[];
     schedules: ScrapeSchedule[];
     scrapeRuns: ScrapeRun[];
+    dailyOperationalLogs: DailyOperationalLog[];
     scrapeLimit: number;
     newSecName: string;
     setNewSecName: (v: string) => void;
@@ -613,12 +635,13 @@ interface FuentesTabProps {
     handleDeleteSchedule: (id: string) => Promise<void>;
     refreshScrapeRuns: () => Promise<void>;
     cancelScrapeRun: (id: string) => Promise<void>;
+    deleteDailyOperationalLog: (day: string) => Promise<void>;
     onConfigureOverrides: (sectionId: string) => void;
 }
 
 function FuentesTab(props: FuentesTabProps) {
     const {
-        sections, filterCategories, schedules, scrapeRuns, scrapeLimit,
+        sections, filterCategories, schedules, scrapeRuns, dailyOperationalLogs, scrapeLimit,
         newSecName, setNewSecName, newSecPath, setNewSecPath, newSecLimit, setNewSecLimit,
         newSecCategoryId, setNewSecCategoryId,
         newFilterCategoryName, setNewFilterCategoryName,
@@ -628,6 +651,7 @@ function FuentesTab(props: FuentesTabProps) {
         handleCreateSchedule, handleCreateAllSchedules, addingAllSchedules, handleToggleSchedule, handleDeleteSchedule,
         refreshScrapeRuns,
         cancelScrapeRun,
+        deleteDailyOperationalLog,
         onConfigureOverrides
     } = props;
 
@@ -911,8 +935,29 @@ function FuentesTab(props: FuentesTabProps) {
             </div>
 
             <ScrapeRunsPanel runs={scrapeRuns} onRefresh={refreshScrapeRuns} onCancel={cancelScrapeRun} />
+            <DailyOperationalLogsPanel logs={dailyOperationalLogs} onDelete={deleteDailyOperationalLog} />
         </section>
     );
+}
+
+function DailyOperationalLogsPanel({ logs, onDelete }: { logs: DailyOperationalLog[]; onDelete: (day: string) => Promise<void> }) {
+    const [deletingDay, setDeletingDay] = useState<string | null>(null);
+    const formatDay = (value: string) => new Intl.DateTimeFormat('es-AR', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
+    const remove = async (day: string) => {
+        setDeletingDay(day);
+        try { await onDelete(day); } finally { setDeletingDay(null); }
+    };
+
+    return <Card>
+        <div className="flex items-start justify-between gap-4 mb-4">
+            <div><h3 className="text-xs font-bold uppercase tracking-widest font-sans">Resumen operativo diario</h3><p className="text-[11px] font-sans opacity-60 mt-1">Historial permanente de scraping y publicaciones. Solo se elimina manualmente.</p></div>
+            <span className="text-[10px] font-sans opacity-50 whitespace-nowrap">Últimos 365 días</span>
+        </div>
+        <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left font-sans text-xs"><thead className="border-b border-editorial-text/15 text-[10px] uppercase tracking-wide opacity-60"><tr><th className="py-2 pr-3">Día</th><th className="py-2 pr-3 text-right">Corridas</th><th className="py-2 pr-3 text-right">Detectadas</th><th className="py-2 pr-3 text-right">Scrapeadas</th><th className="py-2 pr-3 text-right">Procesadas</th><th className="py-2 pr-3 text-right">Descartadas</th><th className="py-2 pr-3 text-right">Falladas</th><th className="py-2 pr-3 text-right">Publicadas</th><th className="py-2 pr-3 text-right">Falló publ.</th><th /></tr></thead><tbody>
+            {logs.map(log => { const day = log.day.slice(0, 10); return <tr key={log.id} className="border-b border-editorial-text/10 hover:bg-editorial-text/[0.02]"><td className="py-2 pr-3 font-medium">{formatDay(log.day)}</td><td className="py-2 pr-3 text-right font-mono">{log.scrapeRuns}</td><td className="py-2 pr-3 text-right font-mono">{log.candidatesDetected}</td><td className="py-2 pr-3 text-right font-mono">{log.scrapedCount}</td><td className="py-2 pr-3 text-right font-mono">{log.processedCount}</td><td className="py-2 pr-3 text-right font-mono">{log.discardedCount}</td><td className="py-2 pr-3 text-right font-mono text-red-700">{log.failedCount}</td><td className="py-2 pr-3 text-right font-mono text-green-700">{log.publishedCount}</td><td className="py-2 pr-3 text-right font-mono text-red-700">{log.publishFailedCount}</td><td className="py-2 text-right"><button onClick={() => void remove(day)} disabled={deletingDay === day} title="Borrar resumen de este día" className="text-editorial-text/40 hover:text-red-600 disabled:opacity-40"><Trash2 size={14} /></button></td></tr>; })}
+            {logs.length === 0 && <tr><td colSpan={10} className="py-6 text-center opacity-50 italic">Todavía no hay actividad registrada.</td></tr>}
+        </tbody></table></div>
+    </Card>;
 }
 
 function ScrapeRunsPanel({

@@ -266,6 +266,42 @@ app.get('/api/scrape-runs', requireAdmin, async (req, res) => {
     }
 });
 
+// GET /api/daily-operational-logs - permanent daily counters for the
+// operational pipeline. No automatic retention policy is applied.
+app.get('/api/daily-operational-logs', requireAdmin, async (req, res) => {
+    try {
+        const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 90, 1), 3650);
+        const logs = await prisma.dailyOperationalLog.findMany({
+            orderBy: { day: 'desc' },
+            take: limit
+        });
+        res.json(logs);
+    } catch (error) {
+        console.error('Error fetching daily operational logs:', error);
+        res.status(500).json({ error: 'Failed to fetch daily operational logs' });
+    }
+});
+
+// DELETE /api/daily-operational-logs/:day - explicit, admin-only deletion.
+// Daily history is otherwise kept indefinitely.
+app.delete('/api/daily-operational-logs/:day', requireAdmin, async (req, res) => {
+    const { day } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+        return res.status(400).json({ error: 'Day must use YYYY-MM-DD format' });
+    }
+
+    try {
+        await prisma.dailyOperationalLog.delete({
+            where: { day: new Date(`${day}T00:00:00.000Z`) }
+        });
+        res.status(204).end();
+    } catch (error: any) {
+        if (error?.code === 'P2025') return res.status(404).json({ error: 'Daily log not found' });
+        console.error('Error deleting daily operational log:', error);
+        res.status(500).json({ error: 'Failed to delete daily operational log' });
+    }
+});
+
 // POST /api/scrape-runs/:id/cancel - Cancel a queued run or request cancellation
 // for an active one. Active scraper jobs stop cooperatively before processing
 // articles once the scraper returns control.
@@ -463,6 +499,7 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 // POST /api/articles/:id/publish - Publish article to a target (send email)
 import { MailService } from './services/MailService';
 import { AIService } from './services/AIService';
+import { dailyOperationalLogService } from './services/DailyOperationalLogService';
 const mailService = new MailService();
 const aiService = new AIService();
 
@@ -503,7 +540,12 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         // Use provided category, or fall back to article's section
         const articleCategory = category || article.section || undefined;
         const sent = await mailService.sendArticleToTarget(target.email, articleForTarget as any, articleCategory);
-        if (!sent) return res.status(500).json({ error: 'Failed to send email' });
+        if (!sent) {
+            await dailyOperationalLogService.recordPublication(false).catch(logError => {
+                console.error('[DailyOperationalLog] Failed to record publication failure counter:', logError);
+            });
+            return res.status(500).json({ error: 'Failed to send email' });
+        }
 
         // Update article status to PUBLISHED
         await prisma.article.update({
@@ -511,9 +553,16 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             data: { status: 'PUBLISHED' }
         });
 
+        await dailyOperationalLogService.recordPublication(true).catch(logError => {
+            console.error('[DailyOperationalLog] Failed to record publication counter:', logError);
+        });
+
         res.json({ success: true, message: `Article published to ${target.name}` });
     } catch (error) {
         console.error('Error publishing article:', error);
+        await dailyOperationalLogService.recordPublication(false).catch(logError => {
+            console.error('[DailyOperationalLog] Failed to record publication failure counter:', logError);
+        });
         res.status(500).json({ error: 'Failed to publish article' });
     }
 });

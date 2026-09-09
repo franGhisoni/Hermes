@@ -500,6 +500,7 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 import { MailService } from './services/MailService';
 import { AIService } from './services/AIService';
 import { dailyOperationalLogService } from './services/DailyOperationalLogService';
+import { isLaNacionAccessWall } from './services/ContentSafetyService';
 const mailService = new MailService();
 const aiService = new AIService();
 
@@ -514,6 +515,12 @@ app.post('/api/articles/:id/publish', async (req, res) => {
 
         let article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        if (isLaNacionAccessWall(article)) {
+            return res.status(422).json({
+                error: 'Publicación bloqueada: el artículo contiene un muro de acceso o suscripción de La Nación.'
+            });
+        }
 
         if (Object.keys(draftUpdates).length > 0) {
             if (draftUpdates.rewrittenContent !== undefined) {

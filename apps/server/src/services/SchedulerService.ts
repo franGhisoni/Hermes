@@ -9,6 +9,7 @@ import { ImageService } from './ImageService';
 import { notificationService } from './NotificationService';
 import { prisma } from '../lib/prisma';
 import { dailyOperationalLogService } from './DailyOperationalLogService';
+import { isLaNacionAccessWall } from './ContentSafetyService';
 
 interface RunStats {
     targetsTotal: number;
@@ -304,7 +305,13 @@ export class SchedulerService {
                 take: Math.min(Math.max(slots.length * 4, 100), 2000)
             });
 
-            if (articles.length === 0) {
+            const safeArticles = articles.filter(article => !isLaNacionAccessWall(article));
+            const blockedCount = articles.length - safeArticles.length;
+            if (blockedCount > 0) {
+                console.warn(`[CRON-PUBLISH] ${fresh.name}: ${blockedCount} muro(s) de La Nación bloqueado(s) antes de publicar.`);
+            }
+
+            if (safeArticles.length === 0) {
                 const msg = 'No se encontraron artículos PENDING en la ventana.';
                 console.log(`[CRON-PUBLISH] ${fresh.name}: ${msg}`);
                 await this.recordRun(workflow.id, 'EMPTY', startedAt, stats, msg);
@@ -313,7 +320,7 @@ export class SchedulerService {
 
             const usedArticleIds = new Set<string>();
             for (const slot of slots) {
-                const article = this.takeArticleForSlot(articles, slot, usedArticleIds, fresh.allowRepublish);
+                const article = this.takeArticleForSlot(safeArticles, slot, usedArticleIds, fresh.allowRepublish);
                 if (!article) {
                     stats.targetsSkipped++;
                     continue;

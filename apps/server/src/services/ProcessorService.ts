@@ -4,6 +4,7 @@ import { ScrapedArticle } from '../scrapers/BaseScraper';
 import { ImageService } from './ImageService';
 import { ConfigService } from './ConfigService';
 import { Prisma } from '@prisma/client';
+import { isLaNacionAccessWall } from './ContentSafetyService';
 
 export interface ProcessingDiagnostics {
     attempted: number;
@@ -66,6 +67,17 @@ export class ProcessorService {
         };
 
         for (const article of articles) {
+            if (isLaNacionAccessWall(article)) {
+                const reason = 'Muro de acceso o suscripción de La Nación detectado: bloqueado antes de IA, guardado y publicación.';
+                diagnostics.items.push({
+                    url: article.url,
+                    title: article.title,
+                    outcome: 'failed',
+                    reason
+                });
+                console.warn(`[Processor] ${reason} ${article.url}`);
+                continue;
+            }
             try {
                 const result = await this.processSingleArticle(source.id, article);
                 if (result.outcome === 'saved') {

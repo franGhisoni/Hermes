@@ -1,18 +1,15 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
-import path from 'path';
 
 export class LaNacionScraper extends BaseScraper {
     name = 'LaNacion';
     baseUrl = 'https://www.lanacion.com.ar';
     private loggedIn = false;
 
-    protected getBrowserUserDataDir(): string {
-        // Mount this directory as durable storage in the deployed service.
-        // The default is useful locally; production should set
-        // LA_NACION_SESSION_DIR to a persistent-volume path.
-        return process.env.LA_NACION_SESSION_DIR?.trim()
-            || path.resolve(process.cwd(), '.hermes-data', 'lanacion-session');
+    protected getBrowserReuseKey(): string {
+        // One long-lived browser owns La Nación's Auth0 cookies. Each scrape
+        // opens and closes only its tab, never the authenticated browser.
+        return 'lanacion-subscriber';
     }
 
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {

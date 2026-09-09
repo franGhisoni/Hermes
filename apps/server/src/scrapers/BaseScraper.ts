@@ -51,14 +51,46 @@ export abstract class BaseScraper {
     private diagnostics: ScrapeDiagnostics = this.newDiagnostics();
     protected requestedLimit = Infinity;
     private scrapeOnlyToday = true;
+    private static reusableBrowsers = new Map<string, Promise<Browser>>();
 
-    /**
-     * Sources with authenticated access may override this with a durable,
-     * server-mounted Chromium profile. Public sources deliberately keep the
-     * short-lived browser profile used by default.
-     */
-    protected getBrowserUserDataDir(): string | undefined {
+    /** Sources that need an authenticated session can keep one browser alive. */
+    protected getBrowserReuseKey(): string | undefined {
         return undefined;
+    }
+
+    private async launchBrowser(): Promise<Browser> {
+        return puppeteerExtra.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--window-size=1920,1080',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process,CrossOriginOpenerPolicy,CrossOriginEmbedderPolicy'
+            ]
+        });
+    }
+
+    private async getReusableBrowser(key: string): Promise<Browser> {
+        const existing = BaseScraper.reusableBrowsers.get(key);
+        if (existing) return existing;
+
+        const launching = this.launchBrowser();
+        BaseScraper.reusableBrowsers.set(key, launching);
+        try {
+            const browser = await launching;
+            browser.once('disconnected', () => {
+                if (BaseScraper.reusableBrowsers.get(key) === launching) {
+                    BaseScraper.reusableBrowsers.delete(key);
+                }
+            });
+            return browser;
+        } catch (error) {
+            BaseScraper.reusableBrowsers.delete(key);
+            throw error;
+        }
     }
 
     private newDiagnostics(): ScrapeDiagnostics {
@@ -180,26 +212,17 @@ export abstract class BaseScraper {
         this.resetDiagnostics(limit);
         await this.loadScrapeSettings();
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
-        const userDataDir = this.getBrowserUserDataDir();
-        const browser = await puppeteerExtra.launch({
-            headless: true, // Set to false for debugging
-            ...(userDataDir ? { userDataDir } : {}),
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--window-size=1920,1080',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-web-security',
-                '--disable-features=IsolateOrigins,site-per-process,CrossOriginOpenerPolicy,CrossOriginEmbedderPolicy'
-            ]
-        });
+        const reuseKey = this.getBrowserReuseKey();
+        const browser = reuseKey
+            ? await this.getReusableBrowser(reuseKey)
+            : await this.launchBrowser();
 
         const allArticles: ScrapedArticle[] = [];
         const seenUrls = new Set<string>();
 
+        let page: Page | undefined;
         try {
-            const page = await browser.newPage();
+            page = await browser.newPage();
 
             // Optimize: Block images, fonts, and ads to speed up scraping and reduce noise
             await page.setRequestInterception(true);
@@ -328,7 +351,8 @@ export abstract class BaseScraper {
             console.error(`[${this.name}] Error scraping:`, error);
             throw error;
         } finally {
-            await browser.close();
+            await page?.close().catch(() => null);
+            if (!reuseKey) await browser.close();
         }
     }
 

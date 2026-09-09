@@ -52,6 +52,15 @@ export abstract class BaseScraper {
     protected requestedLimit = Infinity;
     private scrapeOnlyToday = true;
 
+    /**
+     * Sources with authenticated access may override this with a durable,
+     * server-mounted Chromium profile. Public sources deliberately keep the
+     * short-lived browser profile used by default.
+     */
+    protected getBrowserUserDataDir(): string | undefined {
+        return undefined;
+    }
+
     private newDiagnostics(): ScrapeDiagnostics {
         return {
             candidatesDetected: 0,
@@ -171,8 +180,10 @@ export abstract class BaseScraper {
         this.resetDiagnostics(limit);
         await this.loadScrapeSettings();
         console.log(`[${this.name}] Starting scrape with limit ${limit}...`);
+        const userDataDir = this.getBrowserUserDataDir();
         const browser = await puppeteerExtra.launch({
             headless: true, // Set to false for debugging
+            ...(userDataDir ? { userDataDir } : {}),
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',

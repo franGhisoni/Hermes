@@ -1,10 +1,19 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
+import path from 'path';
 
 export class LaNacionScraper extends BaseScraper {
     name = 'LaNacion';
     baseUrl = 'https://www.lanacion.com.ar';
     private loggedIn = false;
+
+    protected getBrowserUserDataDir(): string {
+        // Mount this directory as durable storage in the deployed service.
+        // The default is useful locally; production should set
+        // LA_NACION_SESSION_DIR to a persistent-volume path.
+        return process.env.LA_NACION_SESSION_DIR?.trim()
+            || path.resolve(process.cwd(), '.hermes-data', 'lanacion-session');
+    }
 
     protected async performScrape(page: Page, url: string): Promise<ScrapedArticle[]> {
         // Keep descriptive names for deployments, while accepting the short
@@ -19,7 +28,7 @@ export class LaNacionScraper extends BaseScraper {
                     console.log('[LaNacion] Authenticated session active.');
                 }
             } catch (loginErr) {
-                console.warn('[LaNacion] Authenticated login failed; falling back to public extraction:', loginErr instanceof Error ? loginErr.message : String(loginErr));
+                console.warn('[LaNacion] Authenticated login failed; subscriber-only notes will be blocked:', loginErr instanceof Error ? loginErr.message : String(loginErr));
             }
         } else if (!email || !password) {
             console.log('[LaNacion] Subscriber credentials not set; using public extraction.');
@@ -164,7 +173,7 @@ export class LaNacionScraper extends BaseScraper {
                     );
                     console.warn(`[LaNacion] Access wall detected, skipping: ${link}`);
                 } else if (data.isPaywalled && !this.loggedIn) {
-                    // JSON-LD marks this as subscriber-only.  A body embedded
+                    // JSON-LD marks this as subscriber-only. A body embedded
                     // in that JSON must never be treated as permission to
                     // republish it when the account session was not verified.
                     this.recordContentSkip(
@@ -208,6 +217,13 @@ export class LaNacionScraper extends BaseScraper {
     }
 
     private async login(page: Page, email: string, password: string): Promise<boolean> {
+        // Reuse a durable authenticated browser profile whenever it is still
+        // valid. This prevents a new guest session on every scheduled run.
+        if (await this.hasVerifiedAccountControl(page)) {
+            console.log('[LaNacion] Reusing verified subscriber browser session.');
+            return true;
+        }
+
         console.log('[LaNacion] Opening subscriber login...');
         // Open the identity provider directly. The homepage login button is
         // hydrated asynchronously and can be missing during domcontentloaded.
@@ -217,10 +233,8 @@ export class LaNacionScraper extends BaseScraper {
         const emailSelector = 'input#username, input[name="username"], input[type="email"]';
         const emailInput = await page.waitForSelector(emailSelector, { visible: true, timeout: 30000 }).catch(() => null);
         if (!emailInput) {
-            const currentUrl = page.url();
-            const alreadyLoggedIn = !currentUrl.includes('login.lanacion.com.ar') && !currentUrl.includes('/u/login');
-            console.log(`[LaNacion] ${alreadyLoggedIn ? 'Already logged in.' : 'Username input not found on login page.'}`);
-            return alreadyLoggedIn;
+            console.warn('[LaNacion] Username input not found and no verified subscriber session exists.');
+            return false;
         }
 
         await emailInput.type(email, { delay: 20 });
@@ -262,14 +276,22 @@ export class LaNacionScraper extends BaseScraper {
         }
 
         // Auth0 first redirects to ingresar.lanacion.com.ar/auth0-callback.
-        // That redirect alone is not proof that a session was created; the
-        // previous implementation therefore reported false positives.
+        // Do not navigate away at that point: its JavaScript still has to
+        // finish writing the La Nación session and redirect to the site.
+        // Interrupting it here was the reason a valid password could still
+        // leave the scraper browsing as a guest.
         await page.waitForFunction(() => {
-            return !window.location.hostname.includes('login.lanacion.com.ar') && !window.location.pathname.includes('/u/login');
+            return window.location.hostname === 'www.lanacion.com.ar';
         }, { timeout: 30000 }).catch(() => null);
 
+        const ok = await this.hasVerifiedAccountControl(page);
+        console.log(`[LaNacion] Subscriber session ${ok ? 'verified and persisted' : 'not verified'}.`);
+        return ok;
+    }
+
+    private async hasVerifiedAccountControl(page: Page): Promise<boolean> {
         await page.goto('https://www.lanacion.com.ar/', { waitUntil: 'networkidle2', timeout: 60000 }).catch(() => null);
-        const ok = await page.evaluate(() => {
+        return page.evaluate(() => {
             const accountLink = Array.from(document.querySelectorAll('a')).find(anchor => {
                 const href = (anchor as HTMLAnchorElement).href || '';
                 const text = (anchor.textContent || '').trim().toLowerCase();
@@ -280,8 +302,5 @@ export class LaNacionScraper extends BaseScraper {
             // session replaces it with the authenticated account control.
             return !accountLink && window.location.hostname.endsWith('lanacion.com.ar');
         });
-
-        console.log(`[LaNacion] Subscriber session ${ok ? 'verified' : 'not verified'}.`);
-        return ok;
     }
 }

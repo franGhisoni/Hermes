@@ -282,7 +282,7 @@ export class LaNacionScraper extends BaseScraper {
         // leave the scraper browsing as a guest.
         await page.waitForFunction(() => {
             return window.location.hostname === 'www.lanacion.com.ar';
-        }, { timeout: 30000 }).catch(() => null);
+        }, { timeout: 60000 }).catch(() => null);
 
         const ok = await this.hasVerifiedAccountControl(page);
         console.log(`[LaNacion] Subscriber session ${ok ? 'verified and persisted' : 'not verified'}.`);

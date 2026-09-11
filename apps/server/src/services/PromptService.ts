@@ -174,29 +174,45 @@ Return a JSON object:
         }
 
         // Social Media Copy
-        const socialCopy = await this.getPromptByType('SOCIAL_COPY');
-        if (!socialCopy) {
-            await this.createPrompt('Copy para Redes Sociales (Política del Sur)', 'SOCIAL_COPY',
-                `Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo Política del Sur / Gran Buenos Aires).
+        const defaultSocialCopyPrompt = `Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo Política del Sur / Gran Buenos Aires).
 A partir de la siguiente noticia, generá los textos (copys) optimizados para publicar en redes sociales.
 
 Título original: {{title}}
 Contenido:
 {{content}}
 
-Instrucciones:
-1. "twitter": Texto para X (Twitter). Máximo 260 caracteres. Directo, impactante, con gancho o pregunta, 1-2 emojis sobrios y 2 hashtags clave.
-2. "instagram": Texto para Instagram (feed / carrusel). Gancho inicial en mayúsculas/destacado, 2 o 3 párrafos cortos explicando lo principal, llamado a la acción ("Comentá qué opinás", "Leé la nota completa en el link de la bio"), y un bloque de hashtags al final.
-3. "facebook": Texto para Facebook. Tono informativo y cercano, 2 párrafos breves, enlace al medio y llamado a debatir en comentarios.
-4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad.
+REGLAS GENERALES INVIOLABLES:
+- NUNCA termines los textos con puntos suspensivos ("...") ni dejes oraciones cortadas a la mitad. Todos los textos deben quedar cerrados, coherentes y completos.
+- Los copys deben ser informativos y contar los hechos centrales de la nota (qué ocurrió, quiénes intervinieron, localidad o zona del Gran Buenos Aires / Provincia y consecuencias o situación actual).
+- Evitá frases genéricas o teasers vacíos; dale valor informativo a la audiencia.
+- Usá español rioplatense periodístico, dinámico y profesional.
+
+Instrucciones por red:
+1. "twitter": Texto para X (Twitter). Máximo 260 caracteres en total. Directo, impactante, con los datos clave del hecho en 1 o 2 oraciones completas, 1-2 emojis sobrios y 2 hashtags clave (ej: #PoliticaDelSur #Seguridad).
+2. "instagram": Texto para Instagram (feed / carrusel).
+   - Línea inicial: Gancho o titular de impacto en MAYÚSCULAS con emoji sobrio al inicio (ej: 🚨, 📌, ⚖️, ⚠️).
+   - Cuerpo: 2 o 3 párrafos cortos explicando lo principal de la noticia.
+   - Cierre y llamado a la acción (CTA): Incluí SIEMPRE una invitación a ampliar la información y a debatir:
+     "📲 Leé la nota completa ingresando al link de nuestra bio."
+     "¿Qué opinás sobre este hecho? Te leemos en los comentarios 👇"
+   - Bloque de hashtags al final (separado por una línea vacía): 5 a 8 hashtags relevantes (#PoliticaDelSur, localidad y temática).
+3. "facebook": Texto para Facebook. Tono informativo, cercano y claro. 2 párrafos concisos explicando lo acontecido, llamado a leer la nota ("👉 Leé la nota completa con todos los detalles en nuestro sitio web.") y pregunta para abrir el debate en comentarios.
+4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad (ej: "#PoliticaDelSur #LomasDeZamora #Policiales #Conurbano").
 
 Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
 {
   "twitter": "...",
   "instagram": "...",
   "facebook": "...",
-  "hashtags": "#Politica #Lanus #..."
-}`);
+  "hashtags": "#PoliticaDelSur #Lanus #..."
+}`;
+
+        const socialCopy = await this.getPromptByType('SOCIAL_COPY');
+        if (!socialCopy) {
+            await this.createPrompt('Copy para Redes Sociales (Política del Sur)', 'SOCIAL_COPY', defaultSocialCopyPrompt);
+        } else if (!socialCopy.template.includes('NUNCA termines los textos con puntos suspensivos')) {
+            await this.updatePrompt(socialCopy.id, defaultSocialCopyPrompt);
+            console.log('[PromptService] Updated SOCIAL_COPY prompt with anti-truncation rules and bio CTA');
         }
     }
 }

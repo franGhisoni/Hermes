@@ -246,18 +246,30 @@ A partir de la siguiente noticia, generá los textos (copys) optimizados para pu
 Título original: ${title}
 Contenido: ${snippet}
 
-Instrucciones:
-1. "twitter": Texto para X (Twitter). Máximo 260 caracteres. Directo, impactante, con gancho o pregunta, 1-2 emojis y 2 hashtags clave.
-2. "instagram": Texto para Instagram (feed / carrusel). Gancho inicial en mayúsculas/destacado, 2 o 3 párrafos cortos explicando lo principal, llamado a la acción ("Comentá qué opinás", "Leé la nota completa en el link de la bio"), y un bloque de hashtags al final.
-3. "facebook": Texto para Facebook. Tono informativo y cercano, 2 párrafos breves, enlace al medio y llamado a debatir en comentarios.
-4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad.
+REGLAS GENERALES INVIOLABLES:
+- NUNCA termines los textos con puntos suspensivos ("...") ni dejes oraciones cortadas a la mitad. Todos los textos deben quedar cerrados, coherentes y completos.
+- Los copys deben ser informativos y contar los hechos centrales de la nota (qué ocurrió, quiénes intervinieron, localidad o zona del Gran Buenos Aires / Provincia y consecuencias o situación actual).
+- Evitá frases genéricas o teasers vacíos; dale valor informativo a la audiencia.
+- Usá español rioplatense periodístico, dinámico y profesional.
 
-Responde ÚNICAMENTE un JSON con esta estructura exacta:
+Instrucciones por red:
+1. "twitter": Texto para X (Twitter). Máximo 260 caracteres en total. Directo, impactante, con los datos clave del hecho en 1 o 2 oraciones completas, 1-2 emojis sobrios y 2 hashtags clave (ej: #PoliticaDelSur #Seguridad).
+2. "instagram": Texto para Instagram (feed / carrusel).
+   - Línea inicial: Gancho o titular de impacto en MAYÚSCULAS con emoji sobrio al inicio (ej: 🚨, 📌, ⚖️, ⚠️).
+   - Cuerpo: 2 o 3 párrafos cortos explicando lo principal de la noticia.
+   - Cierre y llamado a la acción (CTA): Incluí SIEMPRE una invitación a ampliar la información y a debatir:
+     "📲 Leé la nota completa ingresando al link de nuestra bio."
+     "¿Qué opinás sobre este hecho? Te leemos en los comentarios 👇"
+   - Bloque de hashtags al final (separado por una línea vacía): 5 a 8 hashtags relevantes (#PoliticaDelSur, localidad y temática).
+3. "facebook": Texto para Facebook. Tono informativo, cercano y claro. 2 párrafos concisos explicando lo acontecido, llamado a leer la nota ("👉 Leé la nota completa con todos los detalles en nuestro sitio web.") y pregunta para abrir el debate en comentarios.
+4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad (ej: "#PoliticaDelSur #LomasDeZamora #Policiales #Conurbano").
+
+Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
 {
   "twitter": "...",
   "instagram": "...",
   "facebook": "...",
-  "hashtags": "#Politica #Lanus #..."
+  "hashtags": "#PoliticaDelSur #Lanus #..."
 }
 `;
         }
@@ -278,14 +290,68 @@ Responde ÚNICAMENTE un JSON con esta estructura exacta:
                 hashtags: parsed.hashtags || ''
             };
         } catch (err) {
-            console.error('[AIService] Failed to generate social copy:', err);
-            return {
-                twitter: `${title}\n\n#Noticias`,
-                instagram: `🚨 ${title}\n\n${content.slice(0, 200)}...\n\n#Noticias`,
-                facebook: `${title}\n\n${content.slice(0, 300)}...`,
-                hashtags: '#Noticias'
-            };
+            console.error('[AIService] Failed to generate social copy with OpenAI, generating smart editorial fallback:', err);
+            return this.buildSocialCopyFallback(title, content);
         }
+    }
+
+    private buildSocialCopyFallback(
+        title: string,
+        content: string
+    ): { twitter: string; instagram: string; facebook: string; hashtags: string } {
+        const cleanTitle = (title || '').replace(/\s+/g, ' ').trim();
+        const cleanContent = (content || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // Extraer oraciones completas delimitadas por signos de puntuación final
+        const rawSentences = cleanContent.match(/[^.!?]+[.!?]+/g) || [];
+        const sentences = rawSentences.map(s => s.trim()).filter(Boolean);
+
+        let summary = '';
+        for (const sentence of sentences) {
+            const candidate = summary ? `${summary} ${sentence}` : sentence;
+            if (candidate.length <= 280) {
+                summary = candidate;
+            } else {
+                if (!summary) {
+                    // Si la primera oración es muy extensa, cortar en el último espacio antes de 220 caracteres
+                    const slice = sentence.slice(0, 220);
+                    const lastSpace = slice.lastIndexOf(' ');
+                    summary = (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[.,;:!?]+$/, '') + '.';
+                }
+                break;
+            }
+        }
+
+        if (!summary) {
+            summary = cleanTitle ? `${cleanTitle}.` : 'Información en desarrollo.';
+        }
+
+        const hashtags = '#PoliticaDelSur #Noticias #GranBuenosAires #Conurbano';
+
+        // Instagram: Gancho, resumen informativo, llamado al link de la bio y debate, hashtags
+        const instagram = `🚨 ${cleanTitle}\n\n${summary}\n\n📲 Leé la nota completa ingresando al enlace de nuestra bio.\n\n¿Qué opinás sobre este hecho? Te leemos en los comentarios 👇\n\n${hashtags}`;
+
+        // Facebook: Título, resumen, llamado al sitio web y comentarios
+        const facebook = `${cleanTitle}\n\n${summary}\n\n👉 Leé la nota completa con todos los detalles en nuestro sitio web.\n¿Qué opinás al respecto? Dejanos tu comentario 👇`;
+
+        // Twitter: Máximo 260 caracteres, completo y sin puntos suspensivos
+        let twitterLead = `🚨 ${cleanTitle}\n\n${summary}`;
+        if (twitterLead.length > 195) {
+            const slice = twitterLead.slice(0, 190);
+            const lastSpace = slice.lastIndexOf(' ');
+            twitterLead = (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[.,;:!?]+$/, '') + '.';
+        }
+        const twitter = `${twitterLead}\n\n🔗 Más info en la nota.\n#PoliticaDelSur #Noticias`;
+
+        return { twitter, instagram, facebook, hashtags };
     }
 
     private getRewriteLengthIssue(source: string, rewritten: string | undefined | null): string | null {

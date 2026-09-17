@@ -1,10 +1,29 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
+import { isLaNacionAccessWall } from '../services/ContentSafetyService';
 
 export class LaNacionScraper extends BaseScraper {
     name = 'LaNacion';
     baseUrl = 'https://www.lanacion.com.ar';
     private loggedIn = false;
+    private static pendingRun: Promise<void> = Promise.resolve();
+
+    async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
+        // Section jobs share the same browser and must not log in or refresh
+        // the account simultaneously.
+        const previous = LaNacionScraper.pendingRun;
+        let release!: () => void;
+        LaNacionScraper.pendingRun = new Promise<void>(resolve => { release = resolve; });
+        await previous;
+        try {
+            const articles = await super.scrape(limit);
+            const failure = this.getDiagnostics().lastFailure;
+            if (failure?.startsWith('La Nación detenida:')) throw new Error(failure);
+            return articles;
+        } finally {
+            release();
+        }
+    }
 
     protected getBrowserReuseKey(): string {
         // One long-lived browser owns La Nación's Auth0 cookies. Each scrape
@@ -28,7 +47,11 @@ export class LaNacionScraper extends BaseScraper {
                 console.warn('[LaNacion] Authenticated login failed; subscriber-only notes will be blocked:', loginErr instanceof Error ? loginErr.message : String(loginErr));
             }
         } else if (!email || !password) {
-            console.log('[LaNacion] Subscriber credentials not set; using public extraction.');
+            throw new Error('La Nación detenida: faltan credenciales de suscriptor.');
+        }
+        if (!this.loggedIn) throw new Error('La Nación detenida: no se pudo verificar la sesión autenticada.');
+        if (!await this.verifyPremiumAccess(page)) {
+            throw new Error('La Nación detenida: la prueba de lectura Premium no entregó una nota exclusiva válida.');
         }
 
         // Use the instance baseUrl (which might be overwritten with a section URL)
@@ -90,16 +113,17 @@ export class LaNacionScraper extends BaseScraper {
                         '#cuerpo-nota',
                         'section.cuerpo',
                         '.c-story-content',
-                        '.story-content',
-                        'article',
-                        'section',
-                        '.col-12',
-                        'div[class*="cuerpo"]'
+                        '.story-content'
                     ];
                     const embedAncestor = '.twitter-tweet, blockquote.twitter-tweet, [class*="tweet"], [class*="x-embed"], [class*="instagram"], [class*="tiktok"], iframe';
                     let paragraphs: string[] = [];
 
+                    paragraphs = Array.from(document.querySelectorAll('p.com-paragraph, p.ds-custom-paragraph'))
+                        .filter(p => !(p as HTMLElement).closest(embedAncestor))
+                        .map(p => (p as HTMLElement).innerText.trim()).filter(Boolean);
+
                     for (const sel of bodySelectors) {
+                        if (paragraphs.length > 0) break;
                         const els = document.querySelectorAll(`${sel} p`);
                         if (els.length > 2) {
                             paragraphs = Array.from(els)
@@ -115,6 +139,7 @@ export class LaNacionScraper extends BaseScraper {
                         document.querySelector('meta[property="og:image"]')?.getAttribute('content');
 
                     let structuredBody = '';
+                    let structuredHeadline = '';
                     let isPaywalled = false;
                     const jsonLdScripts = document.querySelectorAll('script[type="application/ld+json"]');
                     for (const script of jsonLdScripts) {
@@ -131,6 +156,7 @@ export class LaNacionScraper extends BaseScraper {
                             if (!article) continue;
 
                             if (typeof article.articleBody === 'string') structuredBody = article.articleBody.trim();
+                            if (typeof article.headline === 'string') structuredHeadline = article.headline.trim();
                             isPaywalled ||= String(article.isAccessibleForFree).toLowerCase() === 'false';
                             break;
                         } catch {
@@ -142,7 +168,7 @@ export class LaNacionScraper extends BaseScraper {
                     // for a signed-in account that is not entitled to this note.
                     // That wall also contains several <p> nodes, so title/content
                     // alone is not enough to consider an extraction valid.
-                    const visiblePageText = (document.body?.innerText || '').replace(/\s+/g, ' ').trim();
+                    const visiblePageText = [title, ...paragraphs].join(' ').replace(/\s+/g, ' ').trim();
 
                     // The quota page is served with HTTP 200 and has the same
                     // article-like markup as a real note.  Do not rely on one
@@ -154,7 +180,8 @@ export class LaNacionScraper extends BaseScraper {
                     const subscriptionOffer = /oportunidades\s+de\s+suscripci[oó]n|disfrut[aá]\s+de\s+beneficios\s+exclusivos|credencial\s+de\s+club\s+premium/i.test(visiblePageText);
                     const accessWall = quotaNotice || subscriptionOffer;
 
-                    return { title, paragraphs, image, structuredBody, isPaywalled, accessWall };
+                    const canonicalUrl = document.querySelector('link[rel="canonical"]')?.getAttribute('href') || '';
+                    return { title, paragraphs, image, structuredBody, structuredHeadline, canonicalUrl, isPaywalled, accessWall };
                 });
 
                 const renderedContent = this.cleanParagraphs(data.paragraphs).join('\n\n');
@@ -162,13 +189,17 @@ export class LaNacionScraper extends BaseScraper {
                 const content = structuredContent.length > renderedContent.length
                     ? structuredContent
                     : renderedContent;
-                if (data.accessWall) {
+                const identity = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+                if (data.accessWall || isLaNacionAccessWall({ url: link, title: data.title, content })) {
                     this.recordContentSkip(
                         link,
                         data.title,
                         'La cuenta llegó al muro de acceso de La Nación; se omitió el aviso de límite gratuito y no se creó una nota.'
                     );
                     console.warn(`[LaNacion] Access wall detected, skipping: ${link}`);
+                } else if (!data.structuredHeadline || identity(data.title) !== identity(data.structuredHeadline)
+                    || data.canonicalUrl.replace(/\/$/, '') !== link.split(/[?#]/)[0].replace(/\/$/, '') || renderedContent.length < 200) {
+                    this.recordContentSkip(link, data.title, 'Extracción rechazada: falta cuerpo periodístico o el título visible no corresponde al NewsArticle.');
                 } else if (data.isPaywalled && !this.loggedIn) {
                     // JSON-LD marks this as subscriber-only. A body embedded
                     // in that JSON must never be treated as permission to
@@ -214,7 +245,7 @@ export class LaNacionScraper extends BaseScraper {
     }
 
     private async login(page: Page, email: string, password: string): Promise<boolean> {
-        // Reuse a durable authenticated browser profile whenever it is still
+        // Reuse the shared browser session whenever it is still
         // valid. This prevents a new guest session on every scheduled run.
         if (await this.hasVerifiedAccountControl(page)) {
             console.log('[LaNacion] Reusing verified subscriber browser session.');
@@ -278,8 +309,16 @@ export class LaNacionScraper extends BaseScraper {
         // Interrupting it here was the reason a valid password could still
         // leave the scraper browsing as a guest.
         await page.waitForFunction(() => {
-            return window.location.hostname === 'www.lanacion.com.ar';
+            return ['www.lanacion.com.ar', 'micuenta.lanacion.com.ar'].includes(window.location.hostname);
         }, { timeout: 60000 }).catch(() => null);
+
+        // The account application also hydrates after the redirect. Do not
+        // interrupt that step until its token cookies actually exist.
+        const tokenReady = await page.waitForFunction(() => {
+            return document.cookie.split(';').some(cookie => /^\s*(?:token|access-token)=.+/.test(cookie));
+        }, { timeout: 30000 }).then(() => true).catch(() => false);
+        if (!tokenReady) return false;
+        await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => null);
 
         const ok = await this.hasVerifiedAccountControl(page);
         console.log(`[LaNacion] Subscriber session ${ok ? 'verified and persisted' : 'not verified'}.`);
@@ -287,17 +326,59 @@ export class LaNacionScraper extends BaseScraper {
     }
 
     private async hasVerifiedAccountControl(page: Page): Promise<boolean> {
-        await page.goto('https://www.lanacion.com.ar/', { waitUntil: 'networkidle2', timeout: 60000 }).catch(() => null);
+        await page.goto('https://www.lanacion.com.ar/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const cookies = await page.cookies();
+        const hasAuthCookie = cookies.some(cookie => ['token', 'access-token'].includes(cookie.name)
+            && cookie.value.length > 0 && (cookie.expires === -1 || cookie.expires > Date.now() / 1000));
+        if (!hasAuthCookie) return false;
+        await page.waitForFunction(() => {
+            return !Array.from(document.querySelectorAll('a')).some(anchor =>
+                /^(ingresar|inici[aá] sesi[oó]n|iniciar sesi[oó]n)$/i.test((anchor.textContent || '').trim())
+                && /micuenta\.lanacion\.com\.ar|\/login|\/u\/login/.test((anchor as HTMLAnchorElement).href));
+        }, { timeout: 15000 }).catch(() => null);
         return page.evaluate(() => {
             const accountLink = Array.from(document.querySelectorAll('a')).find(anchor => {
                 const href = (anchor as HTMLAnchorElement).href || '';
                 const text = (anchor.textContent || '').trim().toLowerCase();
-                return /micuenta\.lanacion\.com\.ar|\/login|\/u\/login/.test(href) || /^(ingresar|inici[aá] sesi[oó]n)$/.test(text);
+                return /^(ingresar|inici[aá] sesi[oó]n|iniciar sesi[oó]n)$/.test(text)
+                    && /micuenta\.lanacion\.com\.ar|\/login|\/u\/login/.test(href);
             });
 
             // Guests are shown an "Ingresar" account link.  A verified
             // session replaces it with the authenticated account control.
             return !accountLink && window.location.hostname.endsWith('lanacion.com.ar');
         });
+    }
+
+    private async verifyPremiumAccess(page: Page): Promise<boolean> {
+        const probeUrl = process.env.LA_NACION_PREMIUM_CHECK_URL?.trim()
+            || 'https://www.lanacion.com.ar/lifestyle/los-paises-mas-seguros-y-los-mas-inseguros-segun-el-indice-de-paz-global-2026-que-lugar-ocupa-nid10092026/';
+        const parsed = new URL(probeUrl);
+        if (parsed.hostname !== 'www.lanacion.com.ar' || !/-nid\d+/.test(parsed.pathname)) {
+            throw new Error('LA_NACION_PREMIUM_CHECK_URL debe ser una nota real de www.lanacion.com.ar.');
+        }
+        await page.goto(probeUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.waitForSelector('p.com-paragraph, p.ds-custom-paragraph', { timeout: 10000 }).catch(() => null);
+        const probe = await page.evaluate(() => {
+            const title = document.querySelector('h1')?.textContent?.trim() || '';
+            const content = Array.from(document.querySelectorAll('p.com-paragraph, p.ds-custom-paragraph')).map(p => (p as HTMLElement).innerText.trim()).join('\n\n');
+            let premium = false;
+            let headline = '';
+            for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+                try {
+                    const json = JSON.parse(script.textContent || '');
+                    const nodes = Array.isArray(json) ? json : json['@graph'] || [json];
+                    for (const node of nodes) {
+                        if (String(node.isAccessibleForFree).toLowerCase() === 'false') premium = true;
+                        if (node.headline) headline = node.headline.trim();
+                    }
+                } catch { /* Ignore unrelated malformed metadata. */ }
+            }
+            return { title, content, premium, headline };
+        });
+        const ok = probe.premium && probe.title === probe.headline && probe.content.length >= 500
+            && !isLaNacionAccessWall({ url: probeUrl, ...probe });
+        console.log(`[LaNacion] Premium reading probe ${ok ? 'passed' : 'failed'} (${probe.content.length} rendered characters).`);
+        return ok;
     }
 }

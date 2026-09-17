@@ -32,6 +32,7 @@ const articleService = new ArticleService();
 export const schedulerService = new SchedulerService(queueService, articleService);
 
 async function initializeBackgroundServices() {
+    await articleService.quarantineLaNacionAccessWalls();
     try {
         await queueService.initializeWorkerConcurrency();
     } catch (error) {
@@ -40,7 +41,9 @@ async function initializeBackgroundServices() {
     await schedulerService.initialize();
 }
 
-initializeBackgroundServices();
+initializeBackgroundServices().catch(error => {
+    console.error('Background services were not initialized:', error);
+});
 
 async function initSections() {
     try {

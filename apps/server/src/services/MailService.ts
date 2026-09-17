@@ -2,6 +2,7 @@ import { Resend } from 'resend';
 import { Article } from '@prisma/client';
 import { ConfigService } from './ConfigService';
 import { prisma } from '../lib/prisma';
+import { isLaNacionAccessWall } from './ContentSafetyService';
 
 export class MailService {
     private resend: Resend;
@@ -23,6 +24,9 @@ export class MailService {
     }
 
     public async sendArticleToTarget(targetEmail: string, article: Article, category?: string) {
+        if (isLaNacionAccessWall(article)) {
+            throw new Error('Publicación bloqueada: promoción o muro de acceso de La Nación.');
+        }
         const title = article.rewrittenTitle || article.originalTitle;
         const content = article.rewrittenContent || article.originalContent;
         const imageUrl = article.featureImageUrl || article.originalImageUrl;

@@ -1,10 +1,45 @@
 import { Article } from '@prisma/client';
 import { ConfigService } from './ConfigService';
 import { prisma } from '../lib/prisma';
+import { isLaNacionAccessWall } from './ContentSafetyService';
 
 const configService = new ConfigService();
 
 export class ArticleService {
+    private static safetySweep: Promise<string[]> | undefined;
+    private static safetySweepAt = 0;
+
+    async quarantineLaNacionAccessWalls(): Promise<string[]> {
+        if (ArticleService.safetySweep && Date.now() - ArticleService.safetySweepAt < 60_000) {
+            return ArticleService.safetySweep;
+        }
+        ArticleService.safetySweepAt = Date.now();
+        ArticleService.safetySweep = (async () => {
+            const blockedIds: string[] = [];
+            let cursor: string | undefined;
+            for (;;) {
+                const rows = await prisma.article.findMany({
+                    where: { OR: [{ source: { name: 'LaNacion' } }, { originalUrl: { contains: 'lanacion.com.ar' } }] },
+                    orderBy: { id: 'asc' }, take: 200,
+                    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+                    select: { id: true, originalUrl: true, originalTitle: true, originalContent: true, rewrittenTitle: true, rewrittenContent: true }
+                });
+                blockedIds.push(...rows.filter(isLaNacionAccessWall).map(row => row.id));
+                if (rows.length < 200) break;
+                cursor = rows[rows.length - 1].id;
+            }
+            if (blockedIds.length) {
+                await prisma.article.updateMany({
+                    where: { id: { in: blockedIds }, status: { in: ['PENDING', 'APPROVED'] } },
+                    data: { status: 'REJECTED' }
+                });
+                console.warn(`[ArticleSafety] ${blockedIds.length} promoción(es) de La Nación en cuarentena; excluidas del listado y publicación.`);
+            }
+            return blockedIds;
+        })();
+        try { return await ArticleService.safetySweep; }
+        catch (error) { ArticleService.safetySweep = undefined; throw error; }
+    }
 
     async findSimilarArticle(embedding: number[], threshold?: number): Promise<Article | null> {
         // pgvector uses <=> for cosine distance (lower is closer)
@@ -59,6 +94,7 @@ export class ArticleService {
         interestScore?: number;
         status?: 'PENDING' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
     }) {
+        if (isLaNacionAccessWall(data)) throw new Error('Guardado bloqueado: promoción o muro de La Nación.');
         const vectorString = `[${data.embedding.join(',')}]`;
 
         // We insert raw to handle the vector field
@@ -113,6 +149,8 @@ export class ArticleService {
         const skip = (page - 1) * limit;
 
         let where: any = {};
+        const blockedIds = await this.quarantineLaNacionAccessWalls();
+        if (blockedIds.length) where.NOT = { id: { in: blockedIds } };
         if (source && source !== 'all') where.source = { name: source };
         if (section && section !== 'all') {
             where.AND = [

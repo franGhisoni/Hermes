@@ -68,6 +68,7 @@ export class ProcessorService {
 
         for (const article of articles) {
             if (isLaNacionAccessWall(article)) {
+                diagnostics.failures++;
                 const reason = 'Muro de acceso o suscripción de La Nación detectado: bloqueado antes de IA, guardado y publicación.';
                 diagnostics.items.push({
                     url: article.url,

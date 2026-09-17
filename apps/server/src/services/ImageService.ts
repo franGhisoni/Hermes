@@ -151,9 +151,22 @@ export class ImageService {
         const cleanedTitle = this.cleanTitleForSearch(title);
         const cleanedRewrittenTitle = this.cleanTitleForSearch(rewrittenTitle);
 
+        // Preserve title entities first, including mixed-case brands (BlackRock,
+        // OpenAI). Body entities supply context, not a replacement protagonist.
+        const titleEntities = this.extractCapitalizedPhrases(title);
+        const phrases = this.uniqueStrings([
+            ...titleEntities, ...this.extractCapitalizedPhrases(content)
+        ]);
+        if (phrases.length > 0) {
+            const subject = titleEntities[0] || phrases[0];
+            return this.uniqueStrings([
+                subject,
+                ...phrases.filter(term => term !== subject).map(term => `${subject} ${term}`)
+            ]).filter(query => query.length >= minLength).slice(0, maxCount);
+        }
+
         const people = this.extractPeople(`${title}. ${content}`);
         const acronyms = this.extractAcronyms(`${title}. ${content}`);
-        const phrases = this.extractCapitalizedPhrases(`${title}. ${content}`);
 
         const queries: string[] = [];
 
@@ -239,9 +252,9 @@ export class ImageService {
         if (!title) return '';
 
         let cleaned = title;
-        if (cleaned.includes(':')) {
-            cleaned = cleaned.split(':').slice(1).join(' ').trim();
-        }
+        // A colon commonly separates the subject from an explanatory subtitle.
+        // Never throw away the subject (e.g. "BlackRock: ...").
+        cleaned = cleaned.replace(/:/g, ' ');
 
         cleaned = cleaned
             .replace(/["'“”‘’][^"'“”‘’]{2,80}["'“”‘’]/g, ' ')
@@ -274,12 +287,15 @@ export class ImageService {
     }
 
     private extractCapitalizedPhrases(text: string): string[] {
-        const matches = text.match(/\b(?:[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+|[A-Z]{2,6})(?:\s+(?:[A-ZÁÉÍÓÚÜÑ][a-záéíóúüñ]+|[A-Z]{2,6})){0,2}\b/g) || [];
+        const matches = text.match(/(?<![\p{L}\p{N}])[\p{Lu}][\p{L}\p{N}]*(?:\s+[\p{Lu}][\p{L}\p{N}]*){0,2}(?![\p{L}\p{N}])/gu) || [];
         return this.uniqueStrings(matches).filter(term => {
             const lower = term.toLowerCase();
             return lower.length > 3
                 && !lower.startsWith('http')
-                && !['fuente original', 'borrador ia'].includes(lower);
+                && !['fuente original', 'borrador ia', 'cómo', 'cuándo', 'dónde',
+                    'quién', 'cuáles', 'esto', 'esta', 'este', 'estos', 'estas',
+                    'para', 'sobre', 'según', 'nuevo', 'nueva', 'último',
+                    'última', 'ahora', 'vuelve'].includes(lower);
         });
     }
 

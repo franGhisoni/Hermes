@@ -226,7 +226,8 @@ You receive:
 Your output: 3 to 5 short Bing image-search queries, in Spanish, that would find PHOTOJOURNALISTIC images of the same protagonist/subject — but NOT the same photo as the reference (this is for republishing; reusing the source photo is forbidden).
 
 RULES:
-- Name the protagonist explicitly: full names of people, names of organizations, city/region for places, brand name for products.
+- Name the protagonist explicitly IN EVERY QUERY: full names of people, names of organizations, city/region for places, brand name for products. The protagonist field must be a concise entity name, not a summary of the story.
+- Preserve mixed-case brand names such as BlackRock. For a BlackRock investment story, search "BlackRock oficinas", "BlackRock sede Nueva York", not "Argentina podría beneficiarse" or "recomendaciones clave". Do not invent people, events or locations not supported by the article.
 - Use noun phrases. No quotes, no boolean operators, no \`site:\` filters. 3-8 words each.
 - If the title is a pun, joke, or wordplay (e.g. "Soy urólogo, no ufólogo"), DO NOT search the pun. Search the program, host, channel, or event named in the body.
 - If the article is about a generic concept (e.g. honey exports), name the concrete actors (Mercosur, Unión Europea, exportadores apícolas) instead of just the concept.
@@ -251,22 +252,45 @@ Return strictly a JSON object with this shape:
                 );
             }
 
-            const completion = await this.openai.chat.completions.create({
+            const request = {
                 model,
-                response_format: { type: "json_object" },
+                response_format: { type: "json_object" as const },
                 max_tokens: maxTokens,
                 messages: [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userContent }
+                    { role: "system" as const, content: systemPrompt },
+                    { role: "user" as const, content: userContent }
                 ]
-            });
+            };
+            let completion;
+            try {
+                completion = await this.openai.chat.completions.create(request);
+            } catch (error) {
+                if (!input.originalImageUrl) throw error;
+                // A broken source image must not disable semantic query generation.
+                console.warn('[AIService] Image query generation failed with reference; retrying with article text only.');
+                completion = await this.openai.chat.completions.create({
+                    ...request,
+                    messages: [request.messages[0], {
+                        role: 'user', content: userContent.filter(part => part.type === 'text')
+                    }]
+                });
+            }
 
             const result = JSON.parse(completion.choices[0].message.content || '{}');
+            const protagonist = typeof result.protagonist === 'string' ? result.protagonist.trim() : '';
+            const normalize = (value: string) => value.normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+            const subjectWords = normalize(protagonist).split(' ').filter(Boolean);
             const queries: string[] = Array.isArray(result.queries) ? result.queries : [];
             const cleaned = queries
                 .filter((q: any) => typeof q === 'string')
                 .map(q => q.trim())
-                .filter(q => q.length >= 3 && q.length <= 120);
+                .filter(q => q.length >= 3 && q.length <= 120)
+                .filter(q => q.split(/\s+/).length <= 8)
+                // Reject narrative subjects and queries that omit the identified
+                // entity; the entity-aware local fallback will fill their slots.
+                .filter(q => subjectWords.length > 0 && subjectWords.length <= 6
+                    && subjectWords.every(word => normalize(q).split(' ').includes(word)));
 
             if (result.protagonist) {
                 console.log(`[AIService] 🎯 Smart query protagonist: ${result.protagonist}`);
@@ -276,7 +300,7 @@ Return strictly a JSON object with this shape:
             } else {
                 console.log(`[AIService] No smart queries returned, falling back to regex extraction.`);
             }
-            return { queries: cleaned, protagonist: result.protagonist || null };
+            return { queries: cleaned, protagonist: protagonist || null };
         } catch (error) {
             console.error('[AIService] Smart query generation failed, falling back:', error);
             return { queries: [], protagonist: null };

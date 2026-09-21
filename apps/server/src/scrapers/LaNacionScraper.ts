@@ -280,7 +280,21 @@ export class LaNacionScraper extends BaseScraper {
 
         // Step 1: Username / Email
         const emailSelector = 'input#username, input[name="username"], input[type="email"]';
-        const emailInput = await page.waitForSelector(emailSelector, { visible: true, timeout: 30000 }).catch(() => null);
+        let emailInput = await page.waitForSelector(emailSelector, { visible: true, timeout: 15000 }).catch(() => null);
+        if (!emailInput && page.url().includes('micuenta.lanacion.com.ar')) {
+            const openedLogin = await page.evaluate(() => {
+                const control = Array.from(document.querySelectorAll('a, button')).find(element => {
+                    const text = (element.textContent || '').replace(/\s+/g, ' ').trim();
+                    return /^(ingresar|iniciar sesi[oó]n)$/i.test(text);
+                }) as HTMLElement | undefined;
+                control?.click();
+                return Boolean(control);
+            });
+            if (openedLogin) {
+                console.log('[LaNacion] Following the official login control from Mi Cuenta.');
+                emailInput = await page.waitForSelector(emailSelector, { visible: true, timeout: 30000 }).catch(() => null);
+            }
+        }
         if (!emailInput) {
             this.lastLoginFailure = `no apareció el campo de usuario en ${new URL(page.url()).hostname}`;
             console.warn('[LaNacion] Username input not found and no verified subscriber session exists.');

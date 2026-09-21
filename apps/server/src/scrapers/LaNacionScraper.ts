@@ -1,11 +1,13 @@
 import { BaseScraper, ScrapedArticle } from './BaseScraper';
 import { Page } from 'puppeteer';
 import { isLaNacionAccessWall } from '../services/ContentSafetyService';
+import { LaNacionSessionStore } from '../services/LaNacionSessionStore';
 
 export class LaNacionScraper extends BaseScraper {
     name = 'LaNacion';
     baseUrl = 'https://www.lanacion.com.ar';
     private loggedIn = false;
+    private sessionStore = new LaNacionSessionStore();
     private static pendingRun: Promise<void> = Promise.resolve();
 
     async scrape(limit: number = 5): Promise<ScrapedArticle[]> {
@@ -50,7 +52,15 @@ export class LaNacionScraper extends BaseScraper {
             throw new Error('La Nación detenida: faltan credenciales de suscriptor.');
         }
         if (!this.loggedIn) throw new Error('La Nación detenida: no se pudo verificar la sesión autenticada.');
-        if (!await this.verifyPremiumAccess(page)) {
+        let premiumAccess = await this.verifyPremiumAccess(page);
+        if (!premiumAccess) {
+            // A cookie can be syntactically valid but revoked. Clear it once,
+            // perform a fresh login and prove the entitlement again.
+            await this.resetSubscriberSession(page);
+            this.loggedIn = await this.login(page, email, password);
+            premiumAccess = this.loggedIn && await this.verifyPremiumAccess(page);
+        }
+        if (!premiumAccess) {
             throw new Error('La Nación detenida: la prueba de lectura Premium no entregó una nota exclusiva válida.');
         }
 
@@ -252,6 +262,16 @@ export class LaNacionScraper extends BaseScraper {
             return true;
         }
 
+        const persistedCookies = await this.sessionStore.load(password);
+        if (persistedCookies?.length) {
+            await page.setCookie(...persistedCookies);
+            if (await this.hasVerifiedAccountControl(page)) {
+                console.log('[LaNacion] Restored subscriber browser session from Redis.');
+                return true;
+            }
+            await this.sessionStore.clear();
+        }
+
         console.log('[LaNacion] Opening subscriber login...');
         // Open the identity provider directly. The homepage login button is
         // hydrated asynchronously and can be missing during domcontentloaded.
@@ -314,14 +334,13 @@ export class LaNacionScraper extends BaseScraper {
 
         // The account application also hydrates after the redirect. Do not
         // interrupt that step until its token cookies actually exist.
-        const tokenReady = await page.waitForFunction(() => {
-            return document.cookie.split(';').some(cookie => /^\s*(?:token|access-token)=.+/.test(cookie));
-        }, { timeout: 30000 }).then(() => true).catch(() => false);
+        const tokenReady = await this.waitForAuthCookies(page, 30000);
         if (!tokenReady) return false;
         await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => null);
 
         const ok = await this.hasVerifiedAccountControl(page);
-        console.log(`[LaNacion] Subscriber session ${ok ? 'verified and persisted' : 'not verified'}.`);
+        if (ok) await this.sessionStore.save(password, await page.cookies());
+        console.log(`[LaNacion] Subscriber session ${ok ? 'verified' : 'not verified'}.`);
         return ok;
     }
 
@@ -331,23 +350,29 @@ export class LaNacionScraper extends BaseScraper {
         const hasAuthCookie = cookies.some(cookie => ['token', 'access-token'].includes(cookie.name)
             && cookie.value.length > 0 && (cookie.expires === -1 || cookie.expires > Date.now() / 1000));
         if (!hasAuthCookie) return false;
-        await page.waitForFunction(() => {
-            return !Array.from(document.querySelectorAll('a')).some(anchor =>
-                /^(ingresar|inici[aá] sesi[oó]n|iniciar sesi[oó]n)$/i.test((anchor.textContent || '').trim())
-                && /micuenta\.lanacion\.com\.ar|\/login|\/u\/login/.test((anchor as HTMLAnchorElement).href));
-        }, { timeout: 15000 }).catch(() => null);
-        return page.evaluate(() => {
-            const accountLink = Array.from(document.querySelectorAll('a')).find(anchor => {
-                const href = (anchor as HTMLAnchorElement).href || '';
-                const text = (anchor.textContent || '').trim().toLowerCase();
-                return /^(ingresar|inici[aá] sesi[oó]n|iniciar sesi[oó]n)$/.test(text)
-                    && /micuenta\.lanacion\.com\.ar|\/login|\/u\/login/.test(href);
-            });
+        // Header hydration is not an authentication source of truth: in
+        // production it can keep rendering "Ingresar" even with valid
+        // HttpOnly tokens. The premium reading probe verifies entitlement.
+        return true;
+    }
 
-            // Guests are shown an "Ingresar" account link.  A verified
-            // session replaces it with the authenticated account control.
-            return !accountLink && window.location.hostname.endsWith('lanacion.com.ar');
-        });
+    private async waitForAuthCookies(page: Page, timeoutMs: number): Promise<boolean> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            const cookies = await page.cookies();
+            if (cookies.some(cookie => ['token', 'access-token'].includes(cookie.name)
+                && cookie.value.length > 0 && (cookie.expires === -1 || cookie.expires > Date.now() / 1000))) return true;
+            await new Promise(resolve => setTimeout(resolve, 250));
+        }
+        console.warn(`[LaNacion] Login finished at ${page.url()} without valid authentication cookies.`);
+        return false;
+    }
+
+    private async resetSubscriberSession(page: Page): Promise<void> {
+        const cookies = (await page.cookies()).filter(cookie => ['token', 'access-token'].includes(cookie.name));
+        if (cookies.length) await page.deleteCookie(...cookies);
+        await this.sessionStore.clear();
+        this.loggedIn = false;
     }
 
     private async verifyPremiumAccess(page: Page): Promise<boolean> {

@@ -5,6 +5,7 @@ import { LaNacionScraper } from '../src/scrapers/LaNacionScraper';
 import { ArticleService } from '../src/services/ArticleService';
 import { MailService } from '../src/services/MailService';
 import { prisma } from '../src/lib/prisma';
+import { LaNacionSessionStore } from '../src/services/LaNacionSessionStore';
 
 const url = 'https://www.lanacion.com.ar/economia/nota-periodistica-nid17092026/';
 const headline = 'Una empresa argentina anunció inversiones y nuevos empleos';
@@ -32,10 +33,13 @@ async function extract(overrides: Record<string, unknown> = {}, premiumAccess = 
     const internal = scraper as any;
     internal.loggedIn = true;
     internal.verifyPremiumAccess = async () => premiumAccess;
+    internal.login = async () => false;
+    internal.sessionStore = { clear: async () => undefined };
     internal.extractPublishedDate = async () => new Date();
     internal.isFromToday = () => true;
     let calls = 0;
     const page = { goto: async () => null, waitForSelector: async () => null,
+        cookies: async () => [], deleteCookie: async () => undefined,
         evaluate: async () => ++calls === 1 ? [url] : {
             title: headline, structuredHeadline: headline, canonicalUrl: url,
             paragraphs: [body, body], structuredBody: body, isPaywalled: false, accessWall: false,
@@ -68,6 +72,31 @@ test('acepta una noticia con identidad y cuerpo comprobados', async () => {
 
 test('detiene La Nación completa si la sonda Premium falla', async () => {
     await assert.rejects(() => extract({}, false), /La Nación detenida/);
+});
+
+test('persiste en Redis solamente las cookies de sesión y cifradas', async () => {
+    const originalHost = process.env.REDIS_HOST;
+    process.env.REDIS_HOST = 'test';
+    let saved = '';
+    const fakeRedis = {
+        set: async (_key: string, value: string) => { saved = value; },
+        get: async () => saved,
+        del: async () => 1,
+        on: () => undefined
+    };
+    (LaNacionSessionStore as any).client = fakeRedis;
+    const store = new LaNacionSessionStore();
+    const expires = Math.floor(Date.now() / 1000) + 3600;
+    await store.save('secret', [
+        { name: 'token', value: 'private-token', domain: '.lanacion.com.ar', path: '/', expires },
+        { name: 'analytics', value: 'discard-me', domain: '.lanacion.com.ar', path: '/', expires }
+    ]);
+    assert.ok(saved.length > 0);
+    assert.equal(saved.includes('private-token'), false);
+    assert.deepEqual((await store.load('secret'))?.map(cookie => cookie.name), ['token']);
+    (LaNacionSessionStore as any).client = undefined;
+    if (originalHost === undefined) delete process.env.REDIS_HOST;
+    else process.env.REDIS_HOST = originalHost;
 });
 
 test('la última barrera de envío rechaza un registro viejo reescrito sin llamar al proveedor de correo', async () => {

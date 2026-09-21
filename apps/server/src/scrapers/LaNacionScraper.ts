@@ -276,7 +276,11 @@ export class LaNacionScraper extends BaseScraper {
         console.log('[LaNacion] Opening subscriber login...');
         // Open the identity provider directly. The homepage login button is
         // hydrated asynchronously and can be missing during domcontentloaded.
-        await page.goto('https://micuenta.lanacion.com.ar/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+        // `ingresar` is the stable authentication entrypoint: it creates the
+        // Auth0 transaction and redirects to login.lanacion.com.ar. `micuenta`
+        // is only the account SPA and its client-side redirect does not run
+        // reliably in Railway's headless browser.
+        await page.goto('https://ingresar.lanacion.com.ar/', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
         // Step 1: Username / Email
         const emailSelector = 'input#username, input[name="username"], input[type="email"]';

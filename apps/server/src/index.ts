@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { QueueService } from './services/QueueService';
+import { QueueService, SCRAPER_SOURCES } from './services/QueueService';
 import { ArticleService, buildContentPreview } from './services/ArticleService';
 import { ScrapeRunTrigger } from '@prisma/client';
 import { prisma } from './lib/prisma';
@@ -164,6 +164,49 @@ app.use('/api/config', requireAdmin);
 
 import { ConfigService } from './services/ConfigService';
 const configService = new ConfigService();
+
+// POST /api/scrape/all - Queue every registered source across its enabled sections.
+// This intentionally has its own admin guard: individual manual runs remain
+// available to editors, while a bulk run can create a large number of jobs.
+app.post('/api/scrape/all', requireAdmin, async (_req, res) => {
+    try {
+        const defaultLimit = await configService.getScrapeLimit();
+        const sections = await prisma.section.findMany({ include: { overrides: true } });
+        let queued = 0;
+
+        for (const source of SCRAPER_SOURCES) {
+            if (sections.length === 0) {
+                await queueService.addScrapeJob(source, undefined, defaultLimit, {
+                    trigger: ScrapeRunTrigger.MANUAL
+                });
+                queued++;
+                continue;
+            }
+
+            for (const section of sections) {
+                const override = section.overrides.find(item => item.source === source);
+                if (override?.enabled === false) continue;
+
+                await queueService.addScrapeJob(
+                    source,
+                    override?.path ?? section.path,
+                    override?.scrapeLimit ?? section.scrapeLimit ?? defaultLimit,
+                    { sectionName: section.name, trigger: ScrapeRunTrigger.MANUAL }
+                );
+                queued++;
+            }
+        }
+
+        res.json({
+            message: `Se encolaron trabajos para ${SCRAPER_SOURCES.length} medios y ${queued} combinaciones medio/sección.`,
+            sources: SCRAPER_SOURCES.length,
+            jobs: queued
+        });
+    } catch (error) {
+        console.error('Error queueing all scrapers:', error);
+        res.status(500).json({ error: 'Failed to queue all scrapers' });
+    }
+});
 
 // POST /api/scrape - Manual Trigger
 // Body: { source, limit?, sectionId? }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
-import { Play, Loader2, ChevronRight } from 'lucide-react';
+import { Play, Loader2, ChevronRight, ListPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 interface EffectiveSection {
@@ -77,6 +77,24 @@ export function ScraperControl() {
         }
     };
 
+    const handleQueueAll = async () => {
+        if (user?.role !== 'ADMIN') return;
+        if (!confirm('¿Encolar todos los medios en sus secciones habilitadas?')) return;
+
+        setLoading(true);
+        setMessage('Encolando todos los medios...');
+        try {
+            const res = await api.post('/api/scrape/all');
+            setMessage(res.data.message || 'Todos los medios fueron encolados.');
+        } catch (error) {
+            setMessage('Error al encolar todos los medios');
+            console.error(error);
+        } finally {
+            setLoading(false);
+            setTimeout(() => setMessage(''), 5000);
+        }
+    };
+
     return (
         <div className="relative group flex items-center h-full">
             <button className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4 flex items-center gap-1">
@@ -88,6 +106,17 @@ export function ScraperControl() {
                         <div className="bg-editorial-text text-editorial-bg px-3 py-2 rounded mb-2 text-xs font-bold uppercase tracking-widest animate-fade-in text-center">
                             {message}
                         </div>
+                    )}
+                    {user?.role === 'ADMIN' && (
+                        <button
+                            onClick={handleQueueAll}
+                            disabled={loading}
+                            className="mb-2 flex w-full items-center justify-between gap-2 rounded border border-editorial-text/30 px-3 py-2 text-xs font-sans font-bold uppercase tracking-wider hover:bg-editorial-text hover:text-editorial-bg disabled:opacity-50"
+                            title="Encola todos los scrapers en sus secciones habilitadas"
+                        >
+                            <span>Encolar todos</span>
+                            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ListPlus className="w-3 h-3" />}
+                        </button>
                     )}
                     {SCRAPERS.map(s => {
                         const sections = sectionsBySource[s.source];

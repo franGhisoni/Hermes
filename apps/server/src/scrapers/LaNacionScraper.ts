@@ -7,6 +7,7 @@ export class LaNacionScraper extends BaseScraper {
     name = 'LaNacion';
     baseUrl = 'https://www.lanacion.com.ar';
     private loggedIn = false;
+    private lastLoginFailure = 'sin detalle';
     private sessionStore = new LaNacionSessionStore();
     private static pendingRun: Promise<void> = Promise.resolve();
 
@@ -51,7 +52,7 @@ export class LaNacionScraper extends BaseScraper {
         } else if (!email || !password) {
             throw new Error('La Nación detenida: faltan credenciales de suscriptor.');
         }
-        if (!this.loggedIn) throw new Error('La Nación detenida: no se pudo verificar la sesión autenticada.');
+        if (!this.loggedIn) throw new Error(`La Nación detenida: no se pudo verificar la sesión autenticada (${this.lastLoginFailure}).`);
         let premiumAccess = await this.verifyPremiumAccess(page);
         if (!premiumAccess) {
             // A cookie can be syntactically valid but revoked. Clear it once,
@@ -281,6 +282,7 @@ export class LaNacionScraper extends BaseScraper {
         const emailSelector = 'input#username, input[name="username"], input[type="email"]';
         const emailInput = await page.waitForSelector(emailSelector, { visible: true, timeout: 30000 }).catch(() => null);
         if (!emailInput) {
+            this.lastLoginFailure = `no apareció el campo de usuario en ${new URL(page.url()).hostname}`;
             console.warn('[LaNacion] Username input not found and no verified subscriber session exists.');
             return false;
         }
@@ -304,6 +306,7 @@ export class LaNacionScraper extends BaseScraper {
         const passwordSelector = 'input#password, input[name="password"], input[type="password"]';
         const passwordInput = await page.waitForSelector(passwordSelector, { visible: true, timeout: 30000 }).catch(() => null);
         if (!passwordInput) {
+            this.lastLoginFailure = `no apareció el campo de contraseña en ${new URL(page.url()).hostname}`;
             console.warn('[LaNacion] Password input not found on login page.');
             return false;
         }
@@ -335,11 +338,15 @@ export class LaNacionScraper extends BaseScraper {
         // The account application also hydrates after the redirect. Do not
         // interrupt that step until its token cookies actually exist.
         const tokenReady = await this.waitForAuthCookies(page, 30000);
-        if (!tokenReady) return false;
+        if (!tokenReady) {
+            this.lastLoginFailure = `Auth0 terminó en ${new URL(page.url()).hostname} pero no entregó cookies`;
+            return false;
+        }
         await page.waitForNetworkIdle({ idleTime: 1000, timeout: 15000 }).catch(() => null);
 
         const ok = await this.hasVerifiedAccountControl(page);
         if (ok) await this.sessionStore.save(password, await page.cookies());
+        if (!ok) this.lastLoginFailure = `las cookies no quedaron válidas al volver a ${new URL(page.url()).hostname}`;
         console.log(`[LaNacion] Subscriber session ${ok ? 'verified' : 'not verified'}.`);
         return ok;
     }

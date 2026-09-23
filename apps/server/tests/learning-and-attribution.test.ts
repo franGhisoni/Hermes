@@ -1,15 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAiDraft, getSavedDraft } from '../src/services/LearningService';
+import { focusEditedContent, getSavedDraft, parseEditorDraft } from '../src/services/LearningService';
 import { appendAiAttribution, sourceDisplayName } from '../src/services/AiAttribution';
 
-test('editorial changes are compared with the untouched AI draft', () => {
+test('editorial changes can be compared from the editor without a stored AI snapshot', () => {
     const snapshot = { title: 'Título IA', volanta: 'LOCAL', bajada: 'Bajada IA', content: '<p>Texto IA.</p>', tags: 'política' };
-    const edited = { rewrittenTitle: 'Título editado', rewrittenContent: '<p>Texto editado.</p>', editorialData: { seo: { ...snapshot, title: 'Título editado', content: '<p>Texto editado.</p>' } } };
-    assert.deepEqual(getAiDraft(snapshot), snapshot);
-    assert.equal(getSavedDraft(edited).content, '<p>Texto editado.</p>');
-    assert.notDeepEqual(getAiDraft(snapshot), getSavedDraft(edited));
-    assert.equal(getAiDraft(null), null);
+    const edited = { rewrittenTitle: 'Título editado', rewrittenContent: '<p>Texto editado.</p>', editorialData: { seo: { ...snapshot, title: 'Título editado', content: '<p>Texto editado.</p>' } }, aiRewriteSnapshot: null };
+    assert.deepEqual(parseEditorDraft(snapshot), snapshot);
+    assert.deepEqual(parseEditorDraft(getSavedDraft(edited)), getSavedDraft(edited));
+    assert.notDeepEqual(parseEditorDraft(snapshot), getSavedDraft(edited));
+    assert.equal(parseEditorDraft({ ...snapshot, content: '' }), null);
+    assert.equal(parseEditorDraft({ ...snapshot, tags: 4 }), null);
+});
+
+test('analysis includes an edit near the end of a long article', () => {
+    const beginning = 'Introducción. '.repeat(700);
+    const result = focusEditedContent(`${beginning}Párrafos cortos.`, `${beginning}Párrafos más extensos.`);
+    assert.match(result.before, /Párrafos cortos/);
+    assert.match(result.after, /Párrafos más extensos/);
+    assert.ok(result.before.length < 1000);
 });
 
 test('publication attribution uses the source name once and escapes it for HTML', () => {

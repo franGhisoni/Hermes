@@ -1,7 +1,7 @@
 import { NextFunction, RequestHandler, Response, Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { AuthRequest, requireAdmin } from '../middlewares/auth';
-import { getAiDraft, getSavedDraft, suggestRewritePreference } from '../services/LearningService';
+import { getSavedDraft, parseEditorDraft, suggestRewritePreference } from '../services/LearningService';
 
 const router = Router();
 const userId = (req: AuthRequest) => req.user!.id;
@@ -64,12 +64,13 @@ router.patch('/rewrite-preferences/:id', safe(async (req, res) => {
 }));
 
 router.post('/articles/:id/learn/analyze', safe(async (req, res) => {
+    const before = parseEditorDraft(req.body?.before);
+    const after = parseEditorDraft(req.body?.after);
+    if (!before || !after) return res.status(400).json({ error: 'Faltan las versiones de la nota antes y después de editarla.' });
+    if (JSON.stringify(before) === JSON.stringify(after)) return res.status(409).json({ error: 'Todavía no hay cambios para aprender.' });
     const article = await prisma.article.findUnique({ where: { id: req.params.id } });
     if (!article) return res.status(404).json({ error: 'Nota no encontrada.' });
-    const before = getAiDraft(article.aiRewriteSnapshot);
-    if (!before) return res.status(409).json({ error: 'Esta nota no conserva la versión de IA necesaria para comparar. Generá una nueva reescritura primero.' });
-    const after = getSavedDraft(article);
-    if (JSON.stringify(before) === JSON.stringify(after)) return res.status(409).json({ error: 'Todavía no hay cambios guardados para aprender.' });
+    if (JSON.stringify(after) !== JSON.stringify(getSavedDraft(article))) return res.status(409).json({ error: 'La nota cambió mientras se analizaba. Guardá y probá nuevamente.' });
     try {
         const instruction = await suggestRewritePreference(before, after);
         res.json({ instruction });
@@ -82,12 +83,13 @@ router.post('/articles/:id/learn/analyze', safe(async (req, res) => {
 router.post('/articles/:id/learn/confirm', safe(async (req, res) => {
     const instruction = typeof req.body?.instruction === 'string' ? req.body.instruction.trim() : '';
     if (!instruction || instruction.length > 350) return res.status(400).json({ error: 'Escribí una indicación de hasta 350 caracteres.' });
+    const before = parseEditorDraft(req.body?.before);
+    const after = parseEditorDraft(req.body?.after);
+    if (!before || !after) return res.status(400).json({ error: 'Faltan las versiones de la nota antes y después de editarla.' });
+    if (JSON.stringify(before) === JSON.stringify(after)) return res.status(409).json({ error: 'No hay cambios para aprender.' });
     const article = await prisma.article.findUnique({ where: { id: req.params.id } });
     if (!article) return res.status(404).json({ error: 'Nota no encontrada.' });
-    const before = getAiDraft(article.aiRewriteSnapshot);
-    if (!before || JSON.stringify(before) === JSON.stringify(getSavedDraft(article))) {
-        return res.status(409).json({ error: 'No hay una edición guardada para aprender.' });
-    }
+    if (JSON.stringify(after) !== JSON.stringify(getSavedDraft(article))) return res.status(409).json({ error: 'La nota cambió después del análisis. Volvé a analizar tus cambios.' });
     const existing = await prisma.rewritePreference.findFirst({ where: { userId: userId(req), instruction: { equals: instruction, mode: 'insensitive' } } });
     if (existing) return res.status(409).json({ error: 'Ya guardaste esa indicación.' });
     const preference = await prisma.rewritePreference.create({ data: { userId: userId(req), articleId: article.id, instruction } });

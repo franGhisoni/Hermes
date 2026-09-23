@@ -15,6 +15,8 @@ interface Target {
     config?: any;
 }
 
+type EditorDraft = { title: string; volanta: string; bajada: string; content: string; tags: string };
+
 const readableSource = (name?: string) => ({ ElDiarioSur: 'El Diario Sur', AvellanedaHoy: 'Avellaneda Hoy', LaUnion: 'La Unión' } as Record<string, string>)[name || ''] || (name || 'Medio original').replace(/([a-z])([A-Z])/g, '$1 $2');
 
 export default function Newsroom() {
@@ -37,6 +39,7 @@ export default function Newsroom() {
     const [seoTags, setSeoTags] = useState('');
     const visualEditorRef = useRef<HTMLDivElement>(null);
     const loadedDraftRef = useRef('');
+    const learningComparisonRef = useRef<{ before: EditorDraft; after: EditorDraft } | null>(null);
 
     // Social Media Copy fields
     const [socialTwitter, setSocialTwitter] = useState('');
@@ -125,6 +128,7 @@ export default function Newsroom() {
                 setSeoContent(content);
                 setSeoTags(tags);
                 loadedDraftRef.current = JSON.stringify({ title, volanta, bajada, content, tags });
+                learningComparisonRef.current = null;
 
                 if (editorial.social) {
                     setSocialTwitter(editorial.social.twitter || '');
@@ -369,8 +373,12 @@ export default function Newsroom() {
         if (!id || isDemo) return;
         setLearning(true);
         try {
+            const before = JSON.parse(loadedDraftRef.current) as EditorDraft;
+            const after = { title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags };
+            const comparison = { before, after };
             await saveDraft();
-            const response = await api.post(`/api/articles/${id}/learn/analyze`);
+            const response = await api.post(`/api/articles/${id}/learn/analyze`, comparison);
+            learningComparisonRef.current = comparison;
             setSuggestedPreference(response.data.instruction || '');
             setCorrectedPreference('');
             setShowCorrection(!response.data.instruction);
@@ -383,12 +391,13 @@ export default function Newsroom() {
     };
 
     const saveLearning = async (instruction: string) => {
-        if (!id || !instruction.trim()) return;
+        if (!id || !instruction.trim() || !learningComparisonRef.current) return;
         setSavingLearning(true);
         try {
-            await api.post(`/api/articles/${id}/learn/confirm`, { instruction: instruction.trim() });
+            await api.post(`/api/articles/${id}/learn/confirm`, { instruction: instruction.trim(), ...learningComparisonRef.current });
             setSuggestedPreference(null);
-            loadedDraftRef.current = JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
+            loadedDraftRef.current = JSON.stringify(learningComparisonRef.current.after);
+            learningComparisonRef.current = null;
             alert('Ajuste guardado. Se aplicará a tus próximas reescrituras.');
         } catch (error: unknown) {
             const detail = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
@@ -1337,8 +1346,8 @@ export default function Newsroom() {
                                             </>
                                         )}
                                     </button>
-                                    {!isDemo && <button type="button" onClick={handleLearn} disabled={learning || saving || !article.aiRewriteSnapshot || !hasEditedDraft}
-                                        title={!article.aiRewriteSnapshot ? 'Generá una nueva reescritura para habilitar el aprendizaje' : !hasEditedDraft ? 'Editá la reescritura para iniciar el aprendizaje' : 'Compara la reescritura de IA con tus cambios guardados'}
+                                    {!isDemo && <button type="button" onClick={handleLearn} disabled={learning || saving || !hasEditedDraft}
+                                        title={!hasEditedDraft ? 'Editá la reescritura para iniciar el aprendizaje' : 'Compara el texto que abriste con tus cambios en el editor'}
                                         className="px-3.5 py-1.5 border border-editorial-text/30 hover:bg-editorial-text/5 rounded text-xs font-sans font-bold uppercase tracking-widest disabled:opacity-50">
                                         {learning ? 'Analizando...' : 'Aprender de mis cambios'}
                                     </button>}

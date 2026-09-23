@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X, FileText, UserRound, Check } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
+import { AdminRewritePreferencesButton } from '../components/AdminRewritePreferencesButton';
+import { EditorialActions } from '../components/EditorialActions';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
 import type { DailyOperationalLog, ScrapeRun } from '../types';
@@ -614,7 +616,7 @@ export default function Settings() {
 
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
-            <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-20">
+            <nav className="border-b border-editorial-text/10 px-4 lg:px-8 py-4 flex flex-wrap justify-between gap-3 items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-20">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto object-contain" />
@@ -622,9 +624,10 @@ export default function Settings() {
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <h1 className="font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
                 </div>
-                <div className="flex gap-4 items-center">
+                <div className="flex flex-wrap gap-3 items-center">
                     <ScraperControl />
-                    <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 hover:underline">Volver</Link>
+                    <EditorialActions />
+                    <Link to="/" className="border border-editorial-text/20 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:bg-editorial-text hover:text-editorial-bg">← Noticias</Link>
                     <button onClick={logout} className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors">
                         Salir
                     </button>
@@ -819,6 +822,10 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
                 title="Personalidad & Lógica"
                 subtitle="Define cómo la IA interpreta, reescribe y califica el contenido. Click afuera del recuadro para guardar."
             />
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-l-2 border-editorial-text pl-4">
+                <p className="max-w-xl font-sans text-sm leading-relaxed text-editorial-text/65">Los cambios aprendidos por el editor se revisan y administran junto al prompt de reescritura.</p>
+                <AdminRewritePreferencesButton masterPrompt={prompts.find(prompt => prompt.type === 'REWRITE_VORKNEWS')?.template || ''} />
+            </div>
             {loading ? <div>Cargando configuración...</div> : (
                 <div className="space-y-6">
                     {prompts.map(prompt => (
@@ -2136,7 +2143,7 @@ function EditorialTab(props: EditorialTabProps) {
 
             {/* Modal de edición rápida desde Editorial */}
             {editingRedactor && (
-                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4" onMouseDown={event => { if (event.target === event.currentTarget) setEditingRedactor(null); }}>
                     <div className="bg-white border border-editorial-text/30 max-w-md w-full p-6 shadow-2xl rounded font-sans">
                         <div className="flex justify-between items-center pb-3 border-b border-editorial-text/10 mb-4">
                             <div>

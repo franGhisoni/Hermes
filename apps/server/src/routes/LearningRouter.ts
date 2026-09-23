@@ -2,6 +2,7 @@ import { NextFunction, RequestHandler, Response, Router } from 'express';
 import { prisma } from '../lib/prisma';
 import { AuthRequest, requireAdmin } from '../middlewares/auth';
 import { getSavedDraft, parseEditorDraft, suggestRewritePreference } from '../services/LearningService';
+import { ConfigService } from '../services/ConfigService';
 
 const router = Router();
 const userId = (req: AuthRequest) => req.user!.id;
@@ -11,7 +12,7 @@ const safe = (handler: (req: AuthRequest, res: Response) => Promise<unknown>): R
 router.post('/feedback', safe(async (req, res) => {
     const kind = req.body?.kind;
     const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
-    const articleUrl = typeof req.body?.articleUrl === 'string' ? req.body.articleUrl.trim() : '';
+    const articleUrl = kind === 'ERROR' && typeof req.body?.articleUrl === 'string' ? req.body.articleUrl.trim() : '';
     if (!['ERROR', 'SUGGESTION'].includes(kind) || !message || message.length > 2000 || articleUrl.length > 1000) {
         return res.status(400).json({ error: 'Completá un tipo y una descripción de hasta 2000 caracteres.' });
     }
@@ -39,6 +40,18 @@ router.patch('/feedback/:id', requireAdmin, safe(async (req, res) => {
 router.get('/rewrite-preferences', safe(async (req, res) => {
     const preferences = await prisma.rewritePreference.findMany({ where: { userId: userId(req) }, orderBy: { createdAt: 'desc' } });
     res.json(preferences);
+}));
+
+router.get('/rewrite-preferences/config', requireAdmin, safe(async (_req, res) => {
+    const scope = await new ConfigService().getSetting('rewrite_preference_scope', 'USER');
+    res.json({ scope: scope === 'GLOBAL' ? 'GLOBAL' : 'USER' });
+}));
+
+router.put('/rewrite-preferences/config', requireAdmin, safe(async (req, res) => {
+    const scope = req.body?.scope;
+    if (scope !== 'USER' && scope !== 'GLOBAL') return res.status(400).json({ error: 'Elegí aplicar ajustes por usuario o para todos.' });
+    await new ConfigService().setSetting('rewrite_preference_scope', scope);
+    res.json({ scope });
 }));
 
 router.get('/rewrite-preferences/all', requireAdmin, safe(async (_req, res) => {

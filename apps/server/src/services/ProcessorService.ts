@@ -5,6 +5,7 @@ import { ImageService } from './ImageService';
 import { ConfigService } from './ConfigService';
 import { Prisma } from '@prisma/client';
 import { buildEditorialData, EditorialService } from './EditorialService';
+import { getAutomaticRewriteInstructions } from './LearningService';
 
 export interface ProcessingDiagnostics {
     attempted: number;
@@ -170,7 +171,7 @@ export class ProcessorService {
 
         // 4. Rewrite Content (Structured SEO Vorknews format)
         console.log(`[Processor] Rewriting content with SEO Vorknews format...`);
-        const vorknewsRewrite = await this.aiService.rewriteForVorknews(article.title, article.content, editorial.style);
+        const vorknewsRewrite = await this.aiService.rewriteForVorknews(article.title, article.content, editorial.style, await getAutomaticRewriteInstructions());
         const rewritten = {
             title: vorknewsRewrite.title,
             content: vorknewsRewrite.content

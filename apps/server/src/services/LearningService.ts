@@ -27,18 +27,36 @@ export function getSavedDraft(article: { rewrittenTitle: string | null; rewritte
     };
 }
 
-export async function getUserRewriteInstructions(userId: string): Promise<string> {
+export function rewritePreferenceFilter(scope: string, userId: string) {
+    return scope === 'GLOBAL' ? { active: true } : { userId, active: true };
+}
+
+async function loadRewriteInstructions(where: ReturnType<typeof rewritePreferenceFilter>): Promise<string> {
     const rules = await prisma.rewritePreference.findMany({
-        where: { userId, active: true }, orderBy: { createdAt: 'desc' }, take: 12,
+        where, orderBy: { createdAt: 'desc' }, take: 30,
         select: { instruction: true }
     });
     let instructions = '';
-    for (const rule of rules.reverse()) {
+    const seen = new Set<string>();
+    for (const rule of rules) {
+        const normalized = rule.instruction.trim().toLocaleLowerCase('es');
+        if (seen.has(normalized)) continue;
         const line = `${rule.instruction}\n`;
         if (instructions.length + line.length > 2500) break;
         instructions += line;
+        seen.add(normalized);
     }
     return instructions.trim();
+}
+
+export async function getUserRewriteInstructions(userId: string): Promise<string> {
+    const scope = await new ConfigService().getSetting('rewrite_preference_scope', 'USER');
+    return loadRewriteInstructions(rewritePreferenceFilter(scope, userId));
+}
+
+export async function getAutomaticRewriteInstructions(): Promise<string> {
+    const scope = await new ConfigService().getSetting('rewrite_preference_scope', 'USER');
+    return scope === 'GLOBAL' ? loadRewriteInstructions({ active: true }) : '';
 }
 
 export function focusEditedContent(before: string, after: string, limit = 6000): { before: string; after: string } {

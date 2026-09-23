@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { focusEditedContent, getSavedDraft, parseEditorDraft } from '../src/services/LearningService';
+import { focusEditedContent, getSavedDraft, parseEditorDraft, rewritePreferenceFilter } from '../src/services/LearningService';
 import { appendAiAttribution, sourceDisplayName } from '../src/services/AiAttribution';
 
 test('editorial changes can be compared from the editor without a stored AI snapshot', () => {
@@ -19,6 +19,12 @@ test('analysis includes an edit near the end of a long article', () => {
     assert.match(result.before, /Párrafos cortos/);
     assert.match(result.after, /Párrafos más extensos/);
     assert.ok(result.before.length < 1000);
+});
+
+test('rewrite preferences stay private unless the administrator selects global scope', () => {
+    assert.deepEqual(rewritePreferenceFilter('USER', 'editor-a'), { userId: 'editor-a', active: true });
+    assert.deepEqual(rewritePreferenceFilter('GLOBAL', 'editor-a'), { active: true });
+    assert.deepEqual(rewritePreferenceFilter('unexpected', 'editor-a'), { userId: 'editor-a', active: true });
 });
 
 test('publication attribution uses the source name once and escapes it for HTML', () => {

@@ -11,6 +11,7 @@ import { prisma } from '../lib/prisma';
 import { EditorialService } from './EditorialService';
 import { VorknewsPublishService } from './VorknewsPublishService';
 import { dailyOperationalLogService } from './DailyOperationalLogService';
+import { getAutomaticRewriteInstructions } from './LearningService';
 
 interface RunStats {
     targetsTotal: number;
@@ -502,7 +503,7 @@ export class SchedulerService {
             location: article.location,
             score: article.interestScore ?? 5
         });
-        const rewritten = await this.aiService.rewriteContent(article.originalTitle, article.originalContent, editorial.style);
+        const rewritten = await this.aiService.rewriteContent(article.originalTitle, article.originalContent, editorial.style, await getAutomaticRewriteInstructions());
 
         const imageService = new ImageService();
         const { images: searchResults } = await imageService.searchImages({

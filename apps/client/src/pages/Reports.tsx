@@ -2,37 +2,23 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { AlertCircle, Lightbulb, Check } from 'lucide-react';
+import { EditorialActions } from '../components/EditorialActions';
 
 interface Report { id: string; kind: 'ERROR' | 'SUGGESTION'; message: string; articleUrl?: string | null; status: string; createdAt: string; user: { username: string } }
-interface Preference { id: string; instruction: string; active: boolean; createdAt: string; user: { username: string } }
 
 export default function Reports() {
     const { user } = useAuth();
     const [reports, setReports] = useState<Report[]>([]);
-    const [preferences, setPreferences] = useState<Preference[]>([]);
-    const [masterPrompt, setMasterPrompt] = useState('');
     const [error, setError] = useState('');
     const load = async () => {
         try {
-            const [reportResponse, preferenceResponse, promptResponse] = await Promise.all([
-                api.get('/api/feedback'), api.get('/api/rewrite-preferences/all'), api.get('/api/config/prompts')
-            ]);
+            const reportResponse = await api.get('/api/feedback');
             setReports(reportResponse.data);
-            setPreferences(preferenceResponse.data);
-            setMasterPrompt(promptResponse.data.find((prompt: { type: string }) => prompt.type === 'REWRITE_VORKNEWS')?.template || '');
-        } catch { setError('No se pudieron cargar los reportes y ajustes.'); }
+        } catch { setError('No se pudieron cargar los reportes.'); }
     };
     useEffect(() => { if (user?.role === 'ADMIN') void Promise.resolve().then(load); }, [user?.role]);
     if (user?.role !== 'ADMIN') return <p className="p-8">Sin permiso.</p>;
-
-    const copyForMerge = async () => {
-        if (!masterPrompt) return alert('No se encontró la master prompt de Vorknews. Revisá Configuración → Prompts IA.');
-        const instructions = preferences.filter(item => item.active).map(item => `- ${item.instruction} (${item.user.username})`).join('\n');
-        try {
-            await navigator.clipboard.writeText(`PROMPT ACTUAL:\n${masterPrompt}\n\nAJUSTES CONFIRMADOS:\n${instructions}`);
-            alert('Prompt y ajustes copiados. Revisá el resultado antes de pegar el prompt compactado en Configuración.');
-        } catch { alert('No se pudo copiar al portapapeles.'); }
-    };
 
     const updateReport = async (report: Report) => {
         try {
@@ -41,36 +27,35 @@ export default function Reports() {
         } catch { alert('No se pudo actualizar el reporte.'); }
     };
 
-    const togglePreference = async (item: Preference) => {
-        try {
-            await api.patch(`/api/rewrite-preferences/${item.id}`, { active: !item.active });
-            await load();
-        } catch { alert('No se pudo actualizar el ajuste.'); }
-    };
-
-    return <main className="min-h-screen bg-editorial-bg text-editorial-text p-8 font-sans">
-        <div className="max-w-5xl mx-auto space-y-8">
-            <Link to="/" className="underline text-sm">← Volver al dashboard</Link>
-            <h1 className="font-serif text-3xl font-bold">Reportes y aprendizaje</h1>
-            {error && <p role="alert">{error}</p>}
-            <section className="space-y-3">
-                <h2 className="font-serif text-2xl font-bold">Errores y sugerencias</h2>
-                {reports.length === 0 && <p>No hay reportes.</p>}
-                {reports.map(report => <div key={report.id} className="border bg-white p-4 space-y-2">
-                    <div className="text-xs font-bold uppercase">{report.kind === 'ERROR' ? 'Error' : 'Sugerencia'} · {report.user.username} · {new Date(report.createdAt).toLocaleString('es-AR')}</div>
-                    <p className="whitespace-pre-wrap">{report.message}</p>
-                    {report.articleUrl && <a href={report.articleUrl} target="_blank" rel="noreferrer" className="underline break-all text-sm">{report.articleUrl}</a>}
-                    <div><button type="button" className="border px-3 py-1 text-xs" onClick={() => updateReport(report)}>{report.status === 'OPEN' ? 'Marcar resuelto' : 'Reabrir'}</button></div>
-                </div>)}
-            </section>
-            <section className="space-y-3">
-                <div className="flex justify-between items-center gap-4"><h2 className="font-serif text-2xl font-bold">Ajustes de reescritura</h2><button type="button" onClick={copyForMerge} className="border px-4 py-2 text-sm">Copiar prompt y ajustes</button></div>
-                <p className="text-sm opacity-70">La compactación se hace manualmente. El prompt resultante se pega en Configuración → Prompts IA.</p>
-                {preferences.map(item => <div key={item.id} className="border bg-white p-3 flex justify-between gap-4 text-sm">
-                    <span>{item.instruction} <small className="opacity-60">· {item.user.username}</small></span>
-                    <button type="button" className="underline shrink-0" onClick={() => togglePreference(item)}>{item.active ? 'Desactivar' : 'Activar'}</button>
-                </div>)}
-            </section>
-        </div>
-    </main>;
+    const openCount = reports.filter(report => report.status === 'OPEN').length;
+    return <div className="min-h-screen bg-editorial-bg text-editorial-text font-sans">
+        <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-editorial-text/10 px-4 py-4 sm:px-8">
+            <Link to="/" className="flex items-center gap-3"><img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto" /><span className="border-l border-editorial-text/20 pl-3 text-xs font-bold uppercase tracking-widest">Reportes</span></Link>
+            <div className="flex flex-wrap items-center gap-3"><EditorialActions /><Link to="/" className="border border-editorial-text/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:bg-editorial-text hover:text-editorial-bg">← Noticias</Link></div>
+        </nav>
+        <main className="mx-auto max-w-5xl px-4 py-10 sm:px-8">
+            <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-editorial-text/20 pb-6">
+                <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.22em] text-editorial-text/45">Participación de usuarios</p><h1 className="font-serif text-4xl font-black italic">Errores y sugerencias</h1></div>
+                <span className="border border-editorial-text/20 px-3 py-2 text-xs font-bold uppercase tracking-wider">{openCount} pendientes</span>
+            </div>
+            {error && <p role="alert" className="mb-5 border-l-2 border-red-700 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            {reports.length === 0 ? <p className="border border-dashed border-editorial-text/20 p-10 text-center text-sm text-editorial-text/55">Todavía no hay reportes.</p> : <section className="space-y-3" aria-label="Reportes recibidos">
+                {reports.map(report => <article key={report.id} className="border border-editorial-text/15 bg-white/70 p-5 sm:p-6">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+                            {report.kind === 'ERROR' ? <AlertCircle size={15} className="text-red-700" /> : <Lightbulb size={15} className="text-amber-700" />}
+                            <span>{report.kind === 'ERROR' ? 'Error' : 'Sugerencia'}</span><span className="text-editorial-text/35">·</span><span className="text-editorial-text/55">{report.user.username}</span>
+                        </div>
+                        <span className="text-xs text-editorial-text/45">{new Date(report.createdAt).toLocaleString('es-AR')}</span>
+                    </div>
+                    <p className="whitespace-pre-wrap font-serif text-lg leading-relaxed">{report.message}</p>
+                    {report.articleUrl && <a href={report.articleUrl} target="_blank" rel="noreferrer" className="mt-4 block break-all text-xs text-editorial-text/60 underline underline-offset-2 hover:text-editorial-text">{report.articleUrl}</a>}
+                    <div className="mt-5 flex items-center justify-between border-t border-editorial-text/10 pt-4">
+                        <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${report.status === 'OPEN' ? 'text-amber-700' : 'text-emerald-700'}`}>{report.status === 'OPEN' ? 'Pendiente' : <><Check size={13} /> Resuelto</>}</span>
+                        <button type="button" className="border border-editorial-text/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors hover:bg-editorial-text hover:text-editorial-bg" onClick={() => updateReport(report)}>{report.status === 'OPEN' ? 'Marcar resuelto' : 'Reabrir'}</button>
+                    </div>
+                </article>)}
+            </section>}
+        </main>
+    </div>;
 }

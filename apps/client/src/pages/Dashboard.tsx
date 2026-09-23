@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ScraperControl } from '../components/ScraperControl';
 import { NotificationsPanel } from '../components/NotificationsPanel';
-import { FeedbackButton } from '../components/FeedbackButton';
+import { EditorialActions } from '../components/EditorialActions';
 
 interface DashboardSection {
     id: string;
@@ -161,18 +161,19 @@ export default function Dashboard() {
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
             {/* Navigation Bar */}
-            <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
+            <nav className="border-b border-editorial-text/10 px-4 lg:px-8 py-4 flex flex-wrap justify-between gap-3 items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-12 w-auto object-contain opacity-90 transition-opacity hover:opacity-100" />
                     </Link>
-                    <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
-                    <span className="text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
+                    <div className="hidden 2xl:block h-6 w-px bg-editorial-text/20 mx-2"></div>
+                    <span className="hidden 2xl:block text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
-                <div className="flex gap-4 items-center">
+                <div className="flex flex-wrap gap-2 lg:gap-4 items-center">
                     <NotificationsPanel />
                     <ScraperControl />
+                    {!isDemo && <EditorialActions />}
                     {user?.role === 'ADMIN' && (
                         <>
                             <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
@@ -198,12 +199,6 @@ export default function Dashboard() {
                     <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h2>
                     <span className="font-sans text-sm text-editorial-text/50">{totalArticles} Artículos Procesados (Página {page} de {totalPages})</span>
                 </div>
-                {!isDemo && <div className="mb-6 flex flex-wrap gap-5 items-center text-editorial-text/70">
-                    <FeedbackButton kind="ERROR" />
-                    <FeedbackButton kind="SUGGESTION" />
-                    <Link to="/my-preferences" className="font-sans text-xs font-bold uppercase tracking-wider hover:underline">Mis ajustes de reescritura</Link>
-                </div>}
-
                 {/* Toolbar */}
                 <div className="mb-8 flex flex-wrap gap-4 items-end font-sans text-xs">
                     <div className="flex flex-col gap-1 min-w-[260px] flex-1">

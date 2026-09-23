@@ -30,7 +30,7 @@ export class AIService {
         return response.data[0].embedding;
     }
 
-    async rewriteContent(title: string, content: string, style: string = 'neutral'): Promise<{ title: string; content: string }> {
+    async rewriteContent(title: string, content: string, style: string = 'neutral', customInstructions?: string): Promise<{ title: string; content: string }> {
         const config = await this.promptService.getPromptByType('REWRITE');
         let promptTemplate = config?.template || `
         You are an expert news editor. Rewrite the following news article to be unique, engaging, and plagiarism-free while retaining all factual information.
@@ -45,10 +45,11 @@ export class AIService {
         const maxTokens = await this.configService.getRewriteMaxTokens();
 
         const sourceContent = content.substring(0, contentChars);
-        const prompt = promptTemplate
+        let prompt = promptTemplate
             .replace('{{style}}', style)
             .replace('{{title}}', title)
             .replace('{{content}}', sourceContent);
+        if (customInstructions?.trim()) prompt += `\n\nINDICACIONES EDITORIALES CONFIRMADAS:\n${customInstructions.trim()}`;
 
         const runOnce = async (messages: any[]) => {
             const completion = await this.openai.chat.completions.create({

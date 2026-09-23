@@ -5,7 +5,8 @@ import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationsPanel } from '../components/NotificationsPanel';
-import { FeedbackButton } from '../components/FeedbackButton';
+import { EditorialActions } from '../components/EditorialActions';
+import { EditorialModal } from '../components/EditorialModal';
 
 interface Target {
     id: string;
@@ -588,17 +589,17 @@ export default function Newsroom() {
     return (
         <div className="h-screen flex flex-col bg-editorial-bg text-editorial-text font-serif overflow-hidden">
             {/* Header */}
-            <header className="h-16 border-b border-editorial-text/10 flex items-center px-6 justify-between bg-editorial-bg/95 backdrop-blur z-10">
+            <header className="min-h-16 border-b border-editorial-text/10 flex flex-wrap items-center gap-3 px-4 lg:px-6 py-2 justify-between bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center">
                                     <img src="/logo%20hermes.png" alt="Hermes" className="h-9 w-auto object-contain" />
                     </Link>
-                    <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
+                    <Link to="/" className="inline-flex items-center gap-2 border border-editorial-text/20 px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:border-editorial-text hover:bg-editorial-text hover:text-editorial-bg"><span aria-hidden="true">←</span> Noticias</Link>
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
-                <div className="flex gap-3 items-center">
+                <div className="flex flex-wrap gap-2 items-center">
                     <NotificationsPanel />
-                    {!isDemo && <Link to="/my-preferences" className="font-sans text-xs font-bold uppercase">Mis ajustes</Link>}
+                    {!isDemo && <EditorialActions articleUrl={article.originalUrl} />}
                     <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                             Rechazar
                         </button>
@@ -625,29 +626,27 @@ export default function Newsroom() {
                 </div>
             </header>
 
-            {/* Rewrite with AI Modal (Sub-prompt & Comments) */}
-            {suggestedPreference !== null && <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Aprender de mis cambios">
-                <div className="w-full max-w-lg bg-editorial-bg p-6 space-y-4 font-sans shadow-xl">
-                    <h2 className="font-serif text-2xl font-bold">Aprender de mis cambios</h2>
+            {/* Confirm the editorial lesson inferred from the user's edit. */}
+            {suggestedPreference !== null && <EditorialModal title="Aprender de mis cambios" eyebrow="Aprendizaje editorial" onClose={() => setSuggestedPreference(null)}>
                     {!showCorrection ? <>
-                        <p>¿Podemos resumir el cambio que hiciste así?</p>
-                        <p className="border p-3 bg-white font-semibold">{suggestedPreference}</p>
-                        <div className="flex justify-end gap-3">
-                            <button type="button" className="border px-4 py-2" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
-                            <button type="button" className="border px-4 py-2" onClick={() => setShowCorrection(true)}>No, aclarar</button>
-                            <button type="button" disabled={savingLearning} className="bg-editorial-text text-editorial-bg px-4 py-2 disabled:opacity-50" onClick={() => saveLearning(suggestedPreference)}>Sí, guardar</button>
+                        <p className="text-sm leading-relaxed text-editorial-text/65">Comparé el texto que abriste con tu edición. ¿Esto representa lo que querés cambiar en próximas reescrituras?</p>
+                        <blockquote className="border-l-2 border-editorial-text bg-white/70 px-5 py-4 font-serif text-lg italic leading-relaxed">{suggestedPreference}</blockquote>
+                        <div className="flex flex-wrap justify-end gap-3 border-t border-editorial-text/10 pt-5">
+                            <button type="button" className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/55 hover:text-editorial-text" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
+                            <button type="button" className="border border-editorial-text/25 px-4 py-2 text-xs font-bold uppercase tracking-wider hover:bg-editorial-text/5" onClick={() => setShowCorrection(true)}>No, lo explico yo</button>
+                            <button type="button" disabled={savingLearning} className="bg-editorial-text px-5 py-2 text-xs font-bold uppercase tracking-wider text-editorial-bg hover:opacity-85 disabled:opacity-50" onClick={() => saveLearning(suggestedPreference)}>Sí, guardar ajuste</button>
                         </div>
                     </> : <>
-                        <label className="block text-sm">¿Qué querés que la IA haga distinto la próxima vez?
-                            <textarea value={correctedPreference} onChange={event => setCorrectedPreference(event.target.value)} maxLength={350} rows={4} className="w-full mt-2 border p-2 bg-white" />
+                        <p className="text-sm leading-relaxed text-editorial-text/65">Escribí una indicación concreta para las próximas reescrituras.</p>
+                        <label className="block space-y-2 text-xs font-bold uppercase tracking-widest">¿Qué querés que la IA haga distinto?
+                            <textarea value={correctedPreference} onChange={event => setCorrectedPreference(event.target.value)} maxLength={350} rows={4} autoFocus className="w-full resize-y border border-editorial-text/20 bg-white px-3 py-3 font-sans text-sm font-normal normal-case tracking-normal outline-none focus:border-editorial-text" />
                         </label>
-                        <div className="flex justify-end gap-3">
-                            <button type="button" className="border px-4 py-2" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
-                            <button type="button" disabled={savingLearning || !correctedPreference.trim()} className="bg-editorial-text text-editorial-bg px-4 py-2 disabled:opacity-50" onClick={() => saveLearning(correctedPreference)}>Guardar ajuste</button>
+                        <div className="flex justify-end gap-3 border-t border-editorial-text/10 pt-5">
+                            <button type="button" className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/55 hover:text-editorial-text" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
+                            <button type="button" disabled={savingLearning || !correctedPreference.trim()} className="bg-editorial-text px-5 py-2 text-xs font-bold uppercase tracking-wider text-editorial-bg hover:opacity-85 disabled:opacity-50" onClick={() => saveLearning(correctedPreference)}>Guardar ajuste</button>
                         </div>
                     </>}
-                </div>
-            </div>}
+            </EditorialModal>}
             {showRewriteModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowRewriteModal(false)}>
                     <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-lg mx-4 relative" onClick={e => e.stopPropagation()}>
@@ -993,7 +992,7 @@ export default function Newsroom() {
 
             {/* Modal para configurar credenciales personales de Vorknews */}
             {showCredentialsModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onMouseDown={event => { if (event.target === event.currentTarget) setShowCredentialsModal(false); }}>
                     <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-6 w-full max-w-md relative">
                         <button
                             onClick={() => setShowCredentialsModal(false)}
@@ -1101,7 +1100,6 @@ export default function Newsroom() {
                             <a href={article.originalUrl} target="_blank" rel="noreferrer" className="text-sm font-mono text-editorial-text/70 truncate hover:underline block cursor-pointer">
                                 {article.originalUrl}
                             </a>
-                            {!isDemo && <div className="flex gap-4 mt-3 text-editorial-text/70"><FeedbackButton kind="ERROR" articleUrl={article.originalUrl} /><FeedbackButton kind="SUGGESTION" articleUrl={article.originalUrl} /></div>}
                         </div>
 
                         <h2 className="text-3xl font-black text-editorial-text mb-8 leading-tight italic">

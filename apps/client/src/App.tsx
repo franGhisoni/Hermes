@@ -1,11 +1,10 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Newsroom from './pages/Newsroom';
 import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Users from './pages/Users';
 import Flows from './pages/Flows';
-import MyPreferences from './pages/MyPreferences';
 import Reports from './pages/Reports';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -23,7 +22,7 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/users" element={<Users />} />
             <Route path="/flows" element={<Flows />} />
-            <Route path="/my-preferences" element={<MyPreferences />} />
+            <Route path="/my-preferences" element={<Navigate to="/" replace />} />
             <Route path="/reports" element={<Reports />} />
           </Route>
         </Routes>

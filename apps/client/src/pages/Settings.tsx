@@ -101,6 +101,7 @@ const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: num
 ];
 
 interface ExtendedSettings {
+    aiAttributionEnabled: boolean;
     scrapeOnlyToday: boolean;
     scraperWorkerConcurrency: number;
     imagePoolSize: number;
@@ -308,6 +309,7 @@ export default function Settings() {
                 setArticleCleanupCron(d.articleCleanupCron ?? '0 * * * *');
                 if (d.imageMinScore) setImageMinScore(d.imageMinScore);
                 setExtended({
+                    aiAttributionEnabled: d.aiAttributionEnabled ?? false,
                     scrapeOnlyToday: d.scrapeOnlyToday ?? true,
                     scraperWorkerConcurrency: d.scraperWorkerConcurrency ?? 4,
                     imagePoolSize: d.imagePoolSize,
@@ -1696,6 +1698,13 @@ function SistemaTab(props: SistemaTabProps) {
                     subtitle="Configuración para la publicación automática y manual al CMS de politicadelsur.com."
                 />
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {extended && <Card>
+                        <CardHeading title="Pie de escritura asistida" description="Agrega al final de la nota publicada: Escritura asistida por inteligencia artificial. Fuente: [medio]." />
+                        <label className="mt-3 flex items-center gap-2 font-sans text-sm">
+                            <input type="checkbox" checked={extended.aiAttributionEnabled} onChange={event => updateExtended('aiAttributionEnabled', event.target.checked)} />
+                            Activar pie de nota
+                        </label>
+                    </Card>}
                     <Card>
                         <CardHeading
                             title="Modo de publicación por defecto"

@@ -6,6 +6,7 @@ import { ConfigService } from './ConfigService';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { appendAiAttribution, sourceDisplayName } from './AiAttribution';
 
 puppeteer.use(StealthPlugin());
 
@@ -135,7 +136,11 @@ export class VorknewsPublishService {
 
         const title = (options.title || article.rewrittenTitle || article.originalTitle || '').trim();
         const rawContent = options.contentHtml || article.rewrittenContent || article.originalContent || '';
-        const htmlContent = this.ensureHtmlFormatting(rawContent);
+        let htmlContent = this.ensureHtmlFormatting(rawContent);
+        if (await this.configService.getSetting('vorknews_ai_attribution', 'false') === 'true') {
+            const source = await prisma.source.findUnique({ where: { id: article.sourceId }, select: { name: true } });
+            htmlContent = appendAiAttribution(htmlContent, sourceDisplayName(source?.name || 'Medio original'));
+        }
 
         const volanta = options.volanta || article.section || (article.location ? article.location.toUpperCase() : 'ACTUALIDAD');
         const bajada = options.bajada || this.extractBajada(rawContent);

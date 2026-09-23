@@ -352,6 +352,7 @@ export class ProcessorService {
                 embedding,
                 rewrittenTitle: rewritten.title,
                 rewrittenContent: rewritten.content,
+                aiRewriteSnapshot: vorknewsRewrite,
                 interestScore: editorial.effectiveScore,
                 status: editorial.publicationBlocked ? 'REJECTED' : 'PENDING',
                 publicationBlocked: editorial.publicationBlocked,

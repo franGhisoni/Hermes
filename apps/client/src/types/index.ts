@@ -30,6 +30,7 @@ export interface Article {
     aiDecisions?: AiDecisionsTrace | null;
     rewrittenTitle?: string;
     rewrittenContent?: string;
+    aiRewriteSnapshot?: Record<string, string> | null;
     contentPreview?: string;
     interestScore?: number;
     location?: string | null;

@@ -5,6 +5,7 @@ import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { NotificationsPanel } from '../components/NotificationsPanel';
+import { FeedbackButton } from '../components/FeedbackButton';
 
 interface Target {
     id: string;
@@ -13,6 +14,8 @@ interface Target {
     type?: 'EMAIL' | 'VORKNEWS';
     config?: any;
 }
+
+const readableSource = (name?: string) => ({ ElDiarioSur: 'El Diario Sur', AvellanedaHoy: 'Avellaneda Hoy', LaUnion: 'La Unión' } as Record<string, string>)[name || ''] || (name || 'Medio original').replace(/([a-z])([A-Z])/g, '$1 $2');
 
 export default function Newsroom() {
     const { id } = useParams();
@@ -33,6 +36,7 @@ export default function Newsroom() {
     const [seoContent, setSeoContent] = useState('');
     const [seoTags, setSeoTags] = useState('');
     const visualEditorRef = useRef<HTMLDivElement>(null);
+    const loadedDraftRef = useRef('');
 
     // Social Media Copy fields
     const [socialTwitter, setSocialTwitter] = useState('');
@@ -45,6 +49,11 @@ export default function Newsroom() {
     // Rewrite modal state (sub-prompt / suggestions)
     const [showRewriteModal, setShowRewriteModal] = useState(false);
     const [rewriteInstructions, setRewriteInstructions] = useState('');
+    const [learning, setLearning] = useState(false);
+    const [savingLearning, setSavingLearning] = useState(false);
+    const [suggestedPreference, setSuggestedPreference] = useState<string | null>(null);
+    const [correctedPreference, setCorrectedPreference] = useState('');
+    const [showCorrection, setShowCorrection] = useState(false);
 
     // Publish modal state
     const [showPublishModal, setShowPublishModal] = useState(false);
@@ -66,6 +75,7 @@ export default function Newsroom() {
     const [credVkAuthor, setCredVkAuthor] = useState('');
     const [savingCreds, setSavingCreds] = useState(false);
     const [systemDefaultUsername, setSystemDefaultUsername] = useState('');
+    const [aiAttributionEnabled, setAiAttributionEnabled] = useState(false);
 
     function formatToHtml(text: string): string {
         if (!text) return '';
@@ -114,6 +124,7 @@ export default function Newsroom() {
                 setSeoBajada(bajada);
                 setSeoContent(content);
                 setSeoTags(tags);
+                loadedDraftRef.current = JSON.stringify({ title, volanta, bajada, content, tags });
 
                 if (editorial.social) {
                     setSocialTwitter(editorial.social.twitter || '');
@@ -295,6 +306,13 @@ export default function Newsroom() {
             setSeoBajada(seo.bajada || updated.contentPreview || '');
             setSeoContent(formatToHtml(seo.content || updated.rewrittenContent || ''));
             setSeoTags(seo.tags || [updated.section, updated.location].filter(Boolean).join(', '));
+            loadedDraftRef.current = JSON.stringify({
+                title: seo.title || updated.rewrittenTitle || '',
+                volanta: seo.volanta || (updated.location ? updated.location.toUpperCase() : (updated.section ? updated.section.toUpperCase() : 'POLÍTICA')),
+                bajada: seo.bajada || updated.contentPreview || '',
+                content: formatToHtml(seo.content || updated.rewrittenContent || ''),
+                tags: seo.tags || [updated.section, updated.location].filter(Boolean).join(', ')
+            });
             setRewriteInstructions('');
         } catch (e) {
             alert('Error al reescribir nota');
@@ -347,6 +365,39 @@ export default function Newsroom() {
         }
     };
 
+    const handleLearn = async () => {
+        if (!id || isDemo) return;
+        setLearning(true);
+        try {
+            await saveDraft();
+            const response = await api.post(`/api/articles/${id}/learn/analyze`);
+            setSuggestedPreference(response.data.instruction || '');
+            setCorrectedPreference('');
+            setShowCorrection(!response.data.instruction);
+        } catch (error: unknown) {
+            const detail = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+            alert(detail || 'No se pudieron analizar los cambios.');
+        } finally {
+            setLearning(false);
+        }
+    };
+
+    const saveLearning = async (instruction: string) => {
+        if (!id || !instruction.trim()) return;
+        setSavingLearning(true);
+        try {
+            await api.post(`/api/articles/${id}/learn/confirm`, { instruction: instruction.trim() });
+            setSuggestedPreference(null);
+            loadedDraftRef.current = JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
+            alert('Ajuste guardado. Se aplicará a tus próximas reescrituras.');
+        } catch (error: unknown) {
+            const detail = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+            alert(detail || 'No se pudo guardar el ajuste.');
+        } finally {
+            setSavingLearning(false);
+        }
+    };
+
     const handleGenerateSocial = async () => {
         if (!id) return;
         setGeneratingSocial(true);
@@ -394,6 +445,7 @@ export default function Newsroom() {
             setSections(sectionsRes.data);
             setVorknewsSections(vkSectionsRes.data || []);
             if (vkConfigRes.data) {
+                setAiAttributionEnabled(Boolean(vkConfigRes.data.aiAttributionEnabled));
                 setVorknewsMode(vkConfigRes.data.mode || 'DRAFT');
                 setSystemDefaultUsername(vkConfigRes.data.defaultUsername || '');
                 setVorknewsSectionId(vkConfigRes.data.sectionId || '64');
@@ -522,6 +574,8 @@ export default function Newsroom() {
     if (loading) return <div className="text-editorial-text p-10 font-serif">Loading Editor...</div>;
     if (!article) return <div className="text-editorial-text p-10 font-serif">Article not found</div>;
 
+    const hasEditedDraft = loadedDraftRef.current !== JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
+
     return (
         <div className="h-screen flex flex-col bg-editorial-bg text-editorial-text font-serif overflow-hidden">
             {/* Header */}
@@ -535,6 +589,7 @@ export default function Newsroom() {
                 </div>
                 <div className="flex gap-3 items-center">
                     <NotificationsPanel />
+                    {!isDemo && <Link to="/my-preferences" className="font-sans text-xs font-bold uppercase">Mis ajustes</Link>}
                     <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                             Rechazar
                         </button>
@@ -562,6 +617,28 @@ export default function Newsroom() {
             </header>
 
             {/* Rewrite with AI Modal (Sub-prompt & Comments) */}
+            {suggestedPreference !== null && <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label="Aprender de mis cambios">
+                <div className="w-full max-w-lg bg-editorial-bg p-6 space-y-4 font-sans shadow-xl">
+                    <h2 className="font-serif text-2xl font-bold">Aprender de mis cambios</h2>
+                    {!showCorrection ? <>
+                        <p>¿Podemos resumir el cambio que hiciste así?</p>
+                        <p className="border p-3 bg-white font-semibold">{suggestedPreference}</p>
+                        <div className="flex justify-end gap-3">
+                            <button type="button" className="border px-4 py-2" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
+                            <button type="button" className="border px-4 py-2" onClick={() => setShowCorrection(true)}>No, aclarar</button>
+                            <button type="button" disabled={savingLearning} className="bg-editorial-text text-editorial-bg px-4 py-2 disabled:opacity-50" onClick={() => saveLearning(suggestedPreference)}>Sí, guardar</button>
+                        </div>
+                    </> : <>
+                        <label className="block text-sm">¿Qué querés que la IA haga distinto la próxima vez?
+                            <textarea value={correctedPreference} onChange={event => setCorrectedPreference(event.target.value)} maxLength={350} rows={4} className="w-full mt-2 border p-2 bg-white" />
+                        </label>
+                        <div className="flex justify-end gap-3">
+                            <button type="button" className="border px-4 py-2" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
+                            <button type="button" disabled={savingLearning || !correctedPreference.trim()} className="bg-editorial-text text-editorial-bg px-4 py-2 disabled:opacity-50" onClick={() => saveLearning(correctedPreference)}>Guardar ajuste</button>
+                        </div>
+                    </>}
+                </div>
+            </div>}
             {showRewriteModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowRewriteModal(false)}>
                     <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-lg mx-4 relative" onClick={e => e.stopPropagation()}>
@@ -816,6 +893,7 @@ export default function Newsroom() {
                                     <p className="text-[10px] text-editorial-text/60 italic pt-1">
                                         El cuerpo de la nota se enviará en formato HTML estructurado con encabezados y párrafos semánticos optimizados para SEO.
                                     </p>
+                                    {aiAttributionEnabled && <p className="text-[11px] border-t pt-2">Pie de nota: Escritura asistida por inteligencia artificial. Fuente: {readableSource(article.source?.name)}</p>}
                                 </div>
                             </div>
                         ) : (
@@ -1014,6 +1092,7 @@ export default function Newsroom() {
                             <a href={article.originalUrl} target="_blank" rel="noreferrer" className="text-sm font-mono text-editorial-text/70 truncate hover:underline block cursor-pointer">
                                 {article.originalUrl}
                             </a>
+                            {!isDemo && <div className="flex gap-4 mt-3 text-editorial-text/70"><FeedbackButton kind="ERROR" articleUrl={article.originalUrl} /><FeedbackButton kind="SUGGESTION" articleUrl={article.originalUrl} /></div>}
                         </div>
 
                         <h2 className="text-3xl font-black text-editorial-text mb-8 leading-tight italic">
@@ -1258,6 +1337,11 @@ export default function Newsroom() {
                                             </>
                                         )}
                                     </button>
+                                    {!isDemo && <button type="button" onClick={handleLearn} disabled={learning || saving || !article.aiRewriteSnapshot || !hasEditedDraft}
+                                        title={!article.aiRewriteSnapshot ? 'Generá una nueva reescritura para habilitar el aprendizaje' : !hasEditedDraft ? 'Editá la reescritura para iniciar el aprendizaje' : 'Compara la reescritura de IA con tus cambios guardados'}
+                                        className="px-3.5 py-1.5 border border-editorial-text/30 hover:bg-editorial-text/5 rounded text-xs font-sans font-bold uppercase tracking-widest disabled:opacity-50">
+                                        {learning ? 'Analizando...' : 'Aprender de mis cambios'}
+                                    </button>}
                                 </div>
 
                                 {/* Volanta */}

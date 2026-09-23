@@ -24,6 +24,8 @@ import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
 import { publishQueueService } from './services/PublishQueueService';
 import { requireAuth, requireAdmin, requireReadOnly, AuthRequest } from './middlewares/auth';
+import learningRouter from './routes/LearningRouter';
+import { getUserRewriteInstructions } from './services/LearningService';
 
 import { SchedulerService } from './services/SchedulerService';
 import cron from 'node-cron';
@@ -125,6 +127,7 @@ app.use('/api/targets', targetRouter);
 // Global auth guard for the rest of the API. Demo users may browse, but the
 // read-only guard also protects against crafted mutation requests.
 app.use('/api', requireAuth, requireReadOnly);
+app.use('/api', learningRouter);
 
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {
@@ -273,12 +276,14 @@ app.get('/api/config/vorknews', async (req, res) => {
         const sectionId = await configService.getVorknewsDefaultSectionId();
         const defaultUsername = await configService.getVorknewsDefaultUsername();
         const defaultPassword = await configService.getVorknewsDefaultPassword();
+        const aiAttributionEnabled = await configService.getSetting('vorknews_ai_attribution', 'false') === 'true';
         res.json({
             mode,
             author,
             sectionId,
             defaultUsername,
-            hasDefaultPassword: Boolean(defaultPassword)
+            hasDefaultPassword: Boolean(defaultPassword),
+            aiAttributionEnabled
         });
     } catch (e: any) {
         res.status(500).json({ error: e.message || 'Failed to get Vorknews settings' });
@@ -678,6 +683,7 @@ const validateReasoningEffort = (value: string): string | null =>
         : 'El nivel de razonamiento debe ser none, low, medium, high, xhigh o max';
 
 const SETTINGS: SettingDef[] = [
+    { api: 'aiAttributionEnabled', key: 'vorknews_ai_attribution', kind: 'boolean' },
     { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
     { api: 'scrapeOnlyToday', key: 'scrape_only_today', kind: 'boolean' },
     { api: 'scraperWorkerConcurrency', key: 'scraper_worker_concurrency', kind: 'int', min: 1, max: 8 },
@@ -878,7 +884,7 @@ app.post('/api/articles/:id/rewrite-vorknews', async (req, res) => {
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Article not found' });
 
-        const instructions = req.body?.instructions || req.body?.comments;
+        const instructions = [await getUserRewriteInstructions((req as AuthRequest).user!.id), req.body?.instructions || req.body?.comments].filter(Boolean).join('\n');
         const rewritten = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent, 'neutral', instructions);
         const existingData = (article.editorialData as any) || {};
         const updated = await prisma.article.update({
@@ -887,7 +893,8 @@ app.post('/api/articles/:id/rewrite-vorknews', async (req, res) => {
                 editorialData: {
                     ...existingData,
                     seo: rewritten
-                }
+                },
+                aiRewriteSnapshot: rewritten
             }
         });
         res.json({ ...rewritten, editorialData: updated.editorialData });
@@ -1017,7 +1024,7 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             // ALWAYS publish with SEO format: if not generated yet, generate it on the fly!
             if (!finalContentHtml || !finalTitle) {
                 console.log(`[MANUAL-PUBLISH] Generating SEO version on-the-fly for Vorknews publication...`);
-                const generated = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent);
+                const generated = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent, 'neutral', await getUserRewriteInstructions((req as AuthRequest).user!.id));
                 finalTitle = finalTitle || generated.title;
                 finalContentHtml = finalContentHtml || generated.content;
                 finalVolanta = finalVolanta || generated.volanta;
@@ -1161,7 +1168,7 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
             location: article.location,
             score: article.interestScore ?? 5
         });
-        const instructions = req.body?.instructions || req.body?.comments;
+        const instructions = [await getUserRewriteInstructions((req as AuthRequest).user!.id), req.body?.instructions || req.body?.comments].filter(Boolean).join('\n');
         const result = await aiService.rewriteForVorknews(article.originalTitle, article.originalContent, editorial.style, instructions);
 
         const existingData = (article.editorialData as any) || {};
@@ -1176,6 +1183,7 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
             data: {
                 rewrittenTitle: result.title,
                 rewrittenContent: result.content,
+                aiRewriteSnapshot: result,
                 contentPreview: buildContentPreview(result.bajada || result.content),
                 interestScore: editorial.effectiveScore,
                 editorialData: updatedEditorial,

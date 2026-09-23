@@ -5,6 +5,8 @@ import Settings from './pages/Settings';
 import Login from './pages/Login';
 import Users from './pages/Users';
 import Flows from './pages/Flows';
+import MyPreferences from './pages/MyPreferences';
+import Reports from './pages/Reports';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
@@ -21,6 +23,8 @@ function App() {
             <Route path="/settings" element={<Settings />} />
             <Route path="/users" element={<Users />} />
             <Route path="/flows" element={<Flows />} />
+            <Route path="/my-preferences" element={<MyPreferences />} />
+            <Route path="/reports" element={<Reports />} />
           </Route>
         </Routes>
       </Router>

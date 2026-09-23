@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { ScraperControl } from '../components/ScraperControl';
 import { NotificationsPanel } from '../components/NotificationsPanel';
+import { FeedbackButton } from '../components/FeedbackButton';
 
 interface DashboardSection {
     id: string;
@@ -181,6 +182,7 @@ export default function Dashboard() {
                         <>
                             <Link to="/users" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Usuarios</Link>
                             <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
+                            <Link to="/reports" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Reportes</Link>
                         </>
                     )}
 
@@ -196,6 +198,11 @@ export default function Dashboard() {
                     <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h2>
                     <span className="font-sans text-sm text-editorial-text/50">{totalArticles} Artículos Procesados (Página {page} de {totalPages})</span>
                 </div>
+                {!isDemo && <div className="mb-6 flex flex-wrap gap-5 items-center text-editorial-text/70">
+                    <FeedbackButton kind="ERROR" />
+                    <FeedbackButton kind="SUGGESTION" />
+                    <Link to="/my-preferences" className="font-sans text-xs font-bold uppercase tracking-wider hover:underline">Mis ajustes de reescritura</Link>
+                </div>}
 
                 {/* Toolbar */}
                 <div className="mb-8 flex flex-wrap gap-4 items-end font-sans text-xs">
@@ -378,7 +385,7 @@ function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel
 
             <h3 className="text-xl font-bold leading-tight mb-3 group-hover:underline underline-offset-4 decoration-2">
                 <Link to={`/newsroom/${article.id}`}>
-                    {article.rewrittenTitle || article.originalTitle}
+                    {article.originalTitle}
                 </Link>
             </h3>
 

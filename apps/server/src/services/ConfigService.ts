@@ -51,7 +51,8 @@ export class ConfigService {
             vorknews_default_author: 'Juan Bautista Vega',
             vorknews_default_section_id: '64',
             vorknews_default_username: process.env.VORKS_USER || '',
-            vorknews_default_password: process.env.VORKS_PASSWORD || ''
+            vorknews_default_password: process.env.VORKS_PASSWORD || '',
+            vorknews_ai_attribution: 'false'
         };
 
         const rows = await prisma.systemSetting.findMany({

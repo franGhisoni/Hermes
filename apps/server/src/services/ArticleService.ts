@@ -60,6 +60,7 @@ export class ArticleService {
         embedding: number[];
         rewrittenTitle?: string;
         rewrittenContent?: string;
+        aiRewriteSnapshot?: { title: string; content: string; volanta?: string; bajada?: string; tags?: string };
         interestScore?: number;
         status?: 'PENDING' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
     }) {
@@ -89,6 +90,7 @@ export class ArticleService {
                 publicationBlockReason: data.publicationBlockReason ?? undefined,
                 rewrittenTitle: data.rewrittenTitle,
                 rewrittenContent: data.rewrittenContent,
+                aiRewriteSnapshot: data.aiRewriteSnapshot ?? undefined,
                 contentPreview: buildContentPreview(data.rewrittenContent || data.originalContent),
                 interestScore: data.interestScore,
                 status: data.status || 'PENDING',

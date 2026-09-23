@@ -39,6 +39,8 @@ model User {
   vorknewsAuthorName String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+  rewritePreferences RewritePreference[]
+  feedbackReports    FeedbackReport[]
 }
 
 model Target {
@@ -271,6 +273,7 @@ model Article {
   // Rewrite
   rewrittenTitle   String?
   rewrittenContent String?
+  aiRewriteSnapshot Json? // Last untouched AI draft; never overwritten by editor saves
   contentPreview   String?
 
   featureImageUrl        String? // The final image used for publication (Original, Found, or Generated)
@@ -294,6 +297,33 @@ model Article {
   @@index([status, interestScore])
   @@index([sourceId, createdAt])
   @@index([publicationBlocked, status])
+}
+
+model RewritePreference {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articleId String?  // Kept as a reference even if the article is later deleted
+  instruction String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, active, createdAt])
+}
+
+model FeedbackReport {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // ERROR or SUGGESTION
+  message   String
+  articleUrl String?
+  status    String   @default("OPEN") // OPEN or RESOLVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
 }
 
 enum ArticleStatus {

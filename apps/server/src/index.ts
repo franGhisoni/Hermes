@@ -11,7 +11,7 @@ const port = parseInt(process.env.PORT || '3000');
 app.options('*', cors());
 app.use(cors({
     origin: true, // Reflect request origin to support credentials
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
@@ -22,6 +22,7 @@ import userRouter from './routes/UserRouter';
 import sectionRouter from './routes/SectionRouter';
 import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
+import feedbackRouter from './routes/FeedbackRouter';
 import { requireAuth, requireAdmin, requireReadOnly } from './middlewares/auth';
 
 import { SchedulerService } from './services/SchedulerService';
@@ -92,6 +93,7 @@ app.use('/api/targets', targetRouter);
 // Global auth guard for the rest of the API. Demo users may browse, but the
 // read-only guard also protects against crafted mutation requests.
 app.use('/api', requireAuth, requireReadOnly);
+app.use('/api', feedbackRouter);
 
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {

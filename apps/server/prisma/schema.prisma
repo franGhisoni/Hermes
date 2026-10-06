@@ -30,6 +30,7 @@ model SystemSetting {
 }
 
 model User {
+  feedbackReports FeedbackReport[]
   id           String   @id @default(uuid())
   username     String   @unique
   passwordHash String
@@ -375,4 +376,18 @@ model RouteRule {
   target   PublicationTarget @relation(fields: [targetId], references: [id])
 
   active Boolean @default(true)
+}
+
+model FeedbackReport {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String   // ERROR or SUGGESTION
+  message   String
+  articleUrl String?
+  status    String   @default("OPEN") // OPEN or RESOLVED
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status, createdAt])
 }

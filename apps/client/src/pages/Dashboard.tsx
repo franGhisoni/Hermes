@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { FeedbackActions } from '../components/FeedbackActions';
 import { ScraperControl } from '../components/ScraperControl';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 
@@ -178,6 +179,7 @@ export default function Dashboard() {
                 <div className="flex gap-4 items-center">
                     {user?.role === 'ADMIN' && <NotificationsPanel />}
                     <ScraperControl />
+                    <FeedbackActions />
                     {user?.role === 'ADMIN' && (
                         <>
                             <Link to="/flows" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Flujos</Link>
@@ -187,6 +189,7 @@ export default function Dashboard() {
                         <>
                             <Link to="/users" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Usuarios</Link>
                             <Link to="/settings" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Configuración</Link>
+                            <Link to="/reports" className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4">Tickets de error</Link>
                         </>
                     )}
 

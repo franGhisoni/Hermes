@@ -5,7 +5,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { AlertCircle, Lightbulb, Check } from 'lucide-react';
 import { FeedbackActions } from '../components/FeedbackActions';
 
-interface Report { id: string; kind: 'ERROR' | 'SUGGESTION'; message: string; articleUrl?: string | null; status: string; createdAt: string; user: { username: string } }
+interface PublicationContext {
+    wasPublished: boolean;
+    destinations: Array<{ targetId: string; targetName: string; targetEmail: string; category: string | null; sentAt: string }>;
+}
+
+interface Report { publicationContext?: PublicationContext | null; id: string; kind: 'ERROR' | 'SUGGESTION'; message: string; articleUrl?: string | null; status: string; createdAt: string; user: { username: string } }
 
 export default function Reports() {
     const { user } = useAuth();
@@ -56,6 +61,16 @@ export default function Reports() {
                     </div>
                     <p className="whitespace-pre-wrap font-serif text-lg leading-relaxed">{report.message}</p>
                     {report.articleUrl && <a href={report.articleUrl} target="_blank" rel="noreferrer" className="mt-4 block break-all text-xs text-editorial-text/60 underline underline-offset-2 hover:text-editorial-text">{report.articleUrl}</a>}
+                    {report.kind === 'ERROR' && <div className="mt-4 border border-editorial-text/10 bg-editorial-bg p-4 text-xs">
+                        <p className="mb-2 font-bold uppercase tracking-wider">Publicación al crear el ticket</p>
+                        {report.publicationContext?.destinations.length ? <ul className="space-y-2">
+                            {report.publicationContext.destinations.map((destination, index) => <li key={index}>
+                                <span className="font-bold">{destination.targetName}</span> · {destination.targetEmail}
+                                {destination.category && <span> · {destination.category}</span>}
+                                <span className="block mt-1 text-editorial-text/55">Enviada el {new Date(destination.sentAt).toLocaleString('es-AR')}</span>
+                            </li>)}
+                        </ul> : <p className="text-editorial-text/65">{!report.publicationContext ? 'Sin información de publicación registrada.' : report.publicationContext.wasPublished ? 'Nota publicada; el destino no quedó registrado en el historial anterior.' : 'La nota aún no tenía publicaciones registradas.'}</p>}
+                    </div>}
                     <div className="mt-5 flex items-center justify-between border-t border-editorial-text/10 pt-4">
                         <span className={`inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider ${report.status === 'OPEN' ? 'text-amber-700' : 'text-emerald-700'}`}>{report.status === 'OPEN' ? 'Pendiente' : <><Check size={13} /> Resuelto</>}</span>
                         <button type="button" className="border border-editorial-text/20 px-3 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors hover:bg-editorial-text hover:text-editorial-bg" disabled={updatingId !== null} onClick={() => updateReport(report)}>{report.status === 'OPEN' ? 'Marcar resuelto' : 'Reabrir'}</button>

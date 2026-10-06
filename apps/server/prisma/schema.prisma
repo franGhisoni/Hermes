@@ -247,6 +247,7 @@ enum UserRole {
 }
 
 model Article {
+  publications ArticlePublication[]
   id       String @id @default(uuid())
   sourceId String
   source   Source @relation(fields: [sourceId], references: [id])
@@ -379,6 +380,7 @@ model RouteRule {
 }
 
 model FeedbackReport {
+  publicationContext Json?
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -390,4 +392,18 @@ model FeedbackReport {
   updatedAt DateTime @updatedAt
 
   @@index([status, createdAt])
+}
+
+// Snapshot the destination so edits or deletion of a Target do not erase history.
+model ArticlePublication {
+  id          String   @id @default(uuid())
+  articleId   String
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  targetId    String
+  targetName  String
+  targetEmail String
+  category    String?
+  sentAt      DateTime @default(now())
+
+  @@index([articleId, sentAt])
 }

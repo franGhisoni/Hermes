@@ -360,7 +360,10 @@ export class SchedulerService {
                     }
                     await prisma.article.update({
                         where: { id: article.id },
-                        data: { status: 'PUBLISHED' }
+                        data: {
+                            status: 'PUBLISHED',
+                            publications: { create: { targetId: target.id, targetName: target.name, targetEmail: target.email, category: category || null } }
+                        }
                     });
                 } catch (err) {
                     console.error(`[CRON-PUBLISH] Publication failed for target ${target.name}:`, err);

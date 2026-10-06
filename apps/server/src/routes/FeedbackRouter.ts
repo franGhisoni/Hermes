@@ -20,7 +20,25 @@ router.post('/feedback', safe(async (req, res) => {
     }
     if (kind === 'ERROR' && !articleUrl) return res.status(400).json({ error: 'Agregá el enlace de la nota.' });
     if (articleUrl && !/^https?:\/\//i.test(articleUrl)) return res.status(400).json({ error: 'El enlace debe empezar con http o https.' });
-    const report = await prisma.feedbackReport.create({ data: { userId: userId(req), kind, message, articleUrl: articleUrl || null } });
+    // Resolve the note on the server; never trust publication data from the client.
+    const article = kind === 'ERROR' ? await prisma.article.findUnique({
+        where: { originalUrl: articleUrl },
+        select: {
+            id: true, status: true,
+            publications: {
+                orderBy: { sentAt: 'desc' },
+                select: { targetId: true, targetName: true, targetEmail: true, category: true, sentAt: true }
+            }
+        }
+    }) : null;
+    const publicationContext = article ? {
+        articleId: article.id,
+        wasPublished: article.status === 'PUBLISHED' || article.publications.length > 0,
+        destinations: article.publications.map(publication => ({ ...publication, sentAt: publication.sentAt.toISOString() }))
+    } : undefined;
+    const report = await prisma.feedbackReport.create({
+        data: { userId: userId(req), kind, message, articleUrl: articleUrl || null, publicationContext }
+    });
     res.status(201).json(report);
 }));
 

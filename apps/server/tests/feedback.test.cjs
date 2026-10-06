@@ -12,9 +12,17 @@ test('feedback API validates reports and enforces current user permissions', asy
     const reports = [];
     const originals = {
         findUnique: prisma.user.findUnique,
+        findArticle: prisma.article.findUnique,
         create: prisma.feedbackReport.create,
         findMany: prisma.feedbackReport.findMany,
         updateMany: prisma.feedbackReport.updateMany,
+    };
+    const publication = { targetId: 'target-1', targetName: 'Medio original', targetEmail: 'notas@example.com', category: 'Política', sentAt: new Date('2026-10-06T12:00:00Z') };
+    prisma.article.findUnique = async ({ where }) => {
+        if (where.originalUrl === 'https://example.com/publicada') return { id: 'article-1', status: 'PUBLISHED', publications: [publication] };
+        if (where.originalUrl === 'https://example.com/pendiente') return { id: 'article-2', status: 'PENDING', publications: [] };
+        if (where.originalUrl === 'https://example.com/antigua') return { id: 'article-3', status: 'PUBLISHED', publications: [] };
+        return null;
     };
     prisma.user.findUnique = async ({ where }) => ({ id: where.id, username: where.id, role: where.id.toUpperCase() });
     prisma.feedbackReport.create = async ({ data }) => {
@@ -37,6 +45,7 @@ test('feedback API validates reports and enforces current user permissions', asy
     t.after(async () => {
         await new Promise(resolve => server.close(resolve));
         prisma.user.findUnique = originals.findUnique;
+        prisma.article.findUnique = originals.findArticle;
         Object.assign(prisma.feedbackReport, { create: originals.create, findMany: originals.findMany, updateMany: originals.updateMany });
         await prisma.$disconnect();
     });
@@ -86,5 +95,27 @@ test('feedback API validates reports and enforces current user permissions', asy
         }
         assert.equal((await request('admin', 'PATCH', '/feedback/1', { status: 'INVALID' })).status, 400);
         assert.equal((await request('admin', 'PATCH', '/feedback/missing', { status: 'RESOLVED' })).status, 404);
+    });
+    await t.test('ticket saves destination history from the server and retains its snapshot', async () => {
+        const response = await request('editor', 'POST', '/feedback', {
+            kind: 'ERROR', message: 'Imagen incorrecta', articleUrl: 'https://example.com/publicada',
+            publicationContext: { destinations: [{ targetName: 'Inventado' }] },
+        });
+        assert.equal(response.status, 201);
+        const ticket = await response.json();
+        assert.equal(ticket.publicationContext.wasPublished, true);
+        assert.deepEqual(ticket.publicationContext.destinations, [{ ...publication, sentAt: publication.sentAt.toISOString() }]);
+        publication.targetName = 'Medio renombrado';
+        const list = await (await request('admin')).json();
+        assert.equal(list.find(report => report.id === ticket.id).publicationContext.destinations[0].targetName, 'Medio original');
+    });
+    await t.test('pending, legacy and unknown notes preserve distinct publication states', async () => {
+        for (const [url, expected] of [['pendiente', false], ['antigua', true], ['desconocida', undefined]]) {
+            const response = await request('editor', 'POST', '/feedback', { kind: 'ERROR', message: 'Falla', articleUrl: `https://example.com/${url}` });
+            assert.equal(response.status, 201);
+            const ticket = await response.json();
+            assert.equal(ticket.publicationContext?.wasPublished, expected);
+            if (ticket.publicationContext) assert.deepEqual(ticket.publicationContext.destinations, []);
+        }
     });
 });

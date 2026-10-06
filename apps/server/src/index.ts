@@ -605,7 +605,10 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         // Update article status to PUBLISHED
         await prisma.article.update({
             where: { id: req.params.id },
-            data: { status: 'PUBLISHED' }
+            data: {
+                status: 'PUBLISHED',
+                publications: { create: { targetId: target.id, targetName: target.name, targetEmail: target.email, category: articleCategory || null } }
+            }
         });
 
         await dailyOperationalLogService.recordPublication(true).catch(logError => {

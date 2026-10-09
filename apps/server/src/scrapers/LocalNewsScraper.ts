@@ -381,5 +381,18 @@ export const LOCAL_NEWS_CONFIGS = {
             if (slug === 'politica-2') return 'Política';
             return slug.replace(/-\d+$/, '').replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
         }
+    ),
+    FESIMUBO: config(
+        'FESIMUBO',
+        'https://www.fesimubo.org',
+        url => /^\/[^/]+\/?$/.test(url.pathname),
+        ['article .entry-content p', '.entry-content p', 'article p', ...DEFAULT_CONTENT_SELECTORS],
+        undefined,
+        listingUrl => {
+            const url = new URL(listingUrl);
+            url.pathname = '/feed/';
+            return url.toString();
+        },
+        () => 'Prensa'
     )
 } as const;

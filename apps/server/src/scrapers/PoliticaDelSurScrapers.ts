@@ -41,3 +41,7 @@ export class LaDefensaScraper extends LocalNewsScraper {
 export class InfoRegionScraper extends LocalNewsScraper {
     constructor() { super(LOCAL_NEWS_CONFIGS.InfoRegion); }
 }
+
+export class FESIMUBOScraper extends LocalNewsScraper {
+    constructor() { super(LOCAL_NEWS_CONFIGS.FESIMUBO); }
+}

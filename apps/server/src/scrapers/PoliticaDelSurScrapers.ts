@@ -37,3 +37,7 @@ export class LetraPScraper extends LocalNewsScraper {
 export class LaDefensaScraper extends LocalNewsScraper {
     constructor() { super(LOCAL_NEWS_CONFIGS.LaDefensa); }
 }
+
+export class InfoRegionScraper extends LocalNewsScraper {
+    constructor() { super(LOCAL_NEWS_CONFIGS.InfoRegion); }
+}

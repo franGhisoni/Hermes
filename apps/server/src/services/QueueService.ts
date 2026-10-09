@@ -18,7 +18,8 @@ import {
     InfocieloScraper,
     LaPoliticaOnlineScraper,
     LetraPScraper,
-    LaDefensaScraper
+    LaDefensaScraper,
+    InfoRegionScraper
 } from '../scrapers/PoliticaDelSurScrapers';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
@@ -55,7 +56,8 @@ export const SCRAPER_DEFINITIONS = Object.freeze([
     { source: 'Infocielo', label: 'Infocielo', scraper: InfocieloScraper },
     { source: 'LaPoliticaOnline', label: 'LaPoliticaOnline', scraper: LaPoliticaOnlineScraper },
     { source: 'LetraP', label: 'LetraP', scraper: LetraPScraper },
-    { source: 'LaDefensa', label: 'La Defensa de Lanús', scraper: LaDefensaScraper }
+    { source: 'LaDefensa', label: 'La Defensa de Lanús', scraper: LaDefensaScraper },
+    { source: 'InfoRegion', label: 'InfoRegión', scraper: InfoRegionScraper }
 ] as const);
 
 const SCRAPER_REGISTRY: Record<string, any> = Object.fromEntries(

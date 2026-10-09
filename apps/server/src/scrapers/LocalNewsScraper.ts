@@ -8,11 +8,14 @@ type LocalNewsConfig = {
     articleUrl: (url: URL) => boolean;
     contentSelectors?: string[];
     excludedPathParts?: string[];
+    feedUrl?: (listingUrl: string) => string;
+    sectionFromListingUrl?: (listingUrl: string) => string | undefined;
 };
 
 type Candidate = {
     url: string;
     title?: string;
+    publishedAt?: Date;
 };
 
 const FETCH_OPTIONS: RequestInit = {
@@ -89,6 +92,7 @@ export abstract class LocalNewsScraper extends BaseScraper {
                         $('time[datetime]').first().attr('datetime'),
                         this.jsonLdDatePublished($('script[type="application/ld+json"]')
                             .map((_, script) => $(script).text()).get()),
+                        candidate.publishedAt?.toISOString(),
                         this.dateFromUrl(candidate.url)?.toISOString()
                     ]);
                     const title = this.htmlToText(
@@ -127,7 +131,7 @@ export abstract class LocalNewsScraper extends BaseScraper {
                         url: candidate.url,
                         imageUrl,
                         publishedAt: publishedAt ?? new Date(),
-                        section: this.sectionFromUrl(candidate.url)
+                        section: this.config.sectionFromListingUrl?.(listingUrl) || this.sectionFromUrl(candidate.url)
                     });
                     this.recordAccepted(
                         candidate.url,
@@ -152,6 +156,30 @@ export abstract class LocalNewsScraper extends BaseScraper {
     }
 
     private async fetchCandidates(listingUrl: string): Promise<Candidate[]> {
+        const feedUrl = this.config.feedUrl?.(listingUrl);
+        if (feedUrl) {
+            const feedResponse = await fetch(feedUrl, FETCH_OPTIONS);
+            if (feedResponse.ok) {
+                const feed = cheerio.load(await feedResponse.text(), { xmlMode: true });
+                const candidates: Candidate[] = [];
+                const seen = new Set<string>();
+                feed('item').each((_, item) => {
+                    const url = this.normalizeArticleUrl(feed(item).find('link').first().text().trim(), listingUrl);
+                    if (!url || seen.has(url) || !this.isAllowedHost(url) || !this.config.articleUrl(new URL(url))) return;
+                    seen.add(url);
+                    candidates.push({
+                        url,
+                        title: this.htmlToText(feed(item).find('title').first().text()),
+                        publishedAt: this.parseDateCandidates([feed(item).find('pubDate').first().text()]) || undefined
+                    });
+                });
+                if (candidates.length) return candidates;
+                console.warn(`[${this.name}] RSS ${feedUrl} had no usable items; falling back to listing HTML.`);
+            } else {
+                console.warn(`[${this.name}] RSS returned ${feedResponse.status}; falling back to listing HTML.`);
+            }
+        }
+
         const response = await fetch(listingUrl, FETCH_OPTIONS);
         if (!response.ok) throw new Error(`Listing request returned ${response.status}`);
 
@@ -276,8 +304,10 @@ const config = (
     baseUrl: string,
     articleUrl: (url: URL) => boolean,
     contentSelectors?: string[],
-    excludedPathParts?: string[]
-): LocalNewsConfig => ({ name, baseUrl, articleUrl, contentSelectors, excludedPathParts });
+    excludedPathParts?: string[],
+    feedUrl?: (listingUrl: string) => string,
+    sectionFromListingUrl?: (listingUrl: string) => string | undefined
+): LocalNewsConfig => ({ name, baseUrl, articleUrl, contentSelectors, excludedPathParts, feedUrl, sectionFromListingUrl });
 
 export const LOCAL_NEWS_CONFIGS = {
     ElDiarioSur: config(
@@ -331,5 +361,25 @@ export const LOCAL_NEWS_CONFIGS = {
         'https://www.ladefensadigital.com',
         url => /^\/\d{4}\/\d{2}\/[^/]+\.html\/?$/i.test(url.pathname),
         ['.post-body p', '.post-body', 'article p', ...DEFAULT_CONTENT_SELECTORS]
+    ),
+    InfoRegion: config(
+        'InfoRegion',
+        'https://www.inforegion.com.ar',
+        url => /^\/\d{4}\/\d{2}\/\d{2}\/[^/]+\/?$/i.test(url.pathname),
+        ['article[itemprop="articleBody"] p', 'article.vw-main-post p', 'article p', ...DEFAULT_CONTENT_SELECTORS],
+        undefined,
+        listingUrl => {
+            const url = new URL(listingUrl);
+            const path = url.pathname.replace(/\/+$/, '');
+            url.pathname = path ? `${path}/feed/` : '/feed/';
+            return url.toString();
+        },
+        listingUrl => {
+            const match = new URL(listingUrl).pathname.match(/\/category\/([^/]+)/i);
+            if (!match) return undefined;
+            const slug = match[1].toLowerCase();
+            if (slug === 'politica-2') return 'Política';
+            return slug.replace(/-\d+$/, '').replace(/-/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+        }
     )
 } as const;

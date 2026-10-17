@@ -7,7 +7,7 @@ export function sourceDisplayName(sourceName: string): string {
         DiarioConurbano: 'Diario Conurbano', ElTermometroWeb: 'El Termómetro Web',
         LaTeclaInfo: 'La Tecla', Infocielo: 'Infocielo', LaDefensa: 'La Defensa de Lanús',
         Clarin: 'Clarín', Ambito: 'Ámbito', Cronista: 'El Cronista', Pagina12: 'Página/12', InfoRegion: 'InfoRegión',
-        FESIMUBO: 'Fe.Si.Mu.Bo.'
+        FESIMUBO: 'Fe.Si.Mu.Bo.', LomasConectado: 'Lomas Conectado'
     };
     return names[sourceName] || sourceName.replace(/([a-z])([A-Z])/g, '$1 $2');
 }

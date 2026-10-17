@@ -394,5 +394,17 @@ export const LOCAL_NEWS_CONFIGS = {
             return url.toString();
         },
         () => 'Prensa'
+    ),
+    LomasConectado: config(
+        'LomasConectado',
+        'https://lomasconectado.com',
+        url => /^\/\d{4}\/\d{2}\/\d{2}\/[^/]+\/?$/i.test(url.pathname),
+        ['article .entry-content p', '.entry-content p', 'article p', ...DEFAULT_CONTENT_SELECTORS],
+        undefined,
+        listingUrl => {
+            const url = new URL(listingUrl);
+            url.pathname = '/feed/';
+            return url.toString();
+        }
     )
 } as const;

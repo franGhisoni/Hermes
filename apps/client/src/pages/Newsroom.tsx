@@ -438,6 +438,7 @@ export default function Newsroom() {
     };
 
     const openPublishModal = async () => {
+        if (isDemo) return;
         setShowPublishModal(true);
         setLoadingTargets(true);
         setTargetSearch('');
@@ -610,7 +611,7 @@ export default function Newsroom() {
                         >
                             {saving ? 'Guardando...' : 'Guardar'}
                         </button>
-                        <button
+                        {!isDemo && <button
                             onClick={openPublishModal}
                             disabled={article.publicationBlocked}
                             title={article.publicationBlocked ? (article.publicationBlockReason || 'Nota bloqueada para publicación') : undefined}
@@ -622,7 +623,7 @@ export default function Newsroom() {
                                 }`}
                         >
                             {article.publicationBlocked ? 'Publicación bloqueada' : article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Noticia'}
-                        </button>
+                        </button>}
                 </div>
             </header>
 

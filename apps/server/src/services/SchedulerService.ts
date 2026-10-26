@@ -2,6 +2,7 @@ import cron, { ScheduledTask } from 'node-cron';
 import { Article, ScrapeRunTrigger, WorkflowRunStatus } from '@prisma/client';
 import { QueueService } from './QueueService';
 import { MailService } from './MailService';
+import { TargetPublisher } from './TargetPublisher';
 import { ArticleService } from './ArticleService';
 import { ConfigService } from './ConfigService';
 import { AIService } from './AIService';
@@ -28,6 +29,7 @@ interface PublicationSlot {
 export class SchedulerService {
     private queueService: QueueService;
     private mailService: MailService;
+    private targetPublisher: TargetPublisher;
     private articleService: ArticleService;
     private configService: ConfigService;
     private aiService: AIService;
@@ -37,6 +39,7 @@ export class SchedulerService {
         this.queueService = queueService;
         this.articleService = articleService;
         this.mailService = new MailService();
+        this.targetPublisher = new TargetPublisher(this.mailService);
         this.configService = new ConfigService();
         this.aiService = new AIService();
     }
@@ -335,7 +338,7 @@ export class SchedulerService {
                         ? await this.buildRepublishedVariant(article)
                         : article;
                     const category = fresh.targetCategory || dispatchArticle.section || undefined;
-                    const ok = await this.mailService.sendArticleToTarget(target.email, dispatchArticle, category);
+                    const ok = await this.targetPublisher.publish(target, dispatchArticle, category);
                     if (!ok) {
                         await dailyOperationalLogService.recordPublication(false).catch(error =>
                             console.error('[DailyOperationalLog] Failed to record publication failure counter:', error)
@@ -362,7 +365,7 @@ export class SchedulerService {
                         where: { id: article.id },
                         data: {
                             status: 'PUBLISHED',
-                            publications: { create: { targetId: target.id, targetName: target.name, targetEmail: target.email, category: category || null } }
+                            publications: { create: { targetId: target.id, targetName: target.name, targetEmail: TargetPublisher.destinationLabel(target), category: category || null } }
                         }
                     });
                 } catch (err) {

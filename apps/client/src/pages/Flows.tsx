@@ -10,8 +10,19 @@ import { WorkflowPublicationLimits, type PublicationOverrideDraft } from '../com
 interface Target {
     id: string;
     name: string;
-    email: string;
+    type?: 'EMAIL' | 'IMPACTO_API';
+    email: string | null;
+    apiUrl?: string | null;
+    apiMode?: string;
 }
+
+/** One "Sección de Hermes = slug del CMS" pair per line. */
+const parseSectionMap = (text: string): Record<string, string> =>
+    Object.fromEntries(
+        text.split(/\r?\n/)
+            .map(line => line.split('=').map(part => part.trim()))
+            .filter(([key, slug]) => key && slug)
+    );
 
 interface WorkflowRun {
     id: string;
@@ -60,6 +71,11 @@ export default function Flows() {
     // Form states
     const [targetName, setTargetName] = useState('');
     const [targetEmail, setTargetEmail] = useState('');
+    const [targetType, setTargetType] = useState<'EMAIL' | 'IMPACTO_API'>('EMAIL');
+    const [targetApiUrl, setTargetApiUrl] = useState('');
+    const [targetApiKey, setTargetApiKey] = useState('');
+    const [targetApiMode, setTargetApiMode] = useState<'DRAFT' | 'IN_REVIEW'>('DRAFT');
+    const [targetSectionMap, setTargetSectionMap] = useState('');
 
     const [wfName, setWfName] = useState('');
     const [wfSection, setWfSection] = useState('');
@@ -115,9 +131,14 @@ export default function Flows() {
     const handleCreateTarget = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await api.post('/api/targets', { name: targetName, email: targetEmail });
+            await api.post('/api/targets', targetType === 'IMPACTO_API'
+                ? { name: targetName, type: targetType, apiUrl: targetApiUrl, apiKey: targetApiKey, apiMode: targetApiMode, sectionMap: parseSectionMap(targetSectionMap) }
+                : { name: targetName, type: targetType, email: targetEmail });
             setTargetName('');
             setTargetEmail('');
+            setTargetApiUrl('');
+            setTargetApiKey('');
+            setTargetSectionMap('');
             fetchData();
         } catch (error: any) {
             alert('Error: ' + (error.response?.data?.error || 'Failed to create medium'));
@@ -434,10 +455,35 @@ export default function Flows() {
                                     type="text" placeholder="Nombre" value={targetName} onChange={e => setTargetName(e.target.value)} required
                                     className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
                                 />
-                                <input
-                                    type="email" placeholder="Email" value={targetEmail} onChange={e => setTargetEmail(e.target.value)} required
-                                    className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
-                                />
+                                <select value={targetType} onChange={e => setTargetType(e.target.value as 'EMAIL' | 'IMPACTO_API')} className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm">
+                                    <option value="EMAIL">Email (WordPress / Postie)</option>
+                                    <option value="IMPACTO_API">API Impacto Castex</option>
+                                </select>
+                                {targetType === 'EMAIL' ? (
+                                    <input
+                                        type="email" placeholder="Email" value={targetEmail} onChange={e => setTargetEmail(e.target.value)} required
+                                        className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
+                                    />
+                                ) : (
+                                    <>
+                                        <input
+                                            type="url" placeholder="URL del CMS (https://...)" value={targetApiUrl} onChange={e => setTargetApiUrl(e.target.value)} required
+                                            className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
+                                        />
+                                        <input
+                                            type="password" placeholder="Clave de integración" value={targetApiKey} onChange={e => setTargetApiKey(e.target.value)} required autoComplete="off"
+                                            className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
+                                        />
+                                        <select value={targetApiMode} onChange={e => setTargetApiMode(e.target.value as 'DRAFT' | 'IN_REVIEW')} className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm">
+                                            <option value="DRAFT">Entra como borrador</option>
+                                            <option value="IN_REVIEW">Entra en revisión</option>
+                                        </select>
+                                        <textarea
+                                            placeholder="Secciones, una por línea: Política = politica" value={targetSectionMap} onChange={e => setTargetSectionMap(e.target.value)} rows={3}
+                                            className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
+                                        />
+                                    </>
+                                )}
                                 <button type="submit" className="bg-editorial-text text-editorial-bg px-3 py-1.5 font-bold uppercase tracking-widest hover:bg-black transition-colors text-[10px] mt-1">
                                     Añadir
                                 </button>
@@ -448,7 +494,7 @@ export default function Flows() {
                                     <div key={t.id} className="flex justify-between items-start p-2 bg-editorial-text/5 text-sm font-sans group hover:bg-editorial-text/10 transition-colors">
                                         <div className="min-w-0 flex-1">
                                             <div className="font-bold text-xs truncate">{t.name}</div>
-                                            <div className="text-[10px] opacity-60 truncate">{t.email}</div>
+                                            <div className="text-[10px] opacity-60 truncate">{t.type === 'IMPACTO_API' ? `API · ${t.apiUrl}` : t.email}</div>
                                         </div>
                                         <button onClick={() => handleDeleteTarget(t.id)} className="opacity-0 group-hover:opacity-100 hover:text-red-500 transition-all ml-2 flex-shrink-0">
                                             <Trash2 size={12} />

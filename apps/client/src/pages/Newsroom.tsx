@@ -8,7 +8,9 @@ import { FeedbackActions } from '../components/FeedbackActions';
 interface Target {
     id: string;
     name: string;
-    email: string;
+    type?: string;
+    email: string | null;
+    apiUrl?: string | null;
 }
 
 export default function Newsroom() {
@@ -262,7 +264,7 @@ export default function Newsroom() {
         if (!term) return targets;
         return targets.filter(target =>
             target.name.toLowerCase().includes(term)
-            || target.email.toLowerCase().includes(term)
+            || (target.email || target.apiUrl || '').toLowerCase().includes(term)
         );
     }, [targets, targetSearch]);
 
@@ -407,7 +409,7 @@ export default function Newsroom() {
                                                 />
                                                 <div className="flex flex-col">
                                                     <span className="font-bold">{t.name}</span>
-                                                    <span className="text-xs text-editorial-text/50">{t.email}</span>
+                                                    <span className="text-xs text-editorial-text/50">{t.email || t.apiUrl}</span>
                                                 </div>
                                             </label>
                                         ))

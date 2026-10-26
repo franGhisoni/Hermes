@@ -546,10 +546,12 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 
 // POST /api/articles/:id/publish - Publish article to a target (send email)
 import { MailService } from './services/MailService';
+import { TargetPublisher } from './services/TargetPublisher';
 import { AIService } from './services/AIService';
 import { dailyOperationalLogService } from './services/DailyOperationalLogService';
 import { isLaNacionAccessWall } from './services/ContentSafetyService';
 const mailService = new MailService();
+const targetPublisher = new TargetPublisher(mailService);
 const aiService = new AIService();
 
 app.post('/api/articles/:id/publish', async (req, res) => {
@@ -594,12 +596,12 @@ app.post('/api/articles/:id/publish', async (req, res) => {
 
         // Use provided category, or fall back to article's section
         const articleCategory = category || article.section || undefined;
-        const sent = await mailService.sendArticleToTarget(target.email, articleForTarget as any, articleCategory);
+        const sent = await targetPublisher.publish(target, articleForTarget as any, articleCategory);
         if (!sent) {
             await dailyOperationalLogService.recordPublication(false).catch(logError => {
                 console.error('[DailyOperationalLog] Failed to record publication failure counter:', logError);
             });
-            return res.status(500).json({ error: 'Failed to send email' });
+            return res.status(500).json({ error: target.type === 'IMPACTO_API' ? 'Failed to publish to Impacto API' : 'Failed to send email' });
         }
 
         // Update article status to PUBLISHED
@@ -607,7 +609,7 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             where: { id: req.params.id },
             data: {
                 status: 'PUBLISHED',
-                publications: { create: { targetId: target.id, targetName: target.name, targetEmail: target.email, category: articleCategory || null } }
+                publications: { create: { targetId: target.id, targetName: target.name, targetEmail: TargetPublisher.destinationLabel(target), category: articleCategory || null } }
             }
         });
 

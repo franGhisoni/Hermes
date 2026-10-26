@@ -39,10 +39,24 @@ model User {
   updatedAt    DateTime @updatedAt
 }
 
+enum PublishTargetType {
+  EMAIL
+  IMPACTO_API
+}
+
 model Target {
   id                   String                @id @default(uuid())
   name                 String                @unique
-  email                String
+  type                 PublishTargetType     @default(EMAIL)
+  // EMAIL: destination mailbox (Postie). Null for API targets.
+  email                String?
+  // IMPACTO_API: base URL of the Impacto Castex CMS, its integration key,
+  // the state notes enter with (DRAFT | IN_REVIEW) and a map from Hermes
+  // section names to CMS section slugs ({ "Política": "politica" }).
+  apiUrl               String?
+  apiKey               String?
+  apiMode              String                @default("DRAFT")
+  sectionMap           Json?
   workflows            Workflow[] // Implicit M2M
   workflowTargetLimits WorkflowTargetLimit[]
   createdAt            DateTime              @default(now())

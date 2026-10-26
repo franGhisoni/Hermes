@@ -46,18 +46,18 @@ test('publish envía la nota a /api/v1/notas con la clave y el estado configurad
     assert.equal(calls[0].url, 'https://cms.example.com/api/v1/notas');
     assert.equal(calls[0].init.headers.Authorization, 'Bearer secret-key');
     const body = JSON.parse(calls[0].init.body);
-    assert.equal(body.titulo, 'Título reescrito');
-    assert.equal(body.bajada, 'Bajada de la nota');
-    assert.equal(body.seccion, 'politica-nacional');
-    assert.equal(body.estado, 'EN_REVISION');
-    assert.equal(body.origen, 'HERMES');
-    assert.equal(body.referenciaExterna, 'art-1');
-    assert.deepEqual(body.imagen, { url: 'https://cdn.example.com/foto.jpg' });
+    assert.equal(body.title, 'Título reescrito');
+    assert.equal(body.subtitle, 'Bajada de la nota');
+    assert.equal(body.section, 'politica-nacional');
+    assert.equal(body.status, 'in_review');
+    assert.equal(body.externalRef, 'art-1');
+    assert.equal(body.imageUrl, 'https://cdn.example.com/foto.jpg');
+    assert.match(body.imageAlt, /Título reescrito/);
 });
 
 test('publish informa el error cuando el CMS rechaza la nota', async t => {
     t.mock.method(globalThis, 'fetch', async () =>
-        new Response(JSON.stringify({ error: 'Clave inválida' }), { status: 401, statusText: 'Unauthorized' }));
+        new Response(JSON.stringify({ error: { code: 'UNAUTHORIZED', message: 'Clave inválida' } }), { status: 401, statusText: 'Unauthorized' }));
 
     const result = await new ImpactoApiService().publish(target, article);
 
@@ -72,4 +72,34 @@ test('publish no llama a la red si falta la clave', async t => {
 
     assert.equal(result.ok, false);
     assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test('publish trata un externalRef repetido (200 duplicate) como éxito', async t => {
+    t.mock.method(globalThis, 'fetch', async () =>
+        new Response(JSON.stringify({ id: 42, status: 'DRAFT', duplicate: true, url: 'https://x/42' }), { status: 200 }));
+
+    const result = await new ImpactoApiService().publish(target, article);
+
+    assert.equal(result.ok, true);
+});
+
+test('publish resuelve imágenes internas con HERMES_PUBLIC_URL y las omite sin ella', async t => {
+    const bodies: any[] = [];
+    t.mock.method(globalThis, 'fetch', async (_url: string, init: any) => {
+        bodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ id: 1 }), { status: 201 });
+    });
+    const internal = { ...article, featureImageUrl: '/api/images/abc' };
+    const previous = process.env.HERMES_PUBLIC_URL;
+    try {
+        process.env.HERMES_PUBLIC_URL = 'https://hermes.example.com/';
+        await new ImpactoApiService().publish(target, internal);
+        delete process.env.HERMES_PUBLIC_URL;
+        await new ImpactoApiService().publish(target, internal);
+    } finally {
+        if (previous === undefined) delete process.env.HERMES_PUBLIC_URL; else process.env.HERMES_PUBLIC_URL = previous;
+    }
+    assert.equal(bodies[0].imageUrl, 'https://hermes.example.com/api/images/abc');
+    assert.equal(bodies[1].imageUrl, undefined);
+    assert.equal(bodies[1].imageAlt, undefined);
 });

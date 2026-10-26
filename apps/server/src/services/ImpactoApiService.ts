@@ -1,5 +1,4 @@
 import { Article } from '@prisma/client';
-import { prisma } from '../lib/prisma';
 import { isLaNacionAccessWall } from './ContentSafetyService';
 
 export interface ImpactoTarget {
@@ -56,20 +55,27 @@ export class ImpactoApiService {
 
         const title = article.rewrittenTitle || article.originalTitle;
         const content = article.rewrittenContent || article.originalContent;
-        const imageUrl = article.featureImageUrl || article.originalImageUrl;
+        const section = mapSection(target.sectionMap, category, article.section);
+        if (!section) {
+            return { ok: false, error: 'La nota no tiene sección para enviar al CMS.' };
+        }
 
+        const imageUrl = this.absoluteImageUrl(article.featureImageUrl || article.originalImageUrl);
+        const status = target.apiMode === 'IN_REVIEW' ? 'in_review' : 'draft';
         const payload: Record<string, unknown> = {
-            titulo: title,
-            bajada: article.contentPreview || undefined,
-            cuerpo: contentToHtml(content),
-            seccion: mapSection(target.sectionMap, category, article.section),
-            estado: target.apiMode === 'IN_REVIEW' ? 'EN_REVISION' : 'BORRADOR',
-            origen: 'HERMES',
-            // Lets the CMS dedupe retries: same Hermes article, same note.
-            referenciaExterna: article.id,
-            fuenteUrl: article.originalUrl,
+            title,
+            section,
+            subtitle: article.contentPreview || undefined,
+            body: contentToHtml(content),
+            status,
+            // Retrying with the same ref never duplicates the note in the CMS.
+            externalRef: article.id,
         };
-        if (imageUrl) payload.imagen = await this.buildImage(imageUrl);
+        if (imageUrl) {
+            payload.imageUrl = imageUrl;
+            // The CMS requires alt text to move a note with an image to review.
+            payload.imageAlt = `Imagen de la nota: ${title}`.slice(0, 300);
+        }
 
         const endpoint = `${target.apiUrl.replace(/\/+$/, '')}/api/v1/notas`;
         const controller = new AbortController();
@@ -86,11 +92,16 @@ export class ImpactoApiService {
             });
             const body: any = await response.json().catch(() => ({}));
             if (!response.ok) {
-                const reason = body?.error || body?.mensaje || response.statusText;
+                const err = body?.error;
+                const reason = (typeof err === 'string' ? err : err?.message) || response.statusText;
                 console.error(`[ImpactoApi] HTTP ${response.status} publishing to ${target.name}: ${reason}`);
                 return { ok: false, error: `HTTP ${response.status}: ${reason}` };
             }
-            console.log(`[ImpactoApi] Article ${article.id} sent to ${target.name} as ${payload.estado} (id ${body?.id})`);
+            if (body?.warning) {
+                console.warn(`[ImpactoApi] ${target.name} accepted article ${article.id} as ${body.status} with a warning: ${body.warning}`);
+            }
+            // 200 with duplicate:true means the CMS already had this externalRef: still a success.
+            console.log(`[ImpactoApi] Article ${article.id} sent to ${target.name} as ${body?.status ?? status} (id ${body?.id}${body?.duplicate ? ', duplicate' : ''})`);
             return { ok: true, id: body?.id != null ? String(body.id) : undefined, url: body?.url };
         } catch (error: any) {
             const reason = error?.name === 'AbortError' ? 'timeout' : error?.message || String(error);
@@ -102,17 +113,17 @@ export class ImpactoApiService {
     }
 
     /**
-     * External images go as a URL (the CMS hotlinks them). Images Hermes generated
-     * live in our DB and are not reachable from outside, so their bytes go inline.
+     * The CMS only accepts absolute http(s) image URLs and hotlinks them. Images Hermes
+     * generated are served from /api/images/:id, so they need HERMES_PUBLIC_URL to be reachable.
      */
-    private async buildImage(imageUrl: string): Promise<Record<string, unknown>> {
-        const internal = imageUrl.match(/^\/api\/images\/([^\/\?]+)/);
-        if (!internal) return { url: imageUrl };
-        const img = await prisma.generatedImage.findUnique({ where: { id: internal[1] } });
-        if (!img) {
-            console.error(`[ImpactoApi] Internal image not found: ${internal[1]}`);
-            return {};
+    private absoluteImageUrl(imageUrl?: string | null): string | undefined {
+        if (!imageUrl) return undefined;
+        if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+        const base = process.env.HERMES_PUBLIC_URL?.trim().replace(/\/+$/, '');
+        if (!base || !imageUrl.startsWith('/')) {
+            console.warn(`[ImpactoApi] Image ${imageUrl} is not absolute and HERMES_PUBLIC_URL is not set: sending the note without image.`);
+            return undefined;
         }
-        return { base64: Buffer.from(img.data).toString('base64'), mimeType: img.mimeType };
+        return `${base}${imageUrl}`;
     }
 }

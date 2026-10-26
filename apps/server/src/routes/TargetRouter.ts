@@ -45,7 +45,7 @@ const buildTargetData = (input: TargetInput, partial: boolean) => {
         }
         // An empty key on edit means "keep the current one".
         if (input.apiKey) data.apiKey = input.apiKey.trim();
-        if (input.apiMode !== undefined) data.apiMode = input.apiMode === 'IN_REVIEW' ? 'IN_REVIEW' : 'DRAFT';
+        if (input.apiMode !== undefined) data.apiMode = ['IN_REVIEW', 'PUBLISHED'].includes(input.apiMode) ? input.apiMode : 'DRAFT';
         const sectionMap = normalizeSectionMap(input.sectionMap);
         if (sectionMap !== undefined) data.sectionMap = sectionMap === null ? null : sectionMap;
         data.email = null;

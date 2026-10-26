@@ -74,7 +74,7 @@ export default function Flows() {
     const [targetType, setTargetType] = useState<'EMAIL' | 'IMPACTO_API'>('EMAIL');
     const [targetApiUrl, setTargetApiUrl] = useState('');
     const [targetApiKey, setTargetApiKey] = useState('');
-    const [targetApiMode, setTargetApiMode] = useState<'DRAFT' | 'IN_REVIEW'>('DRAFT');
+    const [targetApiMode, setTargetApiMode] = useState<'DRAFT' | 'IN_REVIEW' | 'PUBLISHED'>('DRAFT');
     const [targetSectionMap, setTargetSectionMap] = useState('');
 
     const [wfName, setWfName] = useState('');
@@ -474,9 +474,10 @@ export default function Flows() {
                                             type="password" placeholder="Clave de integración" value={targetApiKey} onChange={e => setTargetApiKey(e.target.value)} required autoComplete="off"
                                             className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm"
                                         />
-                                        <select value={targetApiMode} onChange={e => setTargetApiMode(e.target.value as 'DRAFT' | 'IN_REVIEW')} className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm">
+                                        <select value={targetApiMode} onChange={e => setTargetApiMode(e.target.value as 'DRAFT' | 'IN_REVIEW' | 'PUBLISHED')} className="w-full border-b border-editorial-text/30 bg-transparent py-1.5 focus:outline-none focus:border-editorial-text text-sm">
                                             <option value="DRAFT">Entra como borrador</option>
                                             <option value="IN_REVIEW">Entra en revisión</option>
+                                            <option value="PUBLISHED">Publica directo</option>
                                         </select>
                                         <textarea
                                             placeholder="Secciones, una por línea: Política = politica" value={targetSectionMap} onChange={e => setTargetSectionMap(e.target.value)} rows={3}

@@ -44,6 +44,9 @@ export const mapSection = (sectionMap: unknown, ...candidates: Array<string | nu
     return candidates.find(Boolean) || undefined;
 };
 
+/** The CMS downgrades to draft (with a warning) if the key's account cannot publish. */
+const STATUS_BY_MODE: Record<string, string> = { DRAFT: 'draft', IN_REVIEW: 'in_review', PUBLISHED: 'published' };
+
 export class ImpactoApiService {
     public async publish(target: ImpactoTarget, article: Article, category?: string): Promise<ImpactoResult> {
         if (isLaNacionAccessWall(article)) {
@@ -61,7 +64,7 @@ export class ImpactoApiService {
         }
 
         const imageUrl = this.absoluteImageUrl(article.featureImageUrl || article.originalImageUrl);
-        const status = target.apiMode === 'IN_REVIEW' ? 'in_review' : 'draft';
+        const status = STATUS_BY_MODE[target.apiMode] ?? 'draft';
         const payload: Record<string, unknown> = {
             title,
             section,

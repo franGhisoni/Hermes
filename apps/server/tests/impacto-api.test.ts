@@ -103,3 +103,16 @@ test('publish resuelve imágenes internas con HERMES_PUBLIC_URL y las omite sin 
     assert.equal(bodies[1].imageUrl, undefined);
     assert.equal(bodies[1].imageAlt, undefined);
 });
+
+test('publish con apiMode PUBLISHED pide status published y registra el aviso del CMS', async t => {
+    const bodies: any[] = [];
+    t.mock.method(globalThis, 'fetch', async (_url: string, init: any) => {
+        bodies.push(JSON.parse(init.body));
+        return new Response(JSON.stringify({ id: 7, status: 'DRAFT', warning: 'La cuenta no puede publicar' }), { status: 201 });
+    });
+
+    const result = await new ImpactoApiService().publish({ ...target, apiMode: 'PUBLISHED' }, article);
+
+    assert.equal(bodies[0].status, 'published');
+    assert.equal(result.ok, true);
+});

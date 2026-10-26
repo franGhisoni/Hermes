@@ -8,6 +8,10 @@ import { AmbitoScraper } from '../scrapers/AmbitoScraper';
 import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { Pagina12Scraper } from '../scrapers/Pagina12Scraper';
 import { MDZScraper } from '../scrapers/MDZScraper';
+import { Minuto1Scraper } from '../scrapers/Minuto1Scraper';
+import { LaPoliticaOnlineScraper } from '../scrapers/LaPoliticaOnlineScraper';
+import { ElDestapeScraper } from '../scrapers/ElDestapeScraper';
+import { DiarioLaPampaScraper } from '../scrapers/DiarioLaPampaScraper';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 import { ConfigService } from './ConfigService';
@@ -33,7 +37,11 @@ export const SCRAPER_DEFINITIONS = Object.freeze([
     { source: 'Ambito', label: 'Ámbito', scraper: AmbitoScraper },
     { source: 'Cronista', label: 'El Cronista', scraper: CronistaScraper },
     { source: 'Pagina12', label: 'Página/12', scraper: Pagina12Scraper },
-    { source: 'MDZ', label: 'MDZ Online', scraper: MDZScraper }
+    { source: 'MDZ', label: 'MDZ Online', scraper: MDZScraper },
+    { source: 'Minuto1', label: 'Minuto Uno', scraper: Minuto1Scraper },
+    { source: 'LaPoliticaOnline', label: 'La Política Online', scraper: LaPoliticaOnlineScraper },
+    { source: 'ElDestape', label: 'El Destape', scraper: ElDestapeScraper },
+    { source: 'DiarioLaPampa', label: 'El Diario de La Pampa', scraper: DiarioLaPampaScraper }
 ] as const);
 
 const SCRAPER_REGISTRY: Record<string, any> = Object.fromEntries(

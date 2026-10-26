@@ -33,6 +33,7 @@ const articleService = new ArticleService();
 export const schedulerService = new SchedulerService(queueService, articleService);
 
 async function initializeBackgroundServices() {
+    await bootstrapAdmin().catch(error => console.error('[bootstrapAdmin] Failed:', error));
     await articleService.quarantineLaNacionAccessWalls();
     try {
         await queueService.initializeWorkerConcurrency();
@@ -547,6 +548,7 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 // POST /api/articles/:id/publish - Publish article to a target (send email)
 import { MailService } from './services/MailService';
 import { TargetPublisher } from './services/TargetPublisher';
+import { bootstrapAdmin } from './lib/bootstrapAdmin';
 import { AIService } from './services/AIService';
 import { dailyOperationalLogService } from './services/DailyOperationalLogService';
 import { isLaNacionAccessWall } from './services/ContentSafetyService';

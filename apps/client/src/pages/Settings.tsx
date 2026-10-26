@@ -420,7 +420,7 @@ export default function Settings() {
             <nav className="border-b border-editorial-text/10 px-8 py-6 flex justify-between items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-20">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
-                        <img src="/logo.png" alt="Logo" className="h-10 w-auto mix-blend-multiply" />
+                        <img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto object-contain" />
                     </Link>
                     <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <h1 className="font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>

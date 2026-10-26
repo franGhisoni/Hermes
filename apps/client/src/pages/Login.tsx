@@ -31,7 +31,7 @@ export default function Login() {
         <div className="min-h-screen bg-editorial-bg flex items-center justify-center text-editorial-text font-serif p-4">
             <div className="max-w-md w-full border border-editorial-text/20 p-8 bg-white/50 shadow-sm">
                 <div className="text-center mb-10">
-                    <img src="/logo.png" alt="Logo" className="h-16 w-auto mx-auto mix-blend-multiply opacity-90 mb-4" />
+                    <img src="/logo%20hermes.png" alt="Hermes" className="h-16 w-auto mx-auto object-contain opacity-90 mb-4" />
                     <h1 className="text-4xl font-black tracking-tight italic">Panel de Acceso</h1>
                     <p className="text-xs font-sans uppercase tracking-widest text-editorial-text/50 mt-2">Plataforma Automática de Noticias</p>
                 </div>

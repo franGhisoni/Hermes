@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { bootstrapAdmin } from './lib/bootstrapAdmin';
 import express from 'express';
 import cors from 'cors';
-import { QueueService, SCRAPER_SOURCES } from './services/QueueService';
+import { QueueService, SCRAPER_SOURCES, SCRAPER_DEFINITIONS, ensureRegisteredScrapers } from './services/QueueService';
 import { ArticleService, buildContentPreview } from './services/ArticleService';
 import { ScrapeRunTrigger } from '@prisma/client';
 import { prisma } from './lib/prisma';
@@ -40,6 +40,11 @@ async function initializeBackgroundServices() {
         await queueService.initializeWorkerConcurrency();
     } catch (error) {
         console.error('Failed to load persisted worker concurrency; keeping the environment default:', error);
+    }
+    try {
+        await ensureRegisteredScrapers();
+    } catch (error) {
+        console.error('Failed to register scraper configuration:', error);
     }
     await schedulerService.initialize();
 }
@@ -142,7 +147,62 @@ app.use('/api/config/filter-categories', filterCategoryRouter);
 import workflowRouter from './routes/WorkflowRouter';
 app.use('/api/workflows', workflowRouter);
 
-// GET /api/config/sources - List available sources for Workflows
+// GET /api/config/scrapers - List every registered scraper and its toggle.
+// This is intentionally separate from /sources, which only returns enabled
+// sources for filters and workflows.
+app.get('/api/config/scrapers', async (req, res) => {
+    try {
+        await ensureRegisteredScrapers();
+        const sources = await prisma.source.findMany({
+            where: { name: { in: SCRAPER_DEFINITIONS.map(definition => definition.source) } },
+            select: { id: true, name: true, url: true, active: true },
+            orderBy: { name: 'asc' }
+        });
+        const byName = new Map(sources.map(source => [source.name, source]));
+        res.json(SCRAPER_DEFINITIONS.map(definition => {
+            const source = byName.get(definition.source);
+            return {
+                id: source?.id ?? null,
+                source: definition.source,
+                label: definition.label,
+                url: source?.url ?? null,
+                active: source?.active ?? false
+            };
+        }));
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch scraper configuration' });
+    }
+});
+
+// PUT /api/config/scrapers/:source - Enable or disable a registered scraper.
+app.put('/api/config/scrapers/:source', requireAdmin, async (req, res) => {
+    const definition = SCRAPER_DEFINITIONS.find(item => item.source === req.params.source);
+    if (!definition) return res.status(404).json({ error: 'Unknown scraper' });
+    if (typeof req.body?.active !== 'boolean') {
+        return res.status(400).json({ error: 'active must be a boolean' });
+    }
+
+    try {
+        await ensureRegisteredScrapers();
+        const source = await prisma.source.findFirst({ where: { name: definition.source } });
+        if (!source) return res.status(404).json({ error: 'Scraper configuration not found' });
+        const updated = await prisma.source.update({
+            where: { id: source.id },
+            data: { active: req.body.active }
+        });
+        res.json({
+            id: updated.id,
+            source: definition.source,
+            label: definition.label,
+            url: updated.url,
+            active: updated.active
+        });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to update scraper configuration' });
+    }
+});
+
+// GET /api/config/sources - List enabled sources for filters and workflows.
 app.get('/api/config/sources', async (req, res) => {
     try {
         const sources = await prisma.source.findMany({
@@ -178,7 +238,14 @@ app.post('/api/scrape/all', requireAdmin, async (_req, res) => {
         const sections = await prisma.section.findMany({ include: { overrides: true } });
         let queued = 0;
 
-        for (const source of SCRAPER_SOURCES) {
+        // Disabled scrapers are skipped, same as manual runs and schedules.
+        const activeSources = new Set((await prisma.source.findMany({
+            where: { name: { in: [...SCRAPER_SOURCES] }, active: true },
+            select: { name: true }
+        })).map(source => source.name));
+        const sourcesToQueue = SCRAPER_SOURCES.filter(source => activeSources.has(source));
+
+        for (const source of sourcesToQueue) {
             if (sections.length === 0) {
                 await queueService.addScrapeJob(source, undefined, defaultLimit, {
                     trigger: ScrapeRunTrigger.MANUAL
@@ -202,8 +269,8 @@ app.post('/api/scrape/all', requireAdmin, async (_req, res) => {
         }
 
         res.json({
-            message: `Se encolaron trabajos para ${SCRAPER_SOURCES.length} medios y ${queued} combinaciones medio/sección.`,
-            sources: SCRAPER_SOURCES.length,
+            message: `Se encolaron trabajos para ${sourcesToQueue.length} medios y ${queued} combinaciones medio/sección.`,
+            sources: sourcesToQueue.length,
             jobs: queued
         });
     } catch (error) {
@@ -224,6 +291,14 @@ app.post('/api/scrape', async (req, res) => {
     }
 
     try {
+        const configuredSource = await prisma.source.findFirst({
+            where: { name: source },
+            select: { active: true }
+        });
+        if (!configuredSource?.active) {
+            return res.status(400).json({ error: `El scraper "${source}" está deshabilitado o no existe.` });
+        }
+
         let effectiveLimit = limit;
         if (!effectiveLimit) {
             effectiveLimit = await configService.getScrapeLimit();

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { bootstrapAdmin } from './lib/bootstrapAdmin';
 import express from 'express';
 import cors from 'cors';
 import { QueueService, SCRAPER_SOURCES } from './services/QueueService';
@@ -548,7 +549,6 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 // POST /api/articles/:id/publish - Publish article to a target (send email)
 import { MailService } from './services/MailService';
 import { TargetPublisher } from './services/TargetPublisher';
-import { bootstrapAdmin } from './lib/bootstrapAdmin';
 import { AIService } from './services/AIService';
 import { dailyOperationalLogService } from './services/DailyOperationalLogService';
 import { isLaNacionAccessWall } from './services/ContentSafetyService';

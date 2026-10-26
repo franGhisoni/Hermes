@@ -4,6 +4,7 @@ import { VorknewsPublishService } from './VorknewsPublishService';
 import { MailService } from './MailService';
 import { notificationService } from './NotificationService';
 import { dailyOperationalLogService } from './DailyOperationalLogService';
+import { socialPublishService } from './SocialPublishService';
 
 export interface PublishJobData {
     articleId: string;
@@ -132,6 +133,33 @@ export class PublishQueueService {
         });
     }
 
+    /** Placa + copy en Facebook/Instagram. Un error acá no deshace la publicación en el sitio. */
+    private async publishToSocial(articleId: string, title: string, vorknewsId?: string) {
+        try {
+            const social = await socialPublishService.publish(articleId, { vorknewsId });
+            const failed = [social.facebook, social.instagram].filter(r => r && !r.ok);
+            const done = [social.facebook?.ok && 'Facebook', social.instagram?.ok && 'Instagram'].filter(Boolean);
+            await notificationService.emit({
+                level: failed.length ? 'WARN' : 'INFO',
+                source: 'PUBLISH',
+                title: failed.length ? 'Publicación en redes incompleta' : 'Noticia publicada en redes',
+                message: failed.length
+                    ? `"${title}": ${done.length ? `salió en ${done.join(' y ')}, pero ` : ''}falló ${failed.map(f => f!.error).join(' / ')}`
+                    : `"${title}" se publicó en ${done.join(' y ')}.`,
+                metadata: { articleId, facebook: social.facebook, instagram: social.instagram }
+            });
+        } catch (err: any) {
+            console.error('[PublishQueue] Social publish failed:', err);
+            await notificationService.emit({
+                level: 'WARN',
+                source: 'PUBLISH',
+                title: 'No se pudo publicar en redes',
+                message: `"${title}" quedó publicada en el sitio, pero no en redes: ${err.message}`,
+                metadata: { articleId, error: err.message }
+            }).catch(() => {});
+        }
+    }
+
     private async processJob(jobData: PublishJobData) {
         let article: any = null;
         try {
@@ -209,6 +237,10 @@ export class PublishQueueService {
                 });
 
                 console.log(`[PublishQueue] Successfully published article "${finalTitle}" to Vorknews (ID: ${result.vorknewsId || 'N/A'}).`);
+
+                if (result.mode === 'PUBLISHED' && socialPublishService.autoPublishEnabled()) {
+                    await this.publishToSocial(article.id, finalTitle, result.vorknewsId);
+                }
 
             } else {
                 // Email target

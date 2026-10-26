@@ -848,6 +848,7 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 import { MailService } from './services/MailService';
 import { AIService } from './services/AIService';
 import { VorknewsPublishService } from './services/VorknewsPublishService';
+import { socialPublishService, type CardOverrides } from './services/SocialPublishService';
 const mailService = new MailService();
 const aiService = new AIService();
 const vorknewsPublishService = new VorknewsPublishService();
@@ -925,6 +926,53 @@ app.post('/api/articles/:id/generate-social', async (req, res) => {
     } catch (error: any) {
         console.error('Error generating social copy:', error);
         res.status(500).json({ error: 'Failed to generate social copy' });
+    }
+});
+
+const cardOverrides = (src: any): CardOverrides => ({
+    headline: typeof src.headline === 'string' && src.headline.trim() ? src.headline : undefined,
+    kicker: typeof src.kicker === 'string' ? src.kicker : undefined,
+    template: ['banda', 'degradado', 'panel', 'clasico'].includes(src.template) ? src.template : undefined,
+    format: ['square', 'portrait', 'story'].includes(src.format) ? src.format : undefined,
+});
+
+// GET /api/social/status - Whether Facebook/Instagram publishing is configured
+app.get('/api/social/status', (_req, res) => {
+    res.json({
+        configured: socialPublishService.isConfigured(),
+        instagram: Boolean(process.env.META_IG_USER_ID),
+        autoPublish: socialPublishService.autoPublishEnabled(),
+        template: socialPublishService.theme().template,
+    });
+});
+
+// GET /api/articles/:id/social-card - JPEG preview of the social card
+app.get('/api/articles/:id/social-card', async (req, res) => {
+    try {
+        const image = await socialPublishService.preview(req.params.id, cardOverrides(req.query));
+        res.set('Content-Type', 'image/jpeg').set('Cache-Control', 'no-store').send(image);
+    } catch (error: any) {
+        console.error('Error rendering social card:', error);
+        res.status(500).json({ error: error.message || 'No se pudo generar la placa' });
+    }
+});
+
+// POST /api/articles/:id/publish-social - Publish card + copy to Facebook / Instagram
+app.post('/api/articles/:id/publish-social', async (req, res) => {
+    try {
+        const networks = Array.isArray(req.body.networks)
+            ? req.body.networks.filter((n: string) => n === 'facebook' || n === 'instagram')
+            : undefined;
+        const result = await socialPublishService.publish(req.params.id, {
+            ...cardOverrides(req.body),
+            networks,
+            facebook: req.body.facebook,
+            instagram: req.body.instagram,
+        });
+        res.json(result);
+    } catch (error: any) {
+        console.error('Error publishing to social networks:', error);
+        res.status(500).json({ error: error.message || 'No se pudo publicar en redes' });
     }
 });
 

@@ -11,6 +11,9 @@
         "start": "node dist/index.js"
     },
     "dependencies": {
+        "@fontsource/anton": "^5.2.6",
+        "@fontsource/montserrat": "^5.2.8",
+        "@fontsource/playfair-display": "^5.2.8",
         "@prisma/client": "^5.22.0",
         "@types/node-cron": "^3.0.11",
         "@types/nodemailer": "^7.0.11",
@@ -29,7 +32,9 @@
         "puppeteer": "^22.0.0",
         "puppeteer-extra": "^3.3.6",
         "puppeteer-extra-plugin-stealth": "^2.11.2",
-        "resend": "^6.9.3"
+        "resend": "^6.9.3",
+        "satori": "^0.18.3",
+        "sharp": "^0.34.4"
     },
     "devDependencies": {
         "@types/bcrypt": "^6.0.0",

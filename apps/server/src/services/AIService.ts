@@ -1,6 +1,10 @@
 import OpenAI from 'openai';
 import { PromptService } from './PromptService';
 import { ConfigService } from './ConfigService';
+import { CARD_PROMPT_MARKER, CARD_PROMPT_SECTION } from '../lib/news-social/copy';
+import type { SocialCopy } from '../lib/news-social/types';
+
+export type SocialCopyResult = Required<Pick<SocialCopy, 'twitter' | 'instagram' | 'facebook' | 'hashtags'>> & Pick<SocialCopy, 'card'>;
 
 export class AIService {
     private static readonly MIN_REWRITE_LENGTH_RATIO = 0.6;
@@ -226,7 +230,7 @@ export class AIService {
     async generateSocialCopy(
         title: string,
         content: string
-    ): Promise<{ twitter: string; instagram: string; facebook: string; hashtags: string }> {
+    ): Promise<SocialCopyResult> {
         const model = await this.configService.getRewriteModel();
         const contentChars = await this.configService.getRewriteContentChars();
         const snippet = content.substring(0, contentChars);
@@ -239,6 +243,13 @@ export class AIService {
             prompt = config.template
                 .replace('{{title}}', title)
                 .replace('{{content}}', snippet);
+            // Prompts guardados antes de las placas: se les suma el pedido sin pisar lo que editaron.
+            if (!prompt.includes(CARD_PROMPT_MARKER)) {
+                prompt += `
+
+ADEMÁS, sumá al mismo JSON estos dos campos:
+${CARD_PROMPT_SECTION}`;
+            }
         } else {
             prompt = `
 Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo Política del Sur / Gran Buenos Aires).
@@ -264,13 +275,16 @@ Instrucciones por red:
    - Bloque de hashtags al final (separado por una línea vacía): 5 a 8 hashtags relevantes (#PoliticaDelSur, localidad y temática).
 3. "facebook": Texto para Facebook. Tono informativo, cercano y claro. 2 párrafos concisos explicando lo acontecido, llamado a leer la nota ("👉 Leé la nota completa con todos los detalles en nuestro sitio web.") y pregunta para abrir el debate en comentarios.
 4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad (ej: "#PoliticaDelSur #LomasDeZamora #Policiales #Conurbano").
+${CARD_PROMPT_SECTION}
 
 Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
 {
   "twitter": "...",
   "instagram": "...",
   "facebook": "...",
-  "hashtags": "#PoliticaDelSur #Lanus #..."
+  "hashtags": "#PoliticaDelSur #Lanus #...",
+  "placa_titulo": "...",
+  "placa_volanta": "..."
 }
 `;
         }
@@ -288,7 +302,11 @@ Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
                 twitter: parsed.twitter || '',
                 instagram: parsed.instagram || '',
                 facebook: parsed.facebook || '',
-                hashtags: parsed.hashtags || ''
+                hashtags: parsed.hashtags || '',
+                card: {
+                    headline: (parsed.placa_titulo || title).trim(),
+                    kicker: parsed.placa_volanta ? String(parsed.placa_volanta).trim() : undefined
+                }
             };
         } catch (err) {
             console.error('[AIService] Failed to generate social copy with OpenAI, generating smart editorial fallback:', err);
@@ -299,7 +317,7 @@ Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
     private buildSocialCopyFallback(
         title: string,
         content: string
-    ): { twitter: string; instagram: string; facebook: string; hashtags: string } {
+    ): SocialCopyResult {
         const cleanTitle = (title || '').replace(/\s+/g, ' ').trim();
         const cleanContent = (content || '')
             .replace(/<[^>]*>/g, ' ')
@@ -352,7 +370,7 @@ Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
         }
         const twitter = `${twitterLead}\n\n🔗 Más info en la nota.\n#PoliticaDelSur #Noticias`;
 
-        return { twitter, instagram, facebook, hashtags };
+        return { twitter, instagram, facebook, hashtags, card: { headline: cleanTitle } };
     }
 
     private getRewriteLengthIssue(source: string, rewritten: string | undefined | null): string | null {

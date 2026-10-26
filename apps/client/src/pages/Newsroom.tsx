@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 import { EditorialActions } from '../components/EditorialActions';
 import { EditorialModal } from '../components/EditorialModal';
+import { SocialCardPanel } from '../components/SocialCardPanel';
 
 interface Target {
     id: string;
@@ -47,6 +48,8 @@ export default function Newsroom() {
     const [socialInstagram, setSocialInstagram] = useState('');
     const [socialFacebook, setSocialFacebook] = useState('');
     const [socialHashtags, setSocialHashtags] = useState('');
+    const [cardHeadline, setCardHeadline] = useState('');
+    const [cardKicker, setCardKicker] = useState('');
     const [generatingSocial, setGeneratingSocial] = useState(false);
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -137,6 +140,8 @@ export default function Newsroom() {
                     setSocialFacebook(editorial.social.facebook || '');
                     setSocialHashtags(editorial.social.hashtags || '');
                 }
+                setCardHeadline(editorial.social?.card?.headline || title);
+                setCardKicker(editorial.social?.card?.kicker ?? volanta ?? '');
                 setLoading(false);
             });
     }, [id]);
@@ -346,7 +351,8 @@ export default function Newsroom() {
                 twitter: socialTwitter,
                 instagram: socialInstagram,
                 facebook: socialFacebook,
-                hashtags: socialHashtags
+                hashtags: socialHashtags,
+                card: { headline: cardHeadline, kicker: cardKicker }
             }
         };
 
@@ -417,6 +423,8 @@ export default function Newsroom() {
             setSocialInstagram(res.data.instagram || '');
             setSocialFacebook(res.data.facebook || '');
             setSocialHashtags(res.data.hashtags || '');
+            if (res.data.card?.headline) setCardHeadline(res.data.card.headline);
+            if (res.data.card?.kicker) setCardKicker(res.data.card.kicker);
             setArticle(prev => prev ? {
                 ...prev,
                 editorialData: res.data.editorialData || {
@@ -1625,6 +1633,20 @@ export default function Newsroom() {
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
+                                        {id && (
+                                            <SocialCardPanel
+                                                articleId={id}
+                                                isDemo={isDemo}
+                                                headline={cardHeadline}
+                                                kicker={cardKicker}
+                                                onHeadlineChange={setCardHeadline}
+                                                onKickerChange={setCardKicker}
+                                                facebook={socialFacebook}
+                                                instagram={socialInstagram}
+                                                onBeforePublish={() => saveDraft() ?? Promise.resolve()}
+                                            />
+                                        )}
+
                                         {/* X / Twitter */}
                                         <div className="border border-editorial-text/15 bg-white/40 p-4 rounded">
                                             <div className="flex justify-between items-center mb-2 font-sans">

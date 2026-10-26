@@ -1,5 +1,6 @@
 import { PromptConfig, PromptType } from '@prisma/client';
 import { prisma } from '../lib/prisma';
+import { CARD_PROMPT_SECTION } from '../lib/news-social/copy';
 
 export class PromptService {
 
@@ -198,13 +199,16 @@ Instrucciones por red:
    - Bloque de hashtags al final (separado por una línea vacía): 5 a 8 hashtags relevantes (#PoliticaDelSur, localidad y temática).
 3. "facebook": Texto para Facebook. Tono informativo, cercano y claro. 2 párrafos concisos explicando lo acontecido, llamado a leer la nota ("👉 Leé la nota completa con todos los detalles en nuestro sitio web.") y pregunta para abrir el debate en comentarios.
 4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad (ej: "#PoliticaDelSur #LomasDeZamora #Policiales #Conurbano").
+${CARD_PROMPT_SECTION}
 
 Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
 {
   "twitter": "...",
   "instagram": "...",
   "facebook": "...",
-  "hashtags": "#PoliticaDelSur #Lanus #..."
+  "hashtags": "#PoliticaDelSur #Lanus #...",
+  "placa_titulo": "...",
+  "placa_volanta": "..."
 }`;
 
         const socialCopy = await this.getPromptByType('SOCIAL_COPY');

@@ -8,6 +8,7 @@ import Flows from './pages/Flows';
 import Reports from './pages/Reports';
 import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { DictationButton } from './components/DictationButton';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
             <Route path="/reports" element={<Reports />} />
           </Route>
         </Routes>
+        <DictationButton />
       </Router>
     </AuthProvider>
   );

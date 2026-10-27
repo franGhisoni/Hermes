@@ -12,6 +12,20 @@ import { Minuto1Scraper } from '../scrapers/Minuto1Scraper';
 import { LaPoliticaOnlineScraper } from '../scrapers/LaPoliticaOnlineScraper';
 import { ElDestapeScraper } from '../scrapers/ElDestapeScraper';
 import { DiarioLaPampaScraper } from '../scrapers/DiarioLaPampaScraper';
+import {
+    ElDiarioSurScraper,
+    LaUnionScraper,
+    DiarioConurbanoScraper,
+    ElTermometroWebScraper,
+    AvellanedaHoyScraper,
+    LaTeclaInfoScraper,
+    InfocieloScraper,
+    LetraPScraper,
+    LaDefensaScraper,
+    InfoRegionScraper,
+    FESIMUBOScraper,
+    LomasConectadoScraper
+} from '../scrapers/PoliticaDelSurScrapers';
 import { ProcessorService } from './ProcessorService';
 import { notificationService } from './NotificationService';
 import { ConfigService } from './ConfigService';
@@ -41,7 +55,19 @@ export const SCRAPER_DEFINITIONS = Object.freeze([
     { source: 'Minuto1', label: 'Minuto Uno', scraper: Minuto1Scraper },
     { source: 'LaPoliticaOnline', label: 'La Política Online', scraper: LaPoliticaOnlineScraper },
     { source: 'ElDestape', label: 'El Destape', scraper: ElDestapeScraper },
-    { source: 'DiarioLaPampa', label: 'El Diario de La Pampa', scraper: DiarioLaPampaScraper }
+    { source: 'DiarioLaPampa', label: 'El Diario de La Pampa', scraper: DiarioLaPampaScraper },
+    { source: 'ElDiarioSur', label: 'El Diario Sur', scraper: ElDiarioSurScraper },
+    { source: 'LaUnion', label: 'La Unión', scraper: LaUnionScraper },
+    { source: 'DiarioConurbano', label: 'Diario Conurbano', scraper: DiarioConurbanoScraper },
+    { source: 'ElTermometroWeb', label: 'El Termómetro Web', scraper: ElTermometroWebScraper },
+    { source: 'AvellanedaHoy', label: 'Avellaneda Hoy', scraper: AvellanedaHoyScraper },
+    { source: 'LaTeclaInfo', label: 'La Tecla Info', scraper: LaTeclaInfoScraper },
+    { source: 'Infocielo', label: 'Infocielo', scraper: InfocieloScraper },
+    { source: 'LetraP', label: 'LetraP', scraper: LetraPScraper },
+    { source: 'LaDefensa', label: 'La Defensa de Lanús', scraper: LaDefensaScraper },
+    { source: 'InfoRegion', label: 'InfoRegión', scraper: InfoRegionScraper },
+    { source: 'FESIMUBO', label: 'Fe.Si.Mu.Bo.', scraper: FESIMUBOScraper },
+    { source: 'LomasConectado', label: 'Lomas Conectado', scraper: LomasConectadoScraper }
 ] as const);
 
 const SCRAPER_REGISTRY: Record<string, any> = Object.fromEntries(

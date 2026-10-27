@@ -14,6 +14,7 @@ export interface ScrapedArticle {
     imageUrl?: string;
     publishedAt?: Date;
     section?: string;
+    location?: string;
 }
 
 export interface ScrapeDiagnostics {

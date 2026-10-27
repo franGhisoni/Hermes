@@ -448,7 +448,7 @@ export default function Flows() {
 
                     {/* Medios column */}
                     <section className="flex flex-col gap-3">
-                        <ColumnHeader icon={Mail} label="Medios" count={targets.length} />
+                        <ColumnHeader icon={Mail} label="Medios / Destinos" count={targets.length} />
                         <div className="bg-white border border-editorial-text/15 p-4">
                             <form onSubmit={handleCreateTarget} className="flex flex-col gap-2 font-sans mb-4 pb-4 border-b border-editorial-text/10">
                                 <input

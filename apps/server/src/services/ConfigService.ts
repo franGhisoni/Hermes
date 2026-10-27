@@ -46,7 +46,9 @@ export class ConfigService {
             ai_image_scoring_content_chars: '1200',
             dedup_threshold: '0.15',
             embedding_text_chars: '1000',
-            workflow_default_window_hours: '24'
+            workflow_default_window_hours: '24',
+            ai_attribution: 'false',
+            rewrite_preference_scope: 'USER'
         };
 
         const rows = await prisma.systemSetting.findMany({

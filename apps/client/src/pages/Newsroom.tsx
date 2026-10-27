@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Copy, Check, Eye, Code, Sparkles } from 'lucide-react';
 import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { useAuth } from '../contexts/AuthContext';
-import { FeedbackActions } from '../components/FeedbackActions';
+import { NotificationsPanel } from '../components/NotificationsPanel';
+import { EditorialActions } from '../components/EditorialActions';
+import { EditorialModal } from '../components/EditorialModal';
 
 interface Target {
     id: string;
@@ -13,6 +16,8 @@ interface Target {
     apiUrl?: string | null;
 }
 
+type EditorDraft = { title: string; volanta: string; bajada: string; content: string; tags: string };
+
 export default function Newsroom() {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -20,6 +25,37 @@ export default function Newsroom() {
     const isDemo = user?.role === 'DEMO';
     const [article, setArticle] = useState<Article | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // Editor Tab: 'normal' | 'social' | 'seo'
+    const [editorTab, setEditorTab] = useState<'normal' | 'social' | 'seo'>('normal');
+    const [visualMode, setVisualMode] = useState(true);
+
+    // SEO & Editorial fields (unified)
+    const [seoTitle, setSeoTitle] = useState('');
+    const [seoVolanta, setSeoVolanta] = useState('');
+    const [seoBajada, setSeoBajada] = useState('');
+    const [seoContent, setSeoContent] = useState('');
+    const [seoTags, setSeoTags] = useState('');
+    const visualEditorRef = useRef<HTMLDivElement>(null);
+    const loadedDraftRef = useRef('');
+    const learningComparisonRef = useRef<{ before: EditorDraft; after: EditorDraft } | null>(null);
+
+    // Social Media Copy fields
+    const [socialTwitter, setSocialTwitter] = useState('');
+    const [socialInstagram, setSocialInstagram] = useState('');
+    const [socialFacebook, setSocialFacebook] = useState('');
+    const [socialHashtags, setSocialHashtags] = useState('');
+    const [generatingSocial, setGeneratingSocial] = useState(false);
+    const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+    // Rewrite modal state (sub-prompt / suggestions)
+    const [showRewriteModal, setShowRewriteModal] = useState(false);
+    const [rewriteInstructions, setRewriteInstructions] = useState('');
+    const [learning, setLearning] = useState(false);
+    const [savingLearning, setSavingLearning] = useState(false);
+    const [suggestedPreference, setSuggestedPreference] = useState<string | null>(null);
+    const [correctedPreference, setCorrectedPreference] = useState('');
+    const [showCorrection, setShowCorrection] = useState(false);
 
     // Publish modal state
     const [showPublishModal, setShowPublishModal] = useState(false);
@@ -31,11 +67,62 @@ export default function Newsroom() {
     const [publishing, setPublishing] = useState(false);
     const [loadingTargets, setLoadingTargets] = useState(false);
 
+    function formatToHtml(text: string): string {
+        if (!text) return '';
+        if (text.includes('<p>') || text.includes('<div>') || text.includes('<h2>') || text.includes('<br>')) {
+            return text;
+        }
+        return text
+            .split(/\n\s*\n/)
+            .map(p => p.trim())
+            .filter(Boolean)
+            .map(p => `<p>${p}</p>`)
+            .join('\n');
+    }
+
+    // React must not replace a contentEditable element while it owns the
+    // selection, otherwise the browser resets the caret to the beginning.
+    // Hydrate the DOM only when the user is not actively editing it.
+    useEffect(() => {
+        const editor = visualEditorRef.current;
+        if (!editor || document.activeElement === editor) return;
+
+        const content = seoContent || '<p>Comenzar a escribir...</p>';
+        if (editor.innerHTML !== content) {
+            editor.innerHTML = content;
+        }
+    }, [seoContent, visualMode, editorTab]);
+
     useEffect(() => {
         if (!id) return;
         api.get(`/api/articles/${id}`)
             .then(res => {
-                setArticle(res.data);
+                const data = res.data;
+                setArticle(data);
+                const editorial = (data.editorialData as any) || {};
+                const seo = editorial.seo || {};
+
+                const title = seo.title || data.rewrittenTitle || data.originalTitle || '';
+                const volanta = seo.volanta || (data.location ? data.location.toUpperCase() : (data.section ? data.section.toUpperCase() : 'POLÍTICA'));
+                const bajada = seo.bajada || data.contentPreview || '';
+                const rawContent = seo.content || data.rewrittenContent || data.originalContent || '';
+                const content = formatToHtml(rawContent);
+                const tags = seo.tags || [data.section, data.location].filter(Boolean).join(', ');
+
+                setSeoTitle(title);
+                setSeoVolanta(volanta);
+                setSeoBajada(bajada);
+                setSeoContent(content);
+                setSeoTags(tags);
+                loadedDraftRef.current = JSON.stringify({ title, volanta, bajada, content, tags });
+                learningComparisonRef.current = null;
+
+                if (editorial.social) {
+                    setSocialTwitter(editorial.social.twitter || '');
+                    setSocialInstagram(editorial.social.instagram || '');
+                    setSocialFacebook(editorial.social.facebook || '');
+                    setSocialHashtags(editorial.social.hashtags || '');
+                }
                 setLoading(false);
             });
     }, [id]);
@@ -184,9 +271,10 @@ export default function Newsroom() {
 
     const [rewriting, setRewriting] = useState(false);
 
-    const handleRewrite = async () => {
+    const handleRewrite = async (customInstructions?: string) => {
         if (!id) return;
         setRewriting(true);
+        setShowRewriteModal(false);
 
         if (isDemo) {
             setTimeout(() => {
@@ -197,14 +285,28 @@ export default function Newsroom() {
         }
 
         try {
-            const res = await api.post(`/api/articles/${id}/rewrite`);
-            setArticle(prev => prev ? {
-                ...prev,
-                rewrittenTitle: res.data.rewrittenTitle,
-                rewrittenContent: res.data.rewrittenContent
-            } : null);
+            const instructions = (customInstructions !== undefined ? customInstructions : rewriteInstructions).trim();
+            const res = await api.post(`/api/articles/${id}/rewrite`, {
+                instructions: instructions || undefined
+            });
+            const updated = res.data;
+            setArticle(updated);
+            const seo = (updated.editorialData as any)?.seo || {};
+            setSeoTitle(seo.title || updated.rewrittenTitle || '');
+            setSeoVolanta(seo.volanta || (updated.location ? updated.location.toUpperCase() : (updated.section ? updated.section.toUpperCase() : 'POLÍTICA')));
+            setSeoBajada(seo.bajada || updated.contentPreview || '');
+            setSeoContent(formatToHtml(seo.content || updated.rewrittenContent || ''));
+            setSeoTags(seo.tags || [updated.section, updated.location].filter(Boolean).join(', '));
+            loadedDraftRef.current = JSON.stringify({
+                title: seo.title || updated.rewrittenTitle || '',
+                volanta: seo.volanta || (updated.location ? updated.location.toUpperCase() : (updated.section ? updated.section.toUpperCase() : 'POLÍTICA')),
+                bajada: seo.bajada || updated.contentPreview || '',
+                content: formatToHtml(seo.content || updated.rewrittenContent || ''),
+                tags: seo.tags || [updated.section, updated.location].filter(Boolean).join(', ')
+            });
+            setRewriteInstructions('');
         } catch (e) {
-            alert('Failed to rewrite article');
+            alert('Error al reescribir nota');
         } finally {
             setRewriting(false);
         }
@@ -214,12 +316,30 @@ export default function Newsroom() {
 
     const saveDraft = async () => {
         if (!id || !article) return;
-
         if (isDemo) return;
 
+        const currentEditorial = (article.editorialData as any) || {};
+        const updatedEditorial = {
+            ...currentEditorial,
+            seo: {
+                title: seoTitle,
+                volanta: seoVolanta,
+                bajada: seoBajada,
+                content: seoContent,
+                tags: seoTags
+            },
+            social: {
+                twitter: socialTwitter,
+                instagram: socialInstagram,
+                facebook: socialFacebook,
+                hashtags: socialHashtags
+            }
+        };
+
         return api.put(`/api/articles/${id}`, {
-            rewrittenTitle: article.rewrittenTitle,
-            rewrittenContent: article.rewrittenContent
+            rewrittenTitle: seoTitle,
+            rewrittenContent: seoContent,
+            editorialData: updatedEditorial
         });
     };
 
@@ -236,7 +356,75 @@ export default function Newsroom() {
         }
     };
 
+    const handleLearn = async () => {
+        if (!id || isDemo) return;
+        setLearning(true);
+        try {
+            const before = JSON.parse(loadedDraftRef.current) as EditorDraft;
+            const after = { title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags };
+            const comparison = { before, after };
+            await saveDraft();
+            const response = await api.post(`/api/articles/${id}/learn/analyze`, comparison);
+            learningComparisonRef.current = comparison;
+            setSuggestedPreference(response.data.instruction || '');
+            setCorrectedPreference('');
+            setShowCorrection(!response.data.instruction);
+        } catch (error: unknown) {
+            const detail = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+            alert(detail || 'No se pudieron analizar los cambios.');
+        } finally {
+            setLearning(false);
+        }
+    };
+
+    const saveLearning = async (instruction: string) => {
+        if (!id || !instruction.trim() || !learningComparisonRef.current) return;
+        setSavingLearning(true);
+        try {
+            await api.post(`/api/articles/${id}/learn/confirm`, { instruction: instruction.trim(), ...learningComparisonRef.current });
+            setSuggestedPreference(null);
+            loadedDraftRef.current = JSON.stringify(learningComparisonRef.current.after);
+            learningComparisonRef.current = null;
+            alert('Ajuste guardado. Se aplicará a tus próximas reescrituras.');
+        } catch (error: unknown) {
+            const detail = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+            alert(detail || 'No se pudo guardar el ajuste.');
+        } finally {
+            setSavingLearning(false);
+        }
+    };
+
+    const handleGenerateSocial = async () => {
+        if (!id) return;
+        setGeneratingSocial(true);
+        try {
+            const res = await api.post(`/api/articles/${id}/generate-social`);
+            setSocialTwitter(res.data.twitter || '');
+            setSocialInstagram(res.data.instagram || '');
+            setSocialFacebook(res.data.facebook || '');
+            setSocialHashtags(res.data.hashtags || '');
+            setArticle(prev => prev ? {
+                ...prev,
+                editorialData: res.data.editorialData || {
+                    ...(prev.editorialData as any),
+                    social: res.data
+                }
+            } : null);
+        } catch (e: any) {
+            alert(`Error generando copys para redes: ${e?.response?.data?.error || e?.message}`);
+        } finally {
+            setGeneratingSocial(false);
+        }
+    };
+
+    const copyToClipboard = (text: string, key: string) => {
+        navigator.clipboard.writeText(text);
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey(null), 2000);
+    };
+
     const openPublishModal = async () => {
+        if (isDemo) return;
         setShowPublishModal(true);
         setLoadingTargets(true);
         setTargetSearch('');
@@ -269,26 +457,46 @@ export default function Newsroom() {
     }, [targets, targetSearch]);
 
     const handlePublish = async () => {
-        if (!id || !article || !selectedTargetId) return;
+        if (!id || !article) return;
+        if (article.publicationBlocked) {
+            alert(article.publicationBlockReason || 'Esta nota está bloqueada para publicación por la configuración editorial.');
+            return;
+        }
+        if (!selectedTargetId) {
+            alert('Por favor selecciona un medio de destino.');
+            return;
+        }
         setPublishing(true);
 
         if (isDemo) {
             setArticle(prev => prev ? { ...prev, status: 'PUBLISHED' } : null);
             setShowPublishModal(false);
             setPublishing(false);
-            const target = targets.find(item => item.id === selectedTargetId);
-            alert(`✅ Demo: publicación simulada para ${target?.name || 'el destino seleccionado'}. No se envió nada.`);
+            alert('✅ Demo: publicación simulada para el destino seleccionado. No se envió nada.');
             return;
         }
 
         try {
+            // Publish exactly what is in the editor, SEO fields included.
             const res = await api.post(`/api/articles/${id}/publish`, {
                 targetId: selectedTargetId,
                 category: selectedCategory || undefined,
-                rewrittenTitle: article.rewrittenTitle,
-                rewrittenContent: article.rewrittenContent
+                rewrittenTitle: seoTitle || article.rewrittenTitle,
+                rewrittenContent: seoContent || article.rewrittenContent,
+                seo: { volanta: seoVolanta, bajada: seoBajada, tags: seoTags }
             });
-            setArticle(prev => prev ? { ...prev, status: 'PUBLISHED' } : null);
+            if (res.data.article) {
+                const updated = res.data.article;
+                setArticle(updated);
+                const seo = (updated.editorialData as any)?.seo || {};
+                setSeoTitle(seo.title || updated.rewrittenTitle || '');
+                setSeoVolanta(seo.volanta || '');
+                setSeoBajada(seo.bajada || '');
+                setSeoContent(formatToHtml(seo.content || updated.rewrittenContent || ''));
+                setSeoTags(seo.tags || '');
+            } else {
+                setArticle(prev => prev ? { ...prev, status: 'PUBLISHED' } : null);
+            }
             setShowPublishModal(false);
             alert(`✅ ${res.data.message}`);
         } catch (error: any) {
@@ -301,20 +509,23 @@ export default function Newsroom() {
     if (loading) return <div className="text-editorial-text p-10 font-serif">Loading Editor...</div>;
     if (!article) return <div className="text-editorial-text p-10 font-serif">Article not found</div>;
 
+    const hasEditedDraft = loadedDraftRef.current !== JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
+
     return (
         <div className="h-screen flex flex-col bg-editorial-bg text-editorial-text font-serif overflow-hidden">
             {/* Header */}
-            <header className="h-16 border-b border-editorial-text/10 flex items-center px-6 justify-between bg-editorial-bg/95 backdrop-blur z-10">
+            <header className="min-h-16 border-b border-editorial-text/10 flex flex-wrap items-center gap-3 px-4 lg:px-6 py-2 justify-between bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/" className="flex items-center">
-                        <img src="/logo%20hermes.png" alt="Hermes" className="h-9 w-auto object-contain" />
+                                    <img src="/logo%20hermes.png" alt="Hermes" className="h-9 w-auto object-contain" />
                     </Link>
-                    <Link to="/" className="text-editorial-text/60 hover:text-editorial-text font-sans text-sm font-bold uppercase tracking-widest transition-colors">← Volver al Dashboard</Link>
+                    <Link to="/" className="inline-flex items-center gap-2 border border-editorial-text/20 px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:border-editorial-text hover:bg-editorial-text hover:text-editorial-bg"><span aria-hidden="true">←</span> Noticias</Link>
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
-                <div className="flex gap-3">
-                        <FeedbackActions articleUrl={article.originalUrl} />
-                        <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
+                <div className="flex flex-wrap gap-2 items-center">
+                    {user?.role === 'ADMIN' && <NotificationsPanel />}
+                    {!isDemo && <EditorialActions articleUrl={article.originalUrl} />}
+                    <button onClick={handleReject} className="px-4 py-2 border border-red-500/30 hover:bg-red-500/10 text-red-600 rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors">
                             Rechazar
                         </button>
                         <button
@@ -324,140 +535,240 @@ export default function Newsroom() {
                         >
                             {saving ? 'Guardando...' : 'Guardar'}
                         </button>
-                        <button
-                            onClick={handleRewrite}
-                            disabled={rewriting}
-                            className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
-                        >
-                            {rewriting ? (
-                                <>
-                                    <span className="inline-block w-3 h-3 border-2 border-editorial-text/30 border-t-editorial-text rounded-full animate-spin"></span>
-                                    Reescribiendo...
-                                </>
-                            ) : 'Reescribir'}
-                        </button>
-                        <button
+                        {!isDemo && <button
                             onClick={openPublishModal}
-                            className={`px-4 py-2 rounded text-xs font-sans font-bold uppercase tracking-widest shadow-lg transition-colors ${article.status === 'PUBLISHED'
+                            disabled={article.publicationBlocked}
+                            title={article.publicationBlocked ? (article.publicationBlockReason || 'Nota bloqueada para publicación') : undefined}
+                            className={`px-5 py-2 rounded text-xs font-sans font-bold uppercase tracking-widest shadow transition-colors ${article.status === 'PUBLISHED'
                                 ? 'bg-green-700 text-white hover:bg-green-800'
-                                : 'bg-editorial-text text-editorial-bg hover:bg-editorial-text/90'
+                                : article.publicationBlocked
+                                    ? 'bg-red-100 text-red-800 cursor-not-allowed'
+                                    : 'bg-editorial-text text-editorial-bg hover:bg-black'
                                 }`}
                         >
-                            {article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Artículo'}
-                        </button>
+                            {article.publicationBlocked ? 'Publicación bloqueada' : article.status === 'PUBLISHED' ? '↻ Republicar' : 'Publicar Noticia'}
+                        </button>}
                 </div>
             </header>
+
+            {/* Confirm the editorial lesson inferred from the user's edit. */}
+            {suggestedPreference !== null && <EditorialModal title="Aprender de mis cambios" eyebrow="Aprendizaje editorial" onClose={() => setSuggestedPreference(null)}>
+                    {!showCorrection ? <>
+                        <p className="text-sm leading-relaxed text-editorial-text/65">Comparé el texto que abriste con tu edición. ¿Esto representa lo que querés cambiar en próximas reescrituras?</p>
+                        <blockquote className="border-l-2 border-editorial-text bg-white/70 px-5 py-4 font-serif text-lg italic leading-relaxed">{suggestedPreference}</blockquote>
+                        <div className="flex flex-wrap justify-end gap-3 border-t border-editorial-text/10 pt-5">
+                            <button type="button" className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/55 hover:text-editorial-text" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
+                            <button type="button" className="border border-editorial-text/25 px-4 py-2 text-xs font-bold uppercase tracking-wider hover:bg-editorial-text/5" onClick={() => setShowCorrection(true)}>No, lo explico yo</button>
+                            <button type="button" disabled={savingLearning} className="bg-editorial-text px-5 py-2 text-xs font-bold uppercase tracking-wider text-editorial-bg hover:opacity-85 disabled:opacity-50" onClick={() => saveLearning(suggestedPreference)}>Sí, guardar ajuste</button>
+                        </div>
+                    </> : <>
+                        <p className="text-sm leading-relaxed text-editorial-text/65">Escribí una indicación concreta para las próximas reescrituras.</p>
+                        <label className="block space-y-2 text-xs font-bold uppercase tracking-widest">¿Qué querés que la IA haga distinto?
+                            <textarea value={correctedPreference} onChange={event => setCorrectedPreference(event.target.value)} maxLength={350} rows={4} autoFocus className="w-full resize-y border border-editorial-text/20 bg-white px-3 py-3 font-sans text-sm font-normal normal-case tracking-normal outline-none focus:border-editorial-text" />
+                        </label>
+                        <div className="flex justify-end gap-3 border-t border-editorial-text/10 pt-5">
+                            <button type="button" className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/55 hover:text-editorial-text" onClick={() => setSuggestedPreference(null)}>Cancelar</button>
+                            <button type="button" disabled={savingLearning || !correctedPreference.trim()} className="bg-editorial-text px-5 py-2 text-xs font-bold uppercase tracking-wider text-editorial-bg hover:opacity-85 disabled:opacity-50" onClick={() => saveLearning(correctedPreference)}>Guardar ajuste</button>
+                        </div>
+                    </>}
+            </EditorialModal>}
+            {showRewriteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowRewriteModal(false)}>
+                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-lg mx-4 relative" onClick={e => e.stopPropagation()}>
+                        <button
+                            onClick={() => setShowRewriteModal(false)}
+                            className="absolute top-4 right-4 text-editorial-text/40 hover:text-editorial-text text-lg font-mono leading-none"
+                        >
+                            ✕
+                        </button>
+
+                        <div className="flex items-center gap-2 mb-1.5">
+                            <Sparkles className="w-4 h-4 text-editorial-text" />
+                            <h3 className="text-xl font-bold font-serif italic text-editorial-text">
+                                Reescribir Noticia con IA
+                            </h3>
+                        </div>
+                        <p className="font-sans text-xs text-editorial-text/60 mb-5 leading-relaxed">
+                            Podés reescribir con el estilo editorial estándar o agregar sugerencias e indicaciones personalizadas para guiar el enfoque de la IA.
+                        </p>
+
+                        <div className="space-y-2 mb-4 font-sans">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/60 block">
+                                ¿Agregar comentarios o sugerencias de cambios? (Opcional)
+                            </label>
+                            <textarea
+                                rows={4}
+                                value={rewriteInstructions}
+                                onChange={e => setRewriteInstructions(e.target.value)}
+                                placeholder='Ej: "Enfocate en el reclamo de los vecinos", "Hacelo más formal y directo", "Destacá las declaraciones del intendente"...'
+                                className="w-full bg-white/70 border border-editorial-text/20 p-3 text-xs rounded focus:outline-none focus:border-editorial-text resize-none text-editorial-text placeholder-editorial-text/30"
+                                autoFocus
+                            />
+                        </div>
+
+                        {/* Atajos sugeridos */}
+                        <div className="mb-6 font-sans">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/40 block mb-2">
+                                Sugerencias rápidas:
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                                {[
+                                    'Enfocar en impacto vecinal',
+                                    'Más conciso y directo',
+                                    'Tono urgente de última hora',
+                                    'Destacar citas textuales',
+                                    'Enfatizar datos y cifras'
+                                ].map((sug, i) => (
+                                    <button
+                                        key={i}
+                                        type="button"
+                                        onClick={() => setRewriteInstructions(prev => prev ? `${prev}. ${sug}` : sug)}
+                                        className="text-[10px] px-2.5 py-1 border border-editorial-text/15 hover:border-editorial-text/40 bg-editorial-text/[0.02] hover:bg-editorial-text/5 rounded transition-colors text-editorial-text/70"
+                                    >
+                                        + {sug}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-4 border-t border-editorial-text/10 font-sans text-xs font-bold uppercase tracking-widest">
+                            <button
+                                type="button"
+                                onClick={() => setShowRewriteModal(false)}
+                                className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-editorial-text transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => handleRewrite(rewriteInstructions)}
+                                className="px-6 py-2 bg-editorial-text text-editorial-bg hover:bg-black transition-colors flex items-center gap-2"
+                            >
+                                <Sparkles className="w-3.5 h-3.5" />
+                                {rewriteInstructions.trim() ? 'Reescribir con Sugerencias' : 'Reescribir Directo'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Publish Modal */}
             {showPublishModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowPublishModal(false)}>
-                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-md mx-4" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-xl font-bold mb-2">{isDemo ? 'Vista previa de publicación' : 'Publicar Artículo'}</h3>
-                        <p className="font-sans text-sm text-editorial-text/60 mb-4">
-                            {isDemo
-                                ? 'Estos son destinos ficticios para mostrar el recorrido. El envío se simula y no persiste cambios.'
-                                : 'Seleccioná el medio y la categoría para publicar este artículo.'}
+                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-xl font-bold mb-1">{isDemo ? 'Vista previa de publicación' : 'Publicar Noticia'}</h3>
+                        <p className="font-sans text-xs text-editorial-text/60 mb-6">
+                            Elegí el medio de destino para esta nota.
+                            {loadingTargets && <span className="ml-2 italic text-editorial-text/40">cargando...</span>}
                         </p>
 
-                        {loadingTargets ? (
-                            <div className="py-8 text-center font-sans text-sm opacity-50 animate-pulse">Cargando medios...</div>
-                        ) : targets.length === 0 ? (
-                            <div className="py-8 text-center font-sans text-sm">
-                                <p className="text-editorial-text/60 mb-2">No hay medios configurados.</p>
-                                {user?.role === 'ADMIN' ? (
-                                    <Link to="/flows" className="text-editorial-text font-bold underline underline-offset-4 hover:opacity-80">
-                                        Configurar Medios →
-                                    </Link>
+                        <div className="space-y-4 mb-6">
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
+                                <input
+                                    type="search"
+                                    value={targetSearch}
+                                    onChange={e => setTargetSearch(e.target.value)}
+                                    placeholder="Nombre, email o URL"
+                                    className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text"
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                                {filteredTargets.length === 0 ? (
+                                    <div className="py-6 text-center font-sans text-sm text-editorial-text/50 border border-editorial-text/10">
+                                        No hay medios configurados.
+                                    </div>
                                 ) : (
-                                    <span className="text-xs italic opacity-50 block mt-2">Ponte en contacto con un administrador.</span>
+                                    filteredTargets.map(t => (
+                                        <label
+                                            key={t.id}
+                                            className={`flex items-center gap-3 p-3 border cursor-pointer transition-all font-sans text-sm ${selectedTargetId === t.id
+                                                ? 'border-editorial-text bg-editorial-text/5 shadow-sm'
+                                                : 'border-editorial-text/10 hover:border-editorial-text/30'
+                                                }`}
+                                        >
+                                            <input
+                                                type="radio"
+                                                name="target"
+                                                value={t.id}
+                                                checked={selectedTargetId === t.id}
+                                                onChange={() => setSelectedTargetId(t.id)}
+                                                className="accent-editorial-text"
+                                            />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-bold truncate">{t.name}</span>
+                                                <span className="text-xs text-editorial-text/50 truncate">{t.type === 'IMPACTO_API' ? `API · ${t.apiUrl}` : t.email}</span>
+                                            </div>
+                                        </label>
+                                    ))
                                 )}
                             </div>
-                        ) : (
-                            <>
-                                <div className="mb-3">
-                                    <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
-                                    <input
-                                        type="search"
-                                        value={targetSearch}
-                                        onChange={e => setTargetSearch(e.target.value)}
-                                        placeholder="Nombre o email"
-                                        className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text"
-                                    />
-                                </div>
 
-                                <div className="flex flex-col gap-2 mb-6 max-h-60 overflow-y-auto">
-                                    {filteredTargets.length === 0 ? (
-                                        <div className="py-6 text-center font-sans text-sm text-editorial-text/50 border border-editorial-text/10">
-                                            No hay medios que coincidan.
-                                        </div>
-                                    ) : (
-                                        filteredTargets.map(t => (
-                                            <label
-                                                key={t.id}
-                                                className={`flex items-center gap-3 p-3 border cursor-pointer transition-all font-sans text-sm ${selectedTargetId === t.id
-                                                    ? 'border-editorial-text bg-editorial-text/5 shadow-sm'
-                                                    : 'border-editorial-text/10 hover:border-editorial-text/30'
-                                                    }`}
-                                            >
-                                                <input
-                                                    type="radio"
-                                                    name="target"
-                                                    value={t.id}
-                                                    checked={selectedTargetId === t.id}
-                                                    onChange={() => setSelectedTargetId(t.id)}
-                                                    className="accent-editorial-text"
-                                                />
-                                                <div className="flex flex-col">
-                                                    <span className="font-bold">{t.name}</span>
-                                                    <span className="text-xs text-editorial-text/50">{t.email || t.apiUrl}</span>
-                                                </div>
-                                            </label>
-                                        ))
-                                    )}
-                                </div>
+                            <div>
+                                <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-1 font-sans">Categoría</label>
+                                <select
+                                    value={selectedCategory}
+                                    onChange={e => setSelectedCategory(e.target.value)}
+                                    className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
+                                >
+                                    <option value="">Sin categoría</option>
+                                    {sections.map(s => (
+                                        <option key={s.id} value={s.name}>{s.name}</option>
+                                    ))}
+                                </select>
+                            </div>
 
-                                {/* Category selector */}
-                                <div className="mb-6">
-                                    <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Categoría</label>
-                                    <select
-                                        value={selectedCategory}
-                                        onChange={e => setSelectedCategory(e.target.value)}
-                                        className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
-                                    >
-                                        <option value="">Sin categoría</option>
-                                        {sections.map(s => (
-                                            <option key={s.id} value={s.name}>{s.name}</option>
-                                        ))}
-                                    </select>
-                                    {selectedCategory && (
-                                        <span className="text-[10px] text-editorial-text/40 mt-1 block font-sans italic">
-                                            Se publicará con la categoría: {selectedCategory}
-                                        </span>
-                                    )}
+                            {/* Preview of what is sent */}
+                            <div className="p-3.5 bg-editorial-text/[0.03] border border-editorial-text/20 rounded text-xs space-y-2.5 font-sans">
+                                <div className="border-b border-editorial-text/10 pb-1.5 font-bold uppercase tracking-widest text-[10px] text-editorial-text/60">
+                                    Ficha de publicación
                                 </div>
+                                {seoVolanta && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50 block">Volanta:</span>
+                                        <p className="font-bold text-xs uppercase text-editorial-text">{seoVolanta}</p>
+                                    </div>
+                                )}
+                                <div>
+                                    <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50 block">Título:</span>
+                                    <p className="font-serif italic font-bold text-sm text-editorial-text">{seoTitle || article.rewrittenTitle || article.originalTitle}</p>
+                                </div>
+                                {seoBajada && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50 block">Bajada:</span>
+                                        <p className="font-serif italic text-xs text-editorial-text/80 line-clamp-2">{seoBajada}</p>
+                                    </div>
+                                )}
+                                {seoTags && (
+                                    <div>
+                                        <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50 block">Etiquetas:</span>
+                                        <p className="font-mono text-[11px] text-editorial-text/70">{seoTags}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
 
-                                <div className="flex gap-3 justify-end">
-                                    <button
-                                        onClick={() => setShowPublishModal(false)}
-                                        className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-xs font-sans font-bold uppercase tracking-widest transition-colors"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        onClick={handlePublish}
-                                        disabled={publishing || !selectedTargetId}
-                                        className="px-6 py-2 bg-editorial-text text-editorial-bg hover:bg-black text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
-                                    >
-                                        {publishing ? (
-                                            <>
-                                                <span className="inline-block w-3 h-3 border-2 border-editorial-bg/30 border-t-editorial-bg rounded-full animate-spin"></span>
-                                                Enviando...
-                                            </>
-                                        ) : 'Enviar'}
-                                    </button>
-                                </div>
-                            </>
-                        )}
+                        <div className="flex gap-3 justify-end pt-4 border-t border-editorial-text/10">
+                            <button
+                                onClick={() => setShowPublishModal(false)}
+                                className="px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 text-xs font-sans font-bold uppercase tracking-widest transition-colors"
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                onClick={handlePublish}
+                                disabled={publishing || !selectedTargetId}
+                                className="px-6 py-2 bg-editorial-text text-editorial-bg hover:bg-black text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {publishing ? (
+                                    <>
+                                        <span className="inline-block w-3 h-3 border-2 border-editorial-bg/30 border-t-editorial-bg rounded-full animate-spin"></span>
+                                        Publicando...
+                                    </>
+                                ) : 'Publicar'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -509,6 +820,11 @@ export default function Newsroom() {
                                 <span className="bg-editorial-text text-editorial-bg text-xs font-bold px-2 py-0.5 rounded-full font-mono">
                                     {article.interestScore}/10
                                 </span>
+                                {article.publicationBlocked && (
+                                    <span className="bg-red-100 text-red-800 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest" title={article.publicationBlockReason || undefined}>
+                                        No publicar
+                                    </span>
+                                )}
                             </div>
                         </div>
 
@@ -664,28 +980,432 @@ export default function Newsroom() {
                             );
                         })()}
 
-                        <textarea
-                            ref={titleRef}
-                            rows={1}
-                            className="w-full bg-transparent text-4xl font-black text-editorial-text mb-8 focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none overflow-hidden"
-                            value={article.rewrittenTitle || ''}
-                            onChange={(e) => {
-                                setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null);
-                                // Resize synchronously so the textarea grows
-                                // as the user types instead of waiting for the
-                                // useEffect on the next render.
-                                const el = e.currentTarget;
-                                el.style.height = 'auto';
-                                el.style.height = `${el.scrollHeight}px`;
-                            }}
-                        />
+                        {/* Editorial Tabs */}
+                        <div className="flex border-b border-editorial-text/20 mb-8 gap-6 font-sans text-xs font-bold uppercase tracking-widest items-center">
+                            <button
+                                type="button"
+                                onClick={() => setEditorTab('normal')}
+                                className={`pb-3 border-b-2 transition-colors flex items-center gap-1.5 ${editorTab === 'normal' ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40 hover:text-editorial-text'}`}
+                            >
+                                📰 Noticia Completa (Editorial)
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setEditorTab('social')}
+                                className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${editorTab === 'social' ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40 hover:text-editorial-text'}`}
+                            >
+                                <span>📱 Copy para Redes</span>
+                                {socialTwitter && <span className="w-1.5 h-1.5 rounded-full bg-editorial-text inline-block" title="Copys generados"></span>}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setEditorTab('seo')}
+                                className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${editorTab === 'seo' ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40 hover:text-editorial-text'}`}
+                            >
+                                <span>‹/› Inspector SEO</span>
+                            </button>
+                        </div>
 
-                        <textarea
-                            className="w-full h-[calc(100vh-400px)] bg-transparent resize-none focus:outline-none text-editorial-text text-lg leading-relaxed font-serif p-0"
-                            value={article.rewrittenContent || ''}
-                            onChange={(e) => setArticle(prev => prev ? { ...prev, rewrittenContent: e.target.value } : null)}
-                            placeholder="Start writing..."
-                        />
+                        {/* Tab 1: Noticia Completa (Editorial) */}
+                        {editorTab === 'normal' && (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center pb-3 border-b border-editorial-text/10">
+                                    <div>
+                                        <h4 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
+                                            Redacción
+                                        </h4>
+                                        <p className="text-[11px] font-sans text-editorial-text/50">
+                                            Formato enriquecido y optimizado para SEO
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowRewriteModal(true)}
+                                        disabled={rewriting}
+                                        className="px-3.5 py-1.5 border border-editorial-text/30 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {rewriting ? (
+                                            <>
+                                                <span className="inline-block w-3 h-3 border-2 border-editorial-text/30 border-t-editorial-text rounded-full animate-spin"></span>
+                                                Reescribiendo...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                Reescribir con IA
+                                            </>
+                                        )}
+                                    </button>
+                                    {!isDemo && <button type="button" onClick={handleLearn} disabled={learning || saving || !hasEditedDraft}
+                                        title={!hasEditedDraft ? 'Editá la reescritura para iniciar el aprendizaje' : 'Compara el texto que abriste con tus cambios en el editor'}
+                                        className="px-3.5 py-1.5 border border-editorial-text/30 hover:bg-editorial-text/5 rounded text-xs font-sans font-bold uppercase tracking-widest disabled:opacity-50">
+                                        {learning ? 'Analizando...' : 'Aprender de mis cambios'}
+                                    </button>}
+                                </div>
+
+                                {/* Volanta */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                            Volanta / Localidad
+                                        </label>
+                                        <span className="text-[10px] font-sans text-editorial-text/40 uppercase tracking-widest">
+                                            {seoVolanta.length} caracteres
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={seoVolanta}
+                                        onChange={e => setSeoVolanta(e.target.value)}
+                                        placeholder="Ej: GRAN BUENOS AIRES · LANÚS"
+                                        className="w-full bg-transparent border-b border-editorial-text/20 focus:border-editorial-text outline-none text-xs font-sans font-bold uppercase tracking-widest py-1.5 text-editorial-text placeholder-editorial-text/30"
+                                    />
+                                </div>
+
+                                {/* Título */}
+                                <div>
+                                    <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50 block mb-1">
+                                        Título de la Noticia
+                                    </label>
+                                    <textarea
+                                        ref={titleRef}
+                                        rows={2}
+                                        value={seoTitle}
+                                        onChange={(e) => {
+                                            setSeoTitle(e.target.value);
+                                            setArticle(prev => prev ? { ...prev, rewrittenTitle: e.target.value } : null);
+                                            const el = e.currentTarget;
+                                            el.style.height = 'auto';
+                                            el.style.height = `${el.scrollHeight}px`;
+                                        }}
+                                        placeholder="Título de la nota..."
+                                        className="w-full bg-transparent text-3xl md:text-4xl font-black text-editorial-text focus:outline-none placeholder-editorial-text/30 italic leading-tight resize-none"
+                                    />
+                                </div>
+
+                                {/* Bajada / Copete */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                            Bajada / Copete
+                                        </label>
+                                        <span className="text-[10px] font-sans text-editorial-text/40 italic">
+                                            Resumen introductorio
+                                        </span>
+                                    </div>
+                                    <textarea
+                                        rows={3}
+                                        value={seoBajada}
+                                        onChange={e => setSeoBajada(e.target.value)}
+                                        placeholder="Resumen o copete de la noticia..."
+                                        className="w-full bg-transparent text-base font-serif italic text-editorial-text/80 focus:outline-none leading-relaxed resize-none border-l-2 border-editorial-text/30 pl-3 py-1 placeholder-editorial-text/30"
+                                    />
+                                </div>
+
+                                {/* Cuerpo de la Nota */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                            Cuerpo de la Nota
+                                        </label>
+                                        <div className="flex items-center gap-1 border border-editorial-text/20 p-0.5 rounded text-[11px] font-sans">
+                                            <button
+                                                type="button"
+                                                onClick={() => setVisualMode(true)}
+                                                className={`px-2.5 py-1 font-bold uppercase tracking-wider flex items-center gap-1 transition-colors ${visualMode ? 'bg-editorial-text text-editorial-bg' : 'text-editorial-text/60 hover:text-editorial-text'}`}
+                                            >
+                                                <Eye className="w-3 h-3" />
+                                                Texto Enriquecido (Visual)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setVisualMode(false)}
+                                                className={`px-2.5 py-1 font-bold uppercase tracking-wider flex items-center gap-1 transition-colors ${!visualMode ? 'bg-editorial-text text-editorial-bg' : 'text-editorial-text/60 hover:text-editorial-text'}`}
+                                            >
+                                                <Code className="w-3 h-3" />
+                                                Fuente HTML
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {visualMode ? (
+                                        <div
+                                            ref={visualEditorRef}
+                                            contentEditable
+                                            suppressContentEditableWarning
+                                            onInput={e => {
+                                                const html = e.currentTarget.innerHTML;
+                                                setSeoContent(html);
+                                                setArticle(prev => prev ? { ...prev, rewrittenContent: html } : null);
+                                            }}
+                                            className="prose prose-base max-w-none border border-editorial-text/15 p-6 bg-white/60 min-h-[380px] leading-relaxed font-serif rounded focus:outline-none focus:border-editorial-text shadow-sm overflow-y-auto"
+                                        />
+                                    ) : (
+                                        <textarea
+                                            value={seoContent}
+                                            onChange={e => {
+                                                setSeoContent(e.target.value);
+                                                setArticle(prev => prev ? { ...prev, rewrittenContent: e.target.value } : null);
+                                            }}
+                                            rows={16}
+                                            className="w-full font-mono text-xs leading-relaxed bg-editorial-text/[0.02] border border-editorial-text/20 p-4 focus:border-editorial-text focus:outline-none resize-none rounded shadow-inner"
+                                            placeholder="<p>Texto con formato HTML...</p>"
+                                        />
+                                    )}
+                                </div>
+
+                                {/* Etiquetas / Palabras Clave */}
+                                <div className="pt-2 border-t border-editorial-text/10">
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                            Etiquetas / Palabras Clave
+                                        </label>
+                                        <span className="text-[10px] font-sans text-editorial-text/40">
+                                            Separadas por coma
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={seoTags}
+                                        onChange={e => setSeoTags(e.target.value)}
+                                        placeholder="Ej: Politica, Lanus, Provincia, Seguridad"
+                                        className="w-full bg-transparent border border-editorial-text/20 px-3 py-2 text-xs font-sans rounded focus:border-editorial-text outline-none text-editorial-text placeholder-editorial-text/30"
+                                    />
+                                    {seoTags && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {seoTags.split(',').map(tag => tag.trim()).filter(Boolean).map((tag, i) => (
+                                                <span key={i} className="text-[10px] font-sans font-medium px-2 py-0.5 bg-editorial-text/5 border border-editorial-text/15 rounded-full text-editorial-text/70">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tab 3: Inspector SEO */}
+                        {editorTab === 'seo' && (
+                            <div className="space-y-6 font-sans">
+                                <div className="pb-3 border-b border-editorial-text/10">
+                                    <h4 className="text-xs font-bold uppercase tracking-widest text-editorial-text">
+                                        Inspector SEO & Métricas
+                                    </h4>
+                                    <p className="text-[11px] text-editorial-text/50">
+                                        Análisis de metadatos, rendimiento para buscadores y código de la nota
+                                    </p>
+                                </div>
+
+                                {/* Simulación Google / Buscadores */}
+                                <div className="p-4 bg-white border border-editorial-text/20 rounded shadow-sm">
+                                    <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/50 block mb-2">
+                                        Vista Previa en Buscadores (Google Snippet)
+                                    </span>
+                                    <div className="text-xs text-emerald-800 font-mono mb-1">
+                                        https://tumedio.com/nota/...
+                                    </div>
+                                    <h5 className="text-base text-blue-800 font-bold hover:underline cursor-pointer mb-1 leading-snug">
+                                        {seoTitle || article.rewrittenTitle}
+                                    </h5>
+                                    <p className="text-xs text-editorial-text/70 line-clamp-2 leading-relaxed">
+                                        {seoBajada || (seoContent ? seoContent.replace(/<[^>]*>?/gm, '').slice(0, 160) + '...' : '')}
+                                    </p>
+                                </div>
+
+                                {/* Métricas del Artículo */}
+                                <div className="grid grid-cols-3 gap-3 text-center">
+                                    <div className="p-3 border border-editorial-text/15 bg-editorial-text/[0.02] rounded">
+                                        <span className="text-2xl font-black text-editorial-text block">
+                                            {seoContent ? seoContent.replace(/<[^>]*>?/gm, '').trim().split(/\s+/).filter(Boolean).length : 0}
+                                        </span>
+                                        <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50">
+                                            Palabras
+                                        </span>
+                                    </div>
+                                    <div className="p-3 border border-editorial-text/15 bg-editorial-text/[0.02] rounded">
+                                        <span className="text-2xl font-black text-editorial-text block">
+                                            {seoContent ? seoContent.replace(/<[^>]*>?/gm, '').length : 0}
+                                        </span>
+                                        <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50">
+                                            Caracteres
+                                        </span>
+                                    </div>
+                                    <div className="p-3 border border-editorial-text/15 bg-editorial-text/[0.02] rounded">
+                                        <span className="text-2xl font-black text-editorial-text block">
+                                            {seoTags ? seoTags.split(',').filter(t => t.trim()).length : 0}
+                                        </span>
+                                        <span className="text-[10px] uppercase font-bold tracking-widest text-editorial-text/50">
+                                            Etiquetas
+                                        </span>
+                                    </div>
+                                </div>
+
+                                {/* Raw HTML export */}
+                                <div>
+                                    <div className="flex justify-between items-center mb-1.5">
+                                        <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/50">
+                                            Código Fuente HTML
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={() => copyToClipboard(seoContent, 'html')}
+                                            className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text"
+                                        >
+                                            {copiedKey === 'html' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar HTML</>}
+                                        </button>
+                                    </div>
+                                    <textarea
+                                        readOnly
+                                        rows={8}
+                                        value={seoContent}
+                                        className="w-full font-mono text-xs leading-relaxed bg-editorial-text/[0.03] border border-editorial-text/20 p-3 rounded text-editorial-text/80 focus:outline-none resize-none"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Tab 3: Copy para Redes */}
+                        {editorTab === 'social' && (
+                            <div className="space-y-6">
+                                <div className="flex justify-between items-center pb-4 border-b border-editorial-text/10">
+                                    <div>
+                                        <h4 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
+                                            Copywriting para Redes Sociales
+                                        </h4>
+                                        <p className="text-[11px] font-sans text-editorial-text/50">
+                                            Adaptado al tono del medio con ganchos y hashtags
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={handleGenerateSocial}
+                                        disabled={generatingSocial}
+                                        className="px-3.5 py-1.5 border border-editorial-text/30 hover:bg-editorial-text/5 text-editorial-text rounded text-xs font-sans font-bold uppercase tracking-widest transition-colors disabled:opacity-50 flex items-center gap-2"
+                                    >
+                                        {generatingSocial ? (
+                                            <>
+                                                <span className="inline-block w-3 h-3 border-2 border-editorial-text/30 border-t-editorial-text rounded-full animate-spin"></span>
+                                                Generando copys...
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-3.5 h-3.5" />
+                                                {socialTwitter ? '↻ Regenerar Copys' : '⚡ Generar Copys Redes'}
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+
+                                {(!socialTwitter && !socialInstagram && !socialFacebook) ? (
+                                    <div className="border border-dashed border-editorial-text/20 p-12 text-center my-6">
+                                        <Sparkles className="w-8 h-8 mx-auto mb-3 text-editorial-text/40" />
+                                        <h4 className="text-sm font-sans font-bold uppercase tracking-widest mb-1 text-editorial-text">
+                                            Copys para redes no generados
+                                        </h4>
+                                        <p className="text-xs font-sans text-editorial-text/60 max-w-md mx-auto mb-6 leading-relaxed">
+                                            Creá automáticamente publicaciones optimizadas con emojis, llamados a la acción y hashtags para X (Twitter), Instagram y Facebook.
+                                        </p>
+                                        <button
+                                            type="button"
+                                            onClick={handleGenerateSocial}
+                                            disabled={generatingSocial}
+                                            className="px-5 py-2.5 bg-editorial-text text-editorial-bg hover:bg-black font-sans text-xs font-bold uppercase tracking-widest transition-colors inline-flex items-center gap-2"
+                                        >
+                                            {generatingSocial ? 'Generando...' : '⚡ Generar Copy para Redes'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-6">
+                                        {/* X / Twitter */}
+                                        <div className="border border-editorial-text/15 bg-white/40 p-4 rounded">
+                                            <div className="flex justify-between items-center mb-2 font-sans">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold uppercase tracking-widest text-editorial-text">X / Twitter</span>
+                                                    <span className={`text-[10px] font-mono px-1.5 py-0.5 border rounded ${socialTwitter.length > 280 ? 'border-red-400 text-red-600' : 'border-editorial-text/20 text-editorial-text/60'}`}>
+                                                        {socialTwitter.length}/280
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(socialTwitter, 'twitter')}
+                                                    className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
+                                                >
+                                                    {copiedKey === 'twitter' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                                                </button>
+                                            </div>
+                                            <textarea
+                                                value={socialTwitter}
+                                                onChange={e => setSocialTwitter(e.target.value)}
+                                                rows={4}
+                                                className="w-full bg-transparent font-sans text-sm focus:outline-none resize-none leading-relaxed"
+                                            />
+                                        </div>
+
+                                        {/* Instagram */}
+                                        <div className="border border-editorial-text/15 bg-white/40 p-4 rounded">
+                                            <div className="flex justify-between items-center mb-2 font-sans">
+                                                <span className="text-xs font-bold uppercase tracking-widest text-editorial-text">Instagram (Feed / Carrusel)</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(socialInstagram, 'instagram')}
+                                                    className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
+                                                >
+                                                    {copiedKey === 'instagram' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                                                </button>
+                                            </div>
+                                            <textarea
+                                                value={socialInstagram}
+                                                onChange={e => setSocialInstagram(e.target.value)}
+                                                rows={7}
+                                                className="w-full bg-transparent font-sans text-sm focus:outline-none resize-none leading-relaxed"
+                                            />
+                                        </div>
+
+                                        {/* Facebook */}
+                                        <div className="border border-editorial-text/15 bg-white/40 p-4 rounded">
+                                            <div className="flex justify-between items-center mb-2 font-sans">
+                                                <span className="text-xs font-bold uppercase tracking-widest text-editorial-text">Facebook</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => copyToClipboard(socialFacebook, 'facebook')}
+                                                    className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
+                                                >
+                                                    {copiedKey === 'facebook' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                                                </button>
+                                            </div>
+                                            <textarea
+                                                value={socialFacebook}
+                                                onChange={e => setSocialFacebook(e.target.value)}
+                                                rows={5}
+                                                className="w-full bg-transparent font-sans text-sm focus:outline-none resize-none leading-relaxed"
+                                            />
+                                        </div>
+
+                                        {/* Hashtags */}
+                                        {socialHashtags && (
+                                            <div className="border border-editorial-text/15 bg-white/40 p-4 rounded">
+                                                <div className="flex justify-between items-center mb-2 font-sans">
+                                                    <span className="text-xs font-bold uppercase tracking-widest text-editorial-text">Hashtags recomendados</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => copyToClipboard(socialHashtags, 'hashtags')}
+                                                        className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
+                                                    >
+                                                        {copiedKey === 'hashtags' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
+                                                    </button>
+                                                </div>
+                                                <input
+                                                    type="text"
+                                                    value={socialHashtags}
+                                                    onChange={e => setSocialHashtags(e.target.value)}
+                                                    className="w-full bg-transparent font-mono text-xs text-editorial-text/80 focus:outline-none"
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         <div className="mt-8 pt-4 border-t border-editorial-text/10 text-right">
                             <span className="text-xs font-sans text-editorial-text/40 italic">

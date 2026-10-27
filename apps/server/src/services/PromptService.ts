@@ -13,6 +13,12 @@ export class PromptService {
         });
     }
 
+    async getPromptByName(name: string) {
+        return prisma.promptConfig.findFirst({
+            where: { name }
+        });
+    }
+
     async updatePrompt(id: string, template: string) {
         return prisma.promptConfig.update({
             where: { id },
@@ -72,6 +78,53 @@ Contenido original:
 {{content}}`);
         }
 
+        // Rewrite SEO (structured HTML)
+        const seoRewrite = await this.getPromptByType('REWRITE_SEO');
+        if (!seoRewrite) {
+            await this.createPrompt('Reescritura SEO (HTML)', 'REWRITE_SEO',
+                `Sos un redactor periodístico y especialista en SEO para un portal de noticias. Reescribí el siguiente artículo para que sea 100% original, atractivo, de alto impacto y optimizado para posicionamiento en motores de búsqueda (SEO), conservando toda la información factual.
+
+ESTILO PERIODÍSTICO
+- Neutral, dinámico, riguroso, en español rioplatense periodístico.
+
+ESTRUCTURA SEO Y CÓDIGO HTML
+- El contenido del cuerpo (campo "content") DEBE estar formateado en CÓDIGO FUENTE HTML listo para insertar directamente en el editor (modo "Fuente HTML").
+- Usá etiquetas semánticas:
+  * Párrafos claros encerrados en <p>...</p>.
+  * Subtítulos informativos con <h2>...</h2> intercalados cada 2 o 3 párrafos, que contengan palabras clave relevantes de la noticia.
+  * Resaltá nombres de figuras clave, datos duros, cifras y conceptos determinantes con <strong>...</strong> para facilitar la lectura rápida y mejorar el rastreo SEO.
+  * Si hay declaraciones textuales extensas, usá <blockquote>...</blockquote>.
+  * PROHIBIDO usar <h1> (el título ya actúa como H1).
+  * PROHIBIDO usar formato Markdown (no uses **, ##, ni guiones de lista markdown; usá etiquetas HTML puras <p>, <h2>, <ul><li> si aplica).
+
+CAMPOS REQUERIDOS EN EL JSON
+- "title": Título atractivo, claro, optimizado para SEO (ideal entre 50 y 70 caracteres, con la entidad o hecho principal al inicio, sin comillas al empezar).
+- "volanta": Sobretítulo / volanta breve en mayúsculas que ubique el tema o la localidad (ej: "POLÍTICA", "LEGISLATURA", "JUDICIALES", "GREMIALES").
+- "bajada": Copete periodístico de 1 a 2 oraciones (texto plano sin etiquetas HTML) que amplíe el titular con los datos fundamentales de la noticia.
+- "content": Cuerpo completo de la nota en HTML válido (<p>, <h2>, <strong>, etc.).
+- "tags": Entre 4 y 6 palabras o frases clave separadas por comas (ej: "Municipio, Intendente, Obras públicas, Presupuesto").
+
+REGLAS INVIOLABLES
+- NUNCA menciones medios fuente ni competencia (Clarín, La Nación, Infobae, TN, C5N, Ámbito, Cronista, Página/12, MDZ, Télam, NA, Noticias Argentinas, Reuters, EFE, etc.).
+- Eliminá firmas ajenas, fechas de cables de agencia y datelines de inicio ("Buenos Aires, 15 de marzo (NA)...").
+- Citas textuales: mantené lo dicho entre comillas verbatim, cambiando atribuciones de medios ajenos por fórmulas neutrales ("afirmó", "expresó", "señaló").
+- Prohibido cualquier carácter fuera del alfabeto latino + tildes/ñ/¿¡.
+- Respuesta en formato JSON estricto sin code fences de markdown.
+
+SALIDA (JSON ESTRICTO):
+{
+  "title": "Nuevo título optimizado",
+  "volanta": "VOLANTA TEMÁTICA",
+  "bajada": "Bajada o copete conciso sin HTML.",
+  "content": "<p>Párrafo inicial con <strong>datos clave</strong>...</p><h2>Subtítulo descriptivo con keywords</h2><p>Segundo párrafo...</p>",
+  "tags": "Etiqueta 1, Etiqueta 2, Etiqueta 3"
+}
+
+Título original: {{title}}
+Contenido original:
+{{content}}`);
+        }
+
         // Interest
         const interest = await this.getPromptByType('INTEREST');
         if (!interest) {
@@ -117,6 +170,48 @@ Return a JSON object:
 }
 - Use 0-based index for the best image
 - Use -1 if ALL images should be rejected (none are suitable, e.g. no score > 5)`);
+        }
+
+        // Social Media Copy
+        const defaultSocialCopyPrompt = `Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos.
+A partir de la siguiente noticia, generá los textos (copys) optimizados para publicar en redes sociales.
+
+Título original: {{title}}
+Contenido:
+{{content}}
+
+REGLAS GENERALES INVIOLABLES:
+- NUNCA termines los textos con puntos suspensivos ("...") ni dejes oraciones cortadas a la mitad. Todos los textos deben quedar cerrados, coherentes y completos.
+- Los copys deben ser informativos y contar los hechos centrales de la nota (qué ocurrió, quiénes intervinieron, localidad o zona y consecuencias o situación actual).
+- Evitá frases genéricas o teasers vacíos; dale valor informativo a la audiencia.
+- Usá español rioplatense periodístico, dinámico y profesional.
+
+Instrucciones por red:
+1. "twitter": Texto para X (Twitter). Máximo 260 caracteres en total. Directo, impactante, con los datos clave del hecho en 1 o 2 oraciones completas, 1-2 emojis sobrios y 2 hashtags clave (ej: #Seguridad #Política).
+2. "instagram": Texto para Instagram (feed / carrusel).
+   - Línea inicial: Gancho o titular de impacto en MAYÚSCULAS con emoji sobrio al inicio (ej: 🚨, 📌, ⚖️, ⚠️).
+   - Cuerpo: 2 o 3 párrafos cortos explicando lo principal de la noticia.
+   - Cierre y llamado a la acción (CTA): Incluí SIEMPRE una invitación a ampliar la información y a debatir:
+     "📲 Leé la nota completa ingresando al link de nuestra bio."
+     "¿Qué opinás sobre este hecho? Te leemos en los comentarios 👇"
+   - Bloque de hashtags al final (separado por una línea vacía): 5 a 8 hashtags relevantes (localidad y temática).
+3. "facebook": Texto para Facebook. Tono informativo, cercano y claro. 2 párrafos concisos explicando lo acontecido, llamado a leer la nota ("👉 Leé la nota completa con todos los detalles en nuestro sitio web.") y pregunta para abrir el debate en comentarios.
+4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad (ej: "#Policiales #Seguridad #Provincia").
+
+Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
+{
+  "twitter": "...",
+  "instagram": "...",
+  "facebook": "...",
+  "hashtags": "#Tema #Localidad #..."
+}`;
+
+        const socialCopy = await this.getPromptByType('SOCIAL_COPY');
+        if (!socialCopy) {
+            await this.createPrompt('Copy para Redes Sociales', 'SOCIAL_COPY', defaultSocialCopyPrompt);
+        } else if (!socialCopy.template.includes('NUNCA termines los textos con puntos suspensivos')) {
+            await this.updatePrompt(socialCopy.id, defaultSocialCopyPrompt);
+            console.log('[PromptService] Updated SOCIAL_COPY prompt with anti-truncation rules and bio CTA');
         }
     }
 }

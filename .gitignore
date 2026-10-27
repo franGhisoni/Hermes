@@ -46,6 +46,9 @@ yarn-error.log*
 *.env
 ! .env.example
 
+# Local Railway project token (never commit or upload)
+railwat
+
 # Vera/Prisma
 *.db
 *.sqlite

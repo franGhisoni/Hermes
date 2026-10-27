@@ -21,9 +21,14 @@ const escapeHtml = (text: string) => text
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
-/** Hermes stores plain text with blank lines between paragraphs; the CMS takes HTML. */
+const HTML_BLOCK = /<(p|h[2-6]|ul|ol|blockquote|div)[\s>]/i;
+
+/**
+ * Hermes stores either plain text with blank lines between paragraphs or, for SEO
+ * rewrites, ready-made HTML. The CMS takes HTML, so only plain text is converted.
+ */
 export const contentToHtml = (content: string): string =>
-    content.trim()
+    HTML_BLOCK.test(content) ? content.trim() : content.trim()
         .split(/\n\s*\n/)
         .map(paragraph => paragraph.trim())
         .filter(Boolean)
@@ -42,6 +47,12 @@ export const mapSection = (sectionMap: unknown, ...candidates: Array<string | nu
         if (typeof mapped === 'string' && mapped.trim()) return mapped.trim();
     }
     return candidates.find(Boolean) || undefined;
+};
+
+/** A field of the SEO version the newsroom edits (editorialData.seo), if any. */
+const seoText = (article: Article, key: string): string | undefined => {
+    const value = (article.editorialData as any)?.seo?.[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 };
 
 /** The CMS downgrades to draft (with a warning) if the key's account cannot publish. */
@@ -68,7 +79,7 @@ export class ImpactoApiService {
         const payload: Record<string, unknown> = {
             title,
             section,
-            subtitle: article.contentPreview || undefined,
+            subtitle: seoText(article, 'bajada') || article.contentPreview || undefined,
             body: contentToHtml(content),
             status,
             // Retrying with the same ref never duplicates the note in the CMS.

@@ -5,6 +5,8 @@ import { ImageService } from './ImageService';
 import { ConfigService } from './ConfigService';
 import { Prisma } from '@prisma/client';
 import { isLaNacionAccessWall } from './ContentSafetyService';
+import { buildEditorialData, EditorialService } from './EditorialService';
+import { getAutomaticRewriteInstructions } from './LearningService';
 
 export interface ProcessingDiagnostics {
     attempted: number;
@@ -39,11 +41,13 @@ export class ProcessorService {
     private aiService: AIService;
     private articleService: ArticleService;
     private configService: ConfigService;
+    private editorialService: EditorialService;
 
     constructor() {
         this.aiService = new AIService();
         this.articleService = new ArticleService();
         this.configService = new ConfigService();
+        this.editorialService = new EditorialService();
     }
 
     async processScrapedArticles(sourceName: string, articles: ScrapedArticle[]) {
@@ -162,9 +166,29 @@ export class ProcessorService {
         const interestScore = await this.aiService.calculateInterestScore(article.title, article.content);
         console.log(`[Processor] Interest Score: ${interestScore}/10`);
 
-        // 4. Rewrite Content
-        console.log(`[Processor] Rewriting content...`);
-        const rewritten = await this.aiService.rewriteContent(article.title, article.content);
+        // Apply the tenant's editorial policy after scoring and before rewrite.
+        // This makes score-based style rules use the same score that the editor
+        // sees, while sensitive-person rules can lower it or block publishing.
+        const editorial = await this.editorialService.evaluate({
+            title: article.title,
+            content: article.content,
+            section: article.section,
+            location: article.location,
+            score: interestScore
+        });
+        if (editorial.matchedPeople.length > 0 || editorial.matchedRules.length > 0) {
+            console.log(`[Processor] Editorial policy: score ${interestScore} -> ${editorial.effectiveScore}; `
+                + `${editorial.matchedPeople.length} sensitive person(s), ${editorial.matchedRules.length} style rule(s), `
+                + `blocked=${editorial.publicationBlocked}`);
+        }
+
+        // 4. Rewrite Content (structured SEO format)
+        console.log(`[Processor] Rewriting content with SEO format...`);
+        const seoRewrite = await this.aiService.rewriteSeo(article.title, article.content, editorial.style, await getAutomaticRewriteInstructions());
+        const rewritten = {
+            title: seoRewrite.title,
+            content: seoRewrite.content
+        };
 
         // 5. Image Strategy
         // Original image is treated as last resort — it often has text overlays,
@@ -326,6 +350,7 @@ export class ProcessorService {
             newArticle = await this.articleService.saveArticle({
                 sourceId,
                 section: article.section,
+                location: article.location,
                 originalTitle: article.title,
                 originalContent: article.content,
                 originalUrl: article.url,
@@ -334,11 +359,18 @@ export class ProcessorService {
                 imageCandidates: imageCandidates,
                 imageScores: imageScoresDict,
                 aiDecisions: aiTrace,
+                editorialData: {
+                    ...buildEditorialData(editorial),
+                    seo: seoRewrite
+                },
                 embedding,
                 rewrittenTitle: rewritten.title,
                 rewrittenContent: rewritten.content,
-                interestScore,
-                status: 'PENDING'
+                aiRewriteSnapshot: seoRewrite,
+                interestScore: editorial.effectiveScore,
+                status: editorial.publicationBlocked ? 'REJECTED' : 'PENDING',
+                publicationBlocked: editorial.publicationBlocked,
+                publicationBlockReason: editorial.publicationBlockReason
             });
         } catch (error) {
             if (!this.isOriginalUrlUniqueConflict(error)) throw error;

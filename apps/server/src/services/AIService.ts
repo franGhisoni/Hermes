@@ -30,7 +30,7 @@ export class AIService {
         return response.data[0].embedding;
     }
 
-    async rewriteContent(title: string, content: string, style: string = 'neutral'): Promise<{ title: string; content: string }> {
+    async rewriteContent(title: string, content: string, style: string = 'neutral', customInstructions?: string): Promise<{ title: string; content: string }> {
         const config = await this.promptService.getPromptByType('REWRITE');
         let promptTemplate = config?.template || `
         You are an expert news editor. Rewrite the following news article to be unique, engaging, and plagiarism-free while retaining all factual information.
@@ -45,10 +45,11 @@ export class AIService {
         const maxTokens = await this.configService.getRewriteMaxTokens();
 
         const sourceContent = content.substring(0, contentChars);
-        const prompt = promptTemplate
+        let prompt = promptTemplate
             .replace('{{style}}', style)
             .replace('{{title}}', title)
             .replace('{{content}}', sourceContent);
+        if (customInstructions?.trim()) prompt += `\n\nINDICACIONES EDITORIALES CONFIRMADAS:\n${customInstructions.trim()}`;
 
         const runOnce = async (messages: any[]) => {
             const completion = await this.openai.chat.completions.create({
@@ -142,6 +143,214 @@ export class AIService {
             title: result.title || title,
             content: result.content || content
         };
+    }
+
+    async rewriteSeo(
+        title: string,
+        content: string,
+        style: string = 'neutral',
+        customInstructions?: string
+    ): Promise<{ title: string; volanta: string; bajada: string; content: string; tags: string }> {
+        const config = await this.promptService.getPromptByType('REWRITE_SEO') ||
+                       await this.promptService.getPromptByType('REWRITE');
+        
+        const promptTemplate = config?.template || '';
+        const contentChars = await this.configService.getRewriteContentChars();
+        const model = await this.configService.getRewriteModel();
+        const maxTokens = await this.configService.getRewriteMaxTokens();
+
+        const sourceContent = content.substring(0, contentChars);
+        let prompt = promptTemplate
+            .replace('{{style}}', style)
+            .replace('{{title}}', title)
+            .replace('{{content}}', sourceContent);
+
+        if (customInstructions && customInstructions.trim()) {
+            prompt += `\n\nINDICACIONES ESPECÍFICAS / SUGERENCIAS DEL EDITOR:\n"${customInstructions.trim()}"\nTené en cuenta especialmente estas indicaciones para modular el tono, enfoque, datos a resaltar o cambios solicitados.`;
+        }
+
+        const runOnce = async (messages: any[]) => {
+            const completion = await this.openai.chat.completions.create({
+                messages,
+                model,
+                response_format: { type: "json_object" },
+                max_tokens: Math.max(maxTokens, 2500),
+            });
+            return completion.choices[0].message.content || '{}';
+        };
+
+        const parseJson = (raw: string): any => {
+            try {
+                const cleaned = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+                return JSON.parse(cleaned);
+            } catch (e) {
+                console.error('[AIService] Failed to parse JSON response in rewriteSeo:', e);
+                return null;
+            }
+        };
+
+        try {
+            const rawContent = await runOnce([{ role: "user", content: prompt }]);
+            const result = parseJson(rawContent);
+            if (result && result.title && result.content) {
+                return {
+                    title: result.title,
+                    volanta: result.volanta || '',
+                    bajada: result.bajada || '',
+                    content: result.content,
+                    tags: result.tags || ''
+                };
+            }
+        } catch (error) {
+            console.error('[AIService] Error in rewriteSeo:', error);
+        }
+
+        // Fallback: format paragraphs into clean semantic HTML
+        const htmlFallback = content
+            .split(/\n\s*\n/)
+            .map(p => p.trim())
+            .filter(Boolean)
+            .map(p => `<p>${p}</p>`)
+            .join('\n');
+
+        return {
+            title,
+            volanta: '',
+            bajada: '',
+            content: htmlFallback,
+            tags: ''
+        };
+    }
+
+    async generateSocialCopy(
+        title: string,
+        content: string
+    ): Promise<{ twitter: string; instagram: string; facebook: string; hashtags: string }> {
+        const model = await this.configService.getRewriteModel();
+        const contentChars = await this.configService.getRewriteContentChars();
+        const snippet = content.substring(0, contentChars);
+
+        const config = await this.promptService.getPromptByType('SOCIAL_COPY');
+
+        let prompt: string;
+        if (config?.template) {
+            prompt = config.template
+                .replace('{{title}}', title)
+                .replace('{{content}}', snippet);
+        } else {
+            prompt = `
+Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos.
+A partir de la siguiente noticia, generá los textos (copys) optimizados para publicar en redes sociales.
+
+Título original: ${title}
+Contenido: ${snippet}
+
+REGLAS GENERALES INVIOLABLES:
+- NUNCA termines los textos con puntos suspensivos ("...") ni dejes oraciones cortadas a la mitad. Todos los textos deben quedar cerrados, coherentes y completos.
+- Los copys deben ser informativos y contar los hechos centrales de la nota (qué ocurrió, quiénes intervinieron, localidad o zona y consecuencias o situación actual).
+- Evitá frases genéricas o teasers vacíos; dale valor informativo a la audiencia.
+- Usá español rioplatense periodístico, dinámico y profesional.
+
+Instrucciones por red:
+1. "twitter": Texto para X (Twitter). Máximo 260 caracteres en total. Directo, impactante, con los datos clave del hecho en 1 o 2 oraciones completas, 1-2 emojis sobrios y 2 hashtags clave (ej: #Seguridad #Política).
+2. "instagram": Texto para Instagram (feed / carrusel).
+   - Línea inicial: Gancho o titular de impacto en MAYÚSCULAS con emoji sobrio al inicio (ej: 🚨, 📌, ⚖️, ⚠️).
+   - Cuerpo: 2 o 3 párrafos cortos explicando lo principal de la noticia.
+   - Cierre y llamado a la acción (CTA): Incluí SIEMPRE una invitación a ampliar la información y a debatir:
+     "📲 Leé la nota completa ingresando al link de nuestra bio."
+     "¿Qué opinás sobre este hecho? Te leemos en los comentarios 👇"
+   - Bloque de hashtags al final (separado por una línea vacía): 5 a 8 hashtags relevantes (localidad y temática).
+3. "facebook": Texto para Facebook. Tono informativo, cercano y claro. 2 párrafos concisos explicando lo acontecido, llamado a leer la nota ("👉 Leé la nota completa con todos los detalles en nuestro sitio web.") y pregunta para abrir el debate en comentarios.
+4. "hashtags": String con 5 a 8 hashtags separados por espacios relevantes a la temática y localidad (ej: "#Policiales #Seguridad #Provincia").
+
+Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
+{
+  "twitter": "...",
+  "instagram": "...",
+  "facebook": "...",
+  "hashtags": "#Tema #Localidad #..."
+}
+`;
+        }
+
+        try {
+            const completion = await this.openai.chat.completions.create({
+                messages: [{ role: "user", content: prompt }],
+                model,
+                response_format: { type: "json_object" },
+                max_tokens: 1500,
+            });
+            const raw = completion.choices[0].message.content || '{}';
+            const parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
+            return {
+                twitter: parsed.twitter || '',
+                instagram: parsed.instagram || '',
+                facebook: parsed.facebook || '',
+                hashtags: parsed.hashtags || ''
+            };
+        } catch (err) {
+            console.error('[AIService] Failed to generate social copy with OpenAI, generating smart editorial fallback:', err);
+            return this.buildSocialCopyFallback(title, content);
+        }
+    }
+
+    private buildSocialCopyFallback(
+        title: string,
+        content: string
+    ): { twitter: string; instagram: string; facebook: string; hashtags: string } {
+        const cleanTitle = (title || '').replace(/\s+/g, ' ').trim();
+        const cleanContent = (content || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/&nbsp;/g, ' ')
+            .replace(/&amp;/g, '&')
+            .replace(/&quot;/g, '"')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        // Extraer oraciones completas delimitadas por signos de puntuación final
+        const rawSentences = cleanContent.match(/[^.!?]+[.!?]+/g) || [];
+        const sentences = rawSentences.map(s => s.trim()).filter(Boolean);
+
+        let summary = '';
+        for (const sentence of sentences) {
+            const candidate = summary ? `${summary} ${sentence}` : sentence;
+            if (candidate.length <= 280) {
+                summary = candidate;
+            } else {
+                if (!summary) {
+                    // Si la primera oración es muy extensa, cortar en el último espacio antes de 220 caracteres
+                    const slice = sentence.slice(0, 220);
+                    const lastSpace = slice.lastIndexOf(' ');
+                    summary = (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[.,;:!?]+$/, '') + '.';
+                }
+                break;
+            }
+        }
+
+        if (!summary) {
+            summary = cleanTitle ? `${cleanTitle}.` : 'Información en desarrollo.';
+        }
+
+        const hashtags = '#Noticias #Actualidad';
+
+        // Instagram: Gancho, resumen informativo, llamado al link de la bio y debate, hashtags
+        const instagram = `🚨 ${cleanTitle}\n\n${summary}\n\n📲 Leé la nota completa ingresando al enlace de nuestra bio.\n\n¿Qué opinás sobre este hecho? Te leemos en los comentarios 👇\n\n${hashtags}`;
+
+        // Facebook: Título, resumen, llamado al sitio web y comentarios
+        const facebook = `${cleanTitle}\n\n${summary}\n\n👉 Leé la nota completa con todos los detalles en nuestro sitio web.\n¿Qué opinás al respecto? Dejanos tu comentario 👇`;
+
+        // Twitter: Máximo 260 caracteres, completo y sin puntos suspensivos
+        let twitterLead = `🚨 ${cleanTitle}\n\n${summary}`;
+        if (twitterLead.length > 195) {
+            const slice = twitterLead.slice(0, 190);
+            const lastSpace = slice.lastIndexOf(' ');
+            twitterLead = (lastSpace > 0 ? slice.slice(0, lastSpace) : slice).replace(/[.,;:!?]+$/, '') + '.';
+        }
+        const twitter = `${twitterLead}\n\n🔗 Más info en la nota.\n#Noticias`;
+
+        return { twitter, instagram, facebook, hashtags };
     }
 
     private getRewriteLengthIssue(source: string, rewritten: string | undefined | null): string | null {

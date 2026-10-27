@@ -4,7 +4,7 @@ import express from 'express';
 import cors from 'cors';
 import { QueueService, SCRAPER_SOURCES, SCRAPER_DEFINITIONS, ensureRegisteredScrapers } from './services/QueueService';
 import { ArticleService, buildContentPreview } from './services/ArticleService';
-import { ScrapeRunTrigger } from '@prisma/client';
+import { BlockedPersonAction, EditorialRuleMatchType, ScrapeRunTrigger } from '@prisma/client';
 import { prisma } from './lib/prisma';
 
 const app = express();
@@ -24,7 +24,9 @@ import sectionRouter from './routes/SectionRouter';
 import filterCategoryRouter from './routes/FilterCategoryRouter';
 import targetRouter from './routes/TargetRouter';
 import feedbackRouter from './routes/FeedbackRouter';
-import { requireAuth, requireAdmin, requireReadOnly } from './middlewares/auth';
+import { requireAuth, requireAdmin, requireReadOnly, AuthRequest } from './middlewares/auth';
+import learningRouter from './routes/LearningRouter';
+import { getUserRewriteInstructions } from './services/LearningService';
 
 import { SchedulerService } from './services/SchedulerService';
 import cron from 'node-cron';
@@ -101,6 +103,7 @@ app.use('/api/targets', targetRouter);
 // read-only guard also protects against crafted mutation requests.
 app.use('/api', requireAuth, requireReadOnly);
 app.use('/api', feedbackRouter);
+app.use('/api', learningRouter);
 
 // GET /api/articles - List all articles
 app.get('/api/articles', async (req, res) => {
@@ -132,6 +135,19 @@ app.get('/api/articles/:id', async (req, res) => {
     try {
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Not found' });
+
+        const editorial = (article.editorialData as any) || {};
+        if (!editorial.seo) {
+            editorial.seo = {
+                title: article.rewrittenTitle || article.originalTitle,
+                volanta: article.location ? article.location.toUpperCase() : (article.section ? article.section.toUpperCase() : 'POLÍTICA'),
+                bajada: article.contentPreview || (article.originalContent ? article.originalContent.slice(0, 180) + '...' : ''),
+                content: article.rewrittenContent || article.originalContent,
+                tags: [article.section, article.location].filter(Boolean).join(', ')
+            };
+            article.editorialData = editorial;
+        }
+
         res.json(article);
     } catch (error) {
         console.error('Error fetching article:', error);
@@ -223,11 +239,221 @@ app.use('/api/scrape-schedules', scrapeScheduleRouter);
 import notificationRouter from './routes/NotificationRouter';
 app.use('/api/notifications', notificationRouter);
 
+import { ConfigService } from './services/ConfigService';
+import { buildEditorialData, EditorialService } from './services/EditorialService';
+const configService = new ConfigService();
+const editorialService = new EditorialService();
+
 // Config API (admin-only for the remaining config endpoints)
 app.use('/api/config', requireAdmin);
 
-import { ConfigService } from './services/ConfigService';
-const configService = new ConfigService();
+const EDITORIAL_MATCH_TYPES = ['GLOBAL', 'SECTION', 'SCORE_RANGE', 'LOCATION'] as const;
+const BLOCKED_PERSON_ACTIONS = ['LOWER_SCORE', 'BLOCK_PUBLICATION'] as const;
+
+function optionalScore(value: unknown): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 1 && parsed <= 10 ? parsed : null;
+}
+
+function normalizeAliases(value: unknown): string[] {
+    const values = Array.isArray(value)
+        ? value
+        : typeof value === 'string' ? value.split(',') : [];
+    return Array.from(new Set(values
+        .map(item => String(item).trim())
+        .filter(Boolean)));
+}
+
+// Editorial policy configuration. Rules are intentionally independent from
+// prompts so section/score/location conditions can evolve without replacing
+// the global rewrite prompt.
+app.get('/api/config/editorial', async (_req, res) => {
+    try {
+        const [rules, blockedPeople] = await Promise.all([
+            prisma.editorialRule.findMany({ orderBy: [{ priority: 'desc' }, { createdAt: 'asc' }] }),
+            prisma.blockedPerson.findMany({ orderBy: { name: 'asc' } })
+        ]);
+        res.json({ rules, blockedPeople });
+    } catch (error) {
+        console.error('Failed to fetch editorial configuration:', error);
+        res.status(500).json({ error: 'No se pudo cargar la configuración editorial' });
+    }
+});
+
+app.post('/api/config/editorial/rules', async (req, res) => {
+    const body = req.body || {};
+    const matchType = body.matchType as EditorialRuleMatchType;
+    const minScore = optionalScore(body.minScore);
+    const maxScore = optionalScore(body.maxScore);
+    if (!body.name?.trim() || !body.styleInstruction?.trim()) {
+        return res.status(400).json({ error: 'name y styleInstruction son obligatorios' });
+    }
+    if (!(EDITORIAL_MATCH_TYPES as readonly string[]).includes(matchType)) {
+        return res.status(400).json({ error: 'matchType inválido' });
+    }
+    if (matchType === 'SECTION' && !body.section?.trim()) {
+        return res.status(400).json({ error: 'section es obligatoria para una regla por sección' });
+    }
+    if (matchType === 'SCORE_RANGE' && minScore === null && maxScore === null) {
+        return res.status(400).json({ error: 'Definí al menos un límite de score' });
+    }
+    if (matchType === 'LOCATION' && !body.location?.trim()) {
+        return res.status(400).json({ error: 'location es obligatoria para una regla por ubicación' });
+    }
+    if (minScore !== null && maxScore !== null && minScore > maxScore) {
+        return res.status(400).json({ error: 'minScore no puede ser mayor que maxScore' });
+    }
+
+    try {
+        const rule = await prisma.editorialRule.create({
+            data: {
+                name: body.name.trim(),
+                active: body.active !== false,
+                priority: Number.isInteger(Number(body.priority)) ? Number(body.priority) : 0,
+                matchType,
+                section: body.section?.trim() || null,
+                minScore,
+                maxScore,
+                location: body.location?.trim() || null,
+                styleInstruction: body.styleInstruction.trim()
+            }
+        });
+        res.status(201).json(rule);
+    } catch (error) {
+        console.error('Failed to create editorial rule:', error);
+        res.status(500).json({ error: 'No se pudo crear la regla editorial' });
+    }
+});
+
+app.put('/api/config/editorial/rules/:id', async (req, res) => {
+    const current = await prisma.editorialRule.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: 'Regla editorial no encontrada' });
+    const body = req.body || {};
+    const matchType = (body.matchType ?? current.matchType) as EditorialRuleMatchType;
+    const minScore = optionalScore(body.minScore ?? current.minScore);
+    const maxScore = optionalScore(body.maxScore ?? current.maxScore);
+    if (!(EDITORIAL_MATCH_TYPES as readonly string[]).includes(matchType)) {
+        return res.status(400).json({ error: 'matchType inválido' });
+    }
+    if (matchType === 'SECTION' && !(body.section ?? current.section)?.trim()) {
+        return res.status(400).json({ error: 'section es obligatoria para una regla por sección' });
+    }
+    if (matchType === 'SCORE_RANGE' && minScore === null && maxScore === null) {
+        return res.status(400).json({ error: 'Definí al menos un límite de score' });
+    }
+    if (matchType === 'LOCATION' && !(body.location ?? current.location)?.trim()) {
+        return res.status(400).json({ error: 'location es obligatoria para una regla por ubicación' });
+    }
+    if (minScore !== null && maxScore !== null && minScore > maxScore) {
+        return res.status(400).json({ error: 'minScore no puede ser mayor que maxScore' });
+    }
+
+    try {
+        const rule = await prisma.editorialRule.update({
+            where: { id: current.id },
+            data: {
+                name: typeof body.name === 'string' ? body.name.trim() : current.name,
+                active: typeof body.active === 'boolean' ? body.active : current.active,
+                priority: body.priority === undefined ? current.priority : Number(body.priority),
+                matchType,
+                section: (body.section ?? current.section)?.trim() || null,
+                minScore,
+                maxScore,
+                location: (body.location ?? current.location)?.trim() || null,
+                styleInstruction: typeof body.styleInstruction === 'string'
+                    ? body.styleInstruction.trim()
+                    : current.styleInstruction
+            }
+        });
+        res.json(rule);
+    } catch (error) {
+        console.error('Failed to update editorial rule:', error);
+        res.status(500).json({ error: 'No se pudo actualizar la regla editorial' });
+    }
+});
+
+app.delete('/api/config/editorial/rules/:id', async (req, res) => {
+    try {
+        await prisma.editorialRule.delete({ where: { id: req.params.id } });
+        res.json({ message: 'Regla editorial eliminada' });
+    } catch (error) {
+        res.status(500).json({ error: 'No se pudo eliminar la regla editorial' });
+    }
+});
+
+app.post('/api/config/editorial/people', async (req, res) => {
+    const body = req.body || {};
+    const action = body.action as BlockedPersonAction;
+    const scoreWhenMatched = body.scoreWhenMatched === undefined
+        ? 2
+        : optionalScore(body.scoreWhenMatched);
+    if (!body.name?.trim()) return res.status(400).json({ error: 'name es obligatorio' });
+    if (!(BLOCKED_PERSON_ACTIONS as readonly string[]).includes(action)) {
+        return res.status(400).json({ error: 'action inválida' });
+    }
+    if (scoreWhenMatched === null) {
+        return res.status(400).json({ error: 'scoreWhenMatched debe estar entre 1 y 10' });
+    }
+
+    try {
+        const person = await prisma.blockedPerson.create({
+            data: {
+                name: body.name.trim(),
+                aliases: normalizeAliases(body.aliases),
+                action,
+                scoreWhenMatched,
+                active: body.active !== false
+            }
+        });
+        res.status(201).json(person);
+    } catch (error) {
+        console.error('Failed to create blocked person:', error);
+        res.status(500).json({ error: 'No se pudo crear la persona sensible' });
+    }
+});
+
+app.put('/api/config/editorial/people/:id', async (req, res) => {
+    const current = await prisma.blockedPerson.findUnique({ where: { id: req.params.id } });
+    if (!current) return res.status(404).json({ error: 'Persona sensible no encontrada' });
+    const body = req.body || {};
+    const action = (body.action ?? current.action) as BlockedPersonAction;
+    const scoreWhenMatched = body.scoreWhenMatched === undefined
+        ? current.scoreWhenMatched
+        : optionalScore(body.scoreWhenMatched);
+    if (!(BLOCKED_PERSON_ACTIONS as readonly string[]).includes(action)) {
+        return res.status(400).json({ error: 'action inválida' });
+    }
+    if (scoreWhenMatched === null) {
+        return res.status(400).json({ error: 'scoreWhenMatched debe estar entre 1 y 10' });
+    }
+
+    try {
+        const person = await prisma.blockedPerson.update({
+            where: { id: current.id },
+            data: {
+                name: typeof body.name === 'string' ? body.name.trim() : current.name,
+                aliases: body.aliases === undefined ? current.aliases : normalizeAliases(body.aliases),
+                action,
+                scoreWhenMatched,
+                active: typeof body.active === 'boolean' ? body.active : current.active
+            }
+        });
+        res.json(person);
+    } catch (error) {
+        console.error('Failed to update blocked person:', error);
+        res.status(500).json({ error: 'No se pudo actualizar la persona sensible' });
+    }
+});
+
+app.delete('/api/config/editorial/people/:id', async (req, res) => {
+    try {
+        await prisma.blockedPerson.delete({ where: { id: req.params.id } });
+        res.json({ message: 'Persona sensible eliminada' });
+    } catch (error) {
+        res.status(500).json({ error: 'No se pudo eliminar la persona sensible' });
+    }
+});
 
 // POST /api/scrape/all - Queue every registered source across its enabled sections.
 // This intentionally has its own admin guard: individual manual runs remain
@@ -461,6 +687,7 @@ const validateReasoningEffort = (value: string): string | null =>
         : 'El nivel de razonamiento debe ser none, low, medium, high, xhigh o max';
 
 const SETTINGS: SettingDef[] = [
+    { api: 'aiAttributionEnabled', key: 'ai_attribution', kind: 'boolean' },
     { api: 'scrapeLimit', key: 'scrape_limit', kind: 'int', min: 1 },
     { api: 'scrapeOnlyToday', key: 'scrape_only_today', kind: 'boolean' },
     { api: 'scraperWorkerConcurrency', key: 'scraper_worker_concurrency', kind: 'int', min: 1, max: 8 },
@@ -621,7 +848,7 @@ app.put('/api/config/prompts/:id', async (req, res) => {
     }
 });
 
-// POST /api/articles/:id/publish - Publish article to a target (send email)
+// POST /api/articles/:id/publish - Publish article to a target (email or Impacto API)
 import { MailService } from './services/MailService';
 import { TargetPublisher } from './services/TargetPublisher';
 import { AIService } from './services/AIService';
@@ -631,12 +858,62 @@ const mailService = new MailService();
 const targetPublisher = new TargetPublisher(mailService);
 const aiService = new AIService();
 
+// POST /api/articles/:id/rewrite-seo - Generate the SEO rewrite (title, volanta, bajada, HTML body, tags)
+app.post('/api/articles/:id/rewrite-seo', async (req, res) => {
+    try {
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        const instructions = [await getUserRewriteInstructions((req as AuthRequest).user!.id), req.body?.instructions || req.body?.comments].filter(Boolean).join('\n');
+        const rewritten = await aiService.rewriteSeo(article.originalTitle, article.originalContent, 'neutral', instructions);
+        const existingData = (article.editorialData as any) || {};
+        const updated = await prisma.article.update({
+            where: { id: article.id },
+            data: {
+                editorialData: {
+                    ...existingData,
+                    seo: rewritten
+                },
+                aiRewriteSnapshot: rewritten
+            }
+        });
+        res.json({ ...rewritten, editorialData: updated.editorialData });
+    } catch (error: any) {
+        console.error('Error generating SEO rewrite:', error);
+        res.status(500).json({ error: 'Failed to generate SEO rewrite' });
+    }
+});
+
+// POST /api/articles/:id/generate-social - Generate social media copy
+app.post('/api/articles/:id/generate-social', async (req, res) => {
+    try {
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Article not found' });
+
+        const social = await aiService.generateSocialCopy(article.originalTitle, article.originalContent);
+        const existingData = (article.editorialData as any) || {};
+        const updated = await prisma.article.update({
+            where: { id: article.id },
+            data: {
+                editorialData: {
+                    ...existingData,
+                    social
+                }
+            }
+        });
+        res.json({ ...social, editorialData: updated.editorialData });
+    } catch (error: any) {
+        console.error('Error generating social copy:', error);
+        res.status(500).json({ error: 'Failed to generate social copy' });
+    }
+});
+
 app.post('/api/articles/:id/publish', async (req, res) => {
-    const { targetId, category, rewrittenTitle, rewrittenContent } = req.body;
+    const { targetId, category, rewrittenTitle, rewrittenContent, seo } = req.body;
     if (!targetId) return res.status(400).json({ error: 'targetId is required' });
 
     try {
-        const draftUpdates: { rewrittenTitle?: string; rewrittenContent?: string; contentPreview?: string } = {};
+        const draftUpdates: { rewrittenTitle?: string; rewrittenContent?: string; contentPreview?: string; editorialData?: any } = {};
         if (typeof rewrittenTitle === 'string') draftUpdates.rewrittenTitle = rewrittenTitle;
         if (typeof rewrittenContent === 'string') draftUpdates.rewrittenContent = rewrittenContent;
 
@@ -649,6 +926,22 @@ app.post('/api/articles/:id/publish', async (req, res) => {
             });
         }
 
+        // The newsroom sends the SEO fields it is editing; keep them with the note.
+        if (seo && typeof seo === 'object' && !Array.isArray(seo)) {
+            const editorialData = (article.editorialData as any) || {};
+            const text = (key: string) => typeof seo[key] === 'string' ? seo[key] : (editorialData.seo?.[key] || '');
+            draftUpdates.editorialData = {
+                ...editorialData,
+                seo: {
+                    title: draftUpdates.rewrittenTitle ?? text('title'),
+                    content: draftUpdates.rewrittenContent ?? text('content'),
+                    volanta: text('volanta'),
+                    bajada: text('bajada'),
+                    tags: text('tags')
+                }
+            };
+        }
+
         if (Object.keys(draftUpdates).length > 0) {
             if (draftUpdates.rewrittenContent !== undefined) {
                 draftUpdates.contentPreview = buildContentPreview(draftUpdates.rewrittenContent || article.originalContent);
@@ -657,6 +950,29 @@ app.post('/api/articles/:id/publish', async (req, res) => {
                 where: { id: req.params.id },
                 data: draftUpdates,
                 include: { source: true }
+            });
+        }
+
+        const editorial = await editorialService.evaluate({
+            title: article.originalTitle,
+            content: article.originalContent,
+            section: article.section,
+            location: article.location,
+            score: article.interestScore ?? 5
+        });
+        if (article.publicationBlocked || editorial.publicationBlocked) {
+            if (!article.publicationBlocked || !editorial.publicationBlocked) {
+                await prisma.article.update({
+                    where: { id: article.id },
+                    data: {
+                        status: 'REJECTED',
+                        publicationBlocked: true,
+                        publicationBlockReason: editorial.publicationBlockReason || article.publicationBlockReason
+                    }
+                });
+            }
+            return res.status(409).json({
+                error: article.publicationBlockReason || editorial.publicationBlockReason || 'La nota está bloqueada para publicación.'
             });
         }
 
@@ -682,19 +998,20 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         }
 
         // Update article status to PUBLISHED
-        await prisma.article.update({
+        const updatedArticle = await prisma.article.update({
             where: { id: req.params.id },
             data: {
                 status: 'PUBLISHED',
                 publications: { create: { targetId: target.id, targetName: target.name, targetEmail: TargetPublisher.destinationLabel(target), category: articleCategory || null } }
-            }
+            },
+            include: { source: true }
         });
 
         await dailyOperationalLogService.recordPublication(true).catch(logError => {
             console.error('[DailyOperationalLog] Failed to record publication counter:', logError);
         });
 
-        res.json({ success: true, message: `Article published to ${target.name}` });
+        res.json({ success: true, message: `Article published to ${target.name}`, article: updatedArticle });
     } catch (error) {
         console.error('Error publishing article:', error);
         await dailyOperationalLogService.recordPublication(false).catch(logError => {
@@ -717,16 +1034,23 @@ app.delete('/api/articles/:id', async (req, res) => {
 // PUT /api/articles/:id - Update article
 app.put('/api/articles/:id', async (req, res) => {
     try {
-        const { rewrittenTitle, rewrittenContent } = req.body;
+        const { rewrittenTitle, rewrittenContent, editorialData } = req.body;
         const article = await articleService.getArticleById(req.params.id);
         if (!article) return res.status(404).json({ error: 'Article not found' });
+        
+        const updateData: any = {};
+        if (typeof rewrittenTitle === 'string') updateData.rewrittenTitle = rewrittenTitle;
+        if (typeof rewrittenContent === 'string') {
+            updateData.rewrittenContent = rewrittenContent;
+            updateData.contentPreview = buildContentPreview(rewrittenContent || article.originalContent);
+        }
+        if (editorialData !== undefined) {
+            updateData.editorialData = editorialData;
+        }
+
         const updated = await prisma.article.update({
             where: { id: req.params.id },
-            data: {
-                rewrittenTitle,
-                rewrittenContent,
-                contentPreview: buildContentPreview(rewrittenContent || article.originalContent)
-            }
+            data: updateData
         });
         res.json(updated);
     } catch (error) {
@@ -741,14 +1065,35 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Not found' });
 
         const aiService = new AIService();
-        const result = await aiService.rewriteContent(article.originalTitle, article.originalContent);
+        const editorial = await editorialService.evaluate({
+            title: article.originalTitle,
+            content: article.originalContent,
+            section: article.section,
+            location: article.location,
+            score: article.interestScore ?? 5
+        });
+        const instructions = [await getUserRewriteInstructions((req as AuthRequest).user!.id), req.body?.instructions || req.body?.comments].filter(Boolean).join('\n');
+        const result = await aiService.rewriteSeo(article.originalTitle, article.originalContent, editorial.style, instructions);
+
+        const existingData = (article.editorialData as any) || {};
+        const updatedEditorial = {
+            ...existingData,
+            ...buildEditorialData(editorial),
+            seo: result
+        };
 
         const updated = await prisma.article.update({
             where: { id: article.id },
             data: {
                 rewrittenTitle: result.title,
                 rewrittenContent: result.content,
-                contentPreview: buildContentPreview(result.content)
+                aiRewriteSnapshot: result,
+                contentPreview: buildContentPreview(result.bajada || result.content),
+                interestScore: editorial.effectiveScore,
+                editorialData: updatedEditorial,
+                publicationBlocked: editorial.publicationBlocked,
+                publicationBlockReason: editorial.publicationBlockReason,
+                status: editorial.publicationBlocked ? 'REJECTED' : article.status
             }
         });
 

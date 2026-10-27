@@ -116,3 +116,8 @@ test('publish con apiMode PUBLISHED pide status published y registra el aviso de
     assert.equal(bodies[0].status, 'published');
     assert.equal(result.ok, true);
 });
+
+test('contentToHtml deja pasar el HTML de la reescritura SEO', () => {
+    const html = '<p>Primer <strong>párrafo</strong>.</p><h2>Subtítulo</h2><p>Otro.</p>';
+    assert.equal(contentToHtml(`  ${html}\n`), html);
+});

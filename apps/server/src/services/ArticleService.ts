@@ -86,11 +86,16 @@ export class ArticleService {
         imageCandidates?: string[];
         imageScores?: Record<string, number>;
         aiDecisions?: any;
+        editorialData?: any;
+        location?: string;
+        publicationBlocked?: boolean;
+        publicationBlockReason?: string | null;
         sourceId: string;
         section?: string;
         embedding: number[];
         rewrittenTitle?: string;
         rewrittenContent?: string;
+        aiRewriteSnapshot?: { title: string; content: string; volanta?: string; bajada?: string; tags?: string };
         interestScore?: number;
         status?: 'PENDING' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
     }) {
@@ -107,6 +112,7 @@ export class ArticleService {
                 id,
                 sourceId: data.sourceId,
                 section: data.section,
+                location: data.location,
                 originalTitle: data.originalTitle,
                 originalContent: data.originalContent,
                 originalUrl: data.originalUrl,
@@ -115,8 +121,12 @@ export class ArticleService {
                 imageCandidates: data.imageCandidates || [],
                 imageScores: data.imageScores || {},
                 aiDecisions: data.aiDecisions ?? undefined,
+                editorialData: data.editorialData ?? undefined,
+                publicationBlocked: data.publicationBlocked ?? false,
+                publicationBlockReason: data.publicationBlockReason ?? undefined,
                 rewrittenTitle: data.rewrittenTitle,
                 rewrittenContent: data.rewrittenContent,
+                aiRewriteSnapshot: data.aiRewriteSnapshot ?? undefined,
                 contentPreview: buildContentPreview(data.rewrittenContent || data.originalContent),
                 interestScore: data.interestScore,
                 status: data.status || 'PENDING',
@@ -222,6 +232,8 @@ export class ArticleService {
                     originalImageUrl: true,
                     featureImageUrl: true,
                     interestScore: true,
+                    publicationBlocked: true,
+                    publicationBlockReason: true,
                     status: true,
                     createdAt: true,
                     section: true,

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertCircle, Lightbulb, Check } from 'lucide-react';
-import { FeedbackActions } from '../components/FeedbackActions';
+import { EditorialActions } from '../components/EditorialActions';
 
 interface PublicationContext {
     wasPublished: boolean;
@@ -42,7 +42,7 @@ export default function Reports() {
     return <div className="min-h-screen bg-editorial-bg text-editorial-text font-sans">
         <nav className="flex flex-wrap items-center justify-between gap-3 border-b border-editorial-text/10 px-4 py-4 sm:px-8">
             <Link to="/" className="flex items-center gap-3"><img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto" /><span className="border-l border-editorial-text/20 pl-3 text-xs font-bold uppercase tracking-widest">Reportes</span></Link>
-            <div className="flex flex-wrap items-center gap-3"><FeedbackActions /><Link to="/" className="border border-editorial-text/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:bg-editorial-text hover:text-editorial-bg">← Noticias</Link></div>
+            <div className="flex flex-wrap items-center gap-3"><EditorialActions /><Link to="/" className="border border-editorial-text/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:bg-editorial-text hover:text-editorial-bg">← Noticias</Link></div>
         </nav>
         <main className="mx-auto max-w-5xl px-4 py-10 sm:px-8">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-editorial-text/20 pb-6">

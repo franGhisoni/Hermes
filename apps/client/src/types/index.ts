@@ -30,8 +30,13 @@ export interface Article {
     aiDecisions?: AiDecisionsTrace | null;
     rewrittenTitle?: string;
     rewrittenContent?: string;
+    aiRewriteSnapshot?: Record<string, string> | null;
     contentPreview?: string;
     interestScore?: number;
+    location?: string | null;
+    editorialData?: Record<string, any> | null;
+    publicationBlocked?: boolean;
+    publicationBlockReason?: string | null;
     status: 'PENDING' | 'APPROVED' | 'PUBLISHED' | 'REJECTED';
     createdAt: string;
     source?: {
@@ -116,4 +121,13 @@ export interface DailyOperationalLog {
     publishFailedCount: number;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface Target {
+    id: string;
+    name: string;
+    type?: 'EMAIL' | 'IMPACTO_API';
+    email?: string | null;
+    apiUrl?: string | null;
+    apiMode?: string;
 }

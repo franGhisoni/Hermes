@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FilePlus2, Loader2 } from 'lucide-react';
+import { FilePlus2, ImagePlus, Loader2, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { EditorialModal } from './EditorialModal';
@@ -21,6 +21,28 @@ const MODES: Array<{ key: ManualMode; label: string; hint: string; placeholder: 
     }
 ];
 
+// Shrinks the photo before upload so the request stays small.
+function resizeImage(file: File, maxSide = 1600): Promise<string> {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('No se pudo leer la imagen.'));
+        reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('El archivo no es una imagen válida.'));
+            img.onload = () => {
+                const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.round(img.width * scale);
+                canvas.height = Math.round(img.height * scale);
+                canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.85));
+            };
+            img.src = reader.result as string;
+        };
+        reader.readAsDataURL(file);
+    });
+}
+
 export function ManualNoteButton() {
     const navigate = useNavigate();
     const [open, setOpen] = useState(false);
@@ -28,6 +50,7 @@ export function ManualNoteButton() {
     const [text, setText] = useState('');
     const [title, setTitle] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+    const [imageData, setImageData] = useState('');
     const [instructions, setInstructions] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
@@ -44,10 +67,11 @@ export function ManualNoteButton() {
         setSubmitting(true);
         setError('');
         try {
-            const res = await api.post('/api/articles/manual', { mode, text, title, imageUrl, instructions });
+            const res = await api.post('/api/articles/manual', { mode, text, title, imageUrl: imageData ? '' : imageUrl, imageData, instructions });
             setText('');
             setTitle('');
             setImageUrl('');
+            setImageData('');
             setInstructions('');
             setOpen(false);
             navigate(`/newsroom/${res.data.id}`);
@@ -58,6 +82,19 @@ export function ManualNoteButton() {
             setSubmitting(false);
         }
     };
+
+    const pickFile = async (file?: File) => {
+        if (!file) return;
+        setError('');
+        try {
+            setImageData(await resizeImage(file));
+            setImageUrl('');
+        } catch (err) {
+            setError((err as Error).message);
+        }
+    };
+
+    const preview = imageData || (imageUrl.trim().startsWith('http') ? imageUrl.trim() : '');
 
     const inputClass = 'w-full border border-editorial-text/15 bg-white px-3 py-2 text-sm outline-none focus:border-editorial-text';
 
@@ -76,15 +113,27 @@ export function ManualNoteButton() {
             </div>
             <p className="text-sm leading-relaxed text-editorial-text/65">{current.hint}</p>
             <textarea value={text} onChange={e => setText(e.target.value)} rows={12} placeholder={current.placeholder} aria-label="Texto de la nota" disabled={submitting} className={`${inputClass} resize-y leading-relaxed`} />
-            <div className="grid gap-3 sm:grid-cols-2">
-                <label className="space-y-1 text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">
-                    <span>Título sugerido (opcional)</span>
-                    <input value={title} onChange={e => setTitle(e.target.value)} disabled={submitting} className={`${inputClass} font-normal normal-case tracking-normal`} />
-                </label>
-                <label className="space-y-1 text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">
-                    <span>URL de imagen (opcional)</span>
-                    <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="Si queda vacío, se busca una" disabled={submitting} className={`${inputClass} font-normal normal-case tracking-normal`} />
-                </label>
+            <label className="block space-y-1 text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">
+                <span>Título sugerido (opcional)</span>
+                <input value={title} onChange={e => setTitle(e.target.value)} disabled={submitting} className={`${inputClass} font-normal normal-case tracking-normal`} />
+            </label>
+            <div className="space-y-1">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">Foto de la nota (opcional: si no elegís, se busca una)</p>
+                {preview ? (
+                    <div className="relative w-full max-w-xs">
+                        <img src={preview} alt="Foto elegida" className="aspect-[4/3] w-full border border-editorial-text/15 object-cover" />
+                        <button type="button" onClick={() => { setImageData(''); setImageUrl(''); }} disabled={submitting} aria-label="Quitar foto"
+                            className="absolute right-2 top-2 rounded-full border border-editorial-text/20 bg-editorial-bg p-1.5 hover:border-editorial-text"><X size={14} /></button>
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <label className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 border border-editorial-text/30 px-3 py-2 text-xs font-bold uppercase tracking-wider hover:bg-editorial-text/5 ${submitting ? 'pointer-events-none opacity-40' : ''}`}>
+                            <ImagePlus size={14} /> Subir foto
+                            <input type="file" accept="image/*" className="hidden" disabled={submitting} onChange={e => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+                        </label>
+                        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="o pegá la URL de una imagen" disabled={submitting} className={inputClass} />
+                    </div>
+                )}
             </div>
             <label className="block space-y-1 text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">
                 <span>Indicaciones para la IA (opcional)</span>

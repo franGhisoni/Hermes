@@ -15,6 +15,9 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true
 }));
+// Manual notes may carry an uploaded photo as a data URL; body-parser skips
+// requests already parsed, so this larger limit only applies to that route.
+app.use('/api/articles/manual', express.json({ limit: '15mb' }));
 app.use(express.json());
 
 import authRouter from './routes/AuthRouter';
@@ -857,19 +860,26 @@ const vorknewsPublishService = new VorknewsPublishService();
 // a note or idea (WRITER) or a police report (POLICE).
 const manualProcessor = new ProcessorService();
 app.post('/api/articles/manual', async (req, res) => {
-    const { mode, text, title, section, imageUrl, instructions } = req.body || {};
+    const { mode, text, title, section, imageUrl, imageData, instructions } = req.body || {};
     if (mode !== 'WRITER' && mode !== 'POLICE') return res.status(400).json({ error: 'mode must be WRITER or POLICE' });
     if (typeof text !== 'string' || text.trim().length < 20) return res.status(400).json({ error: 'El texto es demasiado corto.' });
 
     try {
         const userId = (req as AuthRequest).user!.id;
+        let chosenImage = typeof imageUrl === 'string' ? imageUrl : undefined;
+        // An uploaded photo has no URL to hotlink, so it is stored like DALL-E images.
+        const upload = typeof imageData === 'string' ? imageData.match(/^data:(image\/(?:jpeg|png|webp|gif));base64,(.+)$/) : null;
+        if (upload) {
+            const record = await prisma.generatedImage.create({ data: { data: Buffer.from(upload[2], 'base64'), mimeType: upload[1] } });
+            chosenImage = `/api/images/${record.id}`;
+        }
         const userInstructions = [await getUserRewriteInstructions(userId), instructions].filter(Boolean).join('\n');
         const article = await manualProcessor.processManualArticle({
             mode,
             text,
             title: typeof title === 'string' ? title : undefined,
             section: typeof section === 'string' && section.trim() ? section.trim() : undefined,
-            imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
+            imageUrl: chosenImage,
             instructions: userInstructions,
             userId
         });

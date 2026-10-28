@@ -277,7 +277,8 @@ export class ProcessorService {
         };
 
         const userImage = (input.imageUrl || '').trim();
-        const image = userImage.startsWith('http')
+        const hasUserImage = userImage.startsWith('http') || userImage.startsWith('/api/images/');
+        const image = hasUserImage
             ? { featureImageUrl: userImage, imageCandidates: [userImage], imageScoresDict: { [userImage]: 10 }, aiTrace: undefined }
             : await this.findFeatureImage(article, title);
 
@@ -287,7 +288,7 @@ export class ProcessorService {
             originalTitle: title,
             originalContent: text,
             originalUrl: article.url,
-            originalImageUrl: userImage.startsWith('http') ? userImage : undefined,
+            originalImageUrl: hasUserImage ? userImage : undefined,
             featureImageUrl: image.featureImageUrl,
             imageCandidates: image.imageCandidates,
             imageScores: image.imageScoresDict,

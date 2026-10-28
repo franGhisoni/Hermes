@@ -381,6 +381,8 @@ enum PromptType {
   IMAGE_SELECT
   REWRITE_SEO
   SOCIAL_COPY
+  MANUAL_WRITER
+  POLICE_REPORT
 }
 
 enum EditorialRuleMatchType {

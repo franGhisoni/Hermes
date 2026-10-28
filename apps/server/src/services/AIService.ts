@@ -149,9 +149,11 @@ export class AIService {
         title: string,
         content: string,
         style: string = 'neutral',
-        customInstructions?: string
-    ): Promise<{ title: string; volanta: string; bajada: string; content: string; tags: string }> {
-        const config = await this.promptService.getPromptByType('REWRITE_SEO') ||
+        customInstructions?: string,
+        promptType: 'REWRITE_SEO' | 'MANUAL_WRITER' | 'POLICE_REPORT' = 'REWRITE_SEO'
+    ): Promise<{ title: string; volanta: string; bajada: string; content: string; tags: string; reviewPoints?: string[] }> {
+        const config = await this.promptService.getPromptByType(promptType) ||
+                       await this.promptService.getPromptByType('REWRITE_SEO') ||
                        await this.promptService.getPromptByType('REWRITE');
         
         const promptTemplate = config?.template || '';
@@ -198,7 +200,10 @@ export class AIService {
                     volanta: result.volanta || '',
                     bajada: result.bajada || '',
                     content: result.content,
-                    tags: result.tags || ''
+                    tags: result.tags || '',
+                    ...(Array.isArray(result.reviewPoints)
+                        ? { reviewPoints: result.reviewPoints.map((point: unknown) => String(point).trim()).filter(Boolean) }
+                        : {})
                 };
             }
         } catch (error) {

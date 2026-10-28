@@ -155,7 +155,7 @@ export class MailService {
                 <div style="margin-bottom: 30px; padding: 15px; background: #f9f9f9; border-left: 4px solid #333;">
                     <h2 style="margin-top: 0;">${article.rewrittenTitle || article.originalTitle}</h2>
                     <p style="white-space: pre-wrap; line-height: 1.6;">${article.rewrittenContent || article.originalContent}</p>
-                    <p style="font-size: 12px; color: #999;">Fuente: <a href="${article.originalUrl}" style="color: #666;">Enlace Original</a> | Status: ${article.status}</p>
+                    <p style="font-size: 12px; color: #999;">Fuente: ${article.originalUrl.startsWith('manual://') ? 'Carga manual' : `<a href="${article.originalUrl}" style="color: #666;">Enlace Original</a>`} | Status: ${article.status}</p>
                 </div>
             `;
         }

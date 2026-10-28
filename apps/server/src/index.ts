@@ -852,11 +852,39 @@ app.put('/api/config/prompts/:id', async (req, res) => {
 import { MailService } from './services/MailService';
 import { TargetPublisher } from './services/TargetPublisher';
 import { AIService } from './services/AIService';
+import { ProcessorService, manualPromptType } from './services/ProcessorService';
 import { dailyOperationalLogService } from './services/DailyOperationalLogService';
 import { isLaNacionAccessWall } from './services/ContentSafetyService';
 const mailService = new MailService();
 const targetPublisher = new TargetPublisher(mailService);
 const aiService = new AIService();
+
+// POST /api/articles/manual - Create an article from text an editor pasted:
+// a note or idea (WRITER) or a police report (POLICE).
+const manualProcessor = new ProcessorService();
+app.post('/api/articles/manual', async (req, res) => {
+    const { mode, text, title, section, imageUrl, instructions } = req.body || {};
+    if (mode !== 'WRITER' && mode !== 'POLICE') return res.status(400).json({ error: 'mode must be WRITER or POLICE' });
+    if (typeof text !== 'string' || text.trim().length < 20) return res.status(400).json({ error: 'El texto es demasiado corto.' });
+
+    try {
+        const userId = (req as AuthRequest).user!.id;
+        const userInstructions = [await getUserRewriteInstructions(userId), instructions].filter(Boolean).join('\n');
+        const article = await manualProcessor.processManualArticle({
+            mode,
+            text,
+            title: typeof title === 'string' ? title : undefined,
+            section: typeof section === 'string' && section.trim() ? section.trim() : undefined,
+            imageUrl: typeof imageUrl === 'string' ? imageUrl : undefined,
+            instructions: userInstructions,
+            userId
+        });
+        res.status(201).json(article);
+    } catch (error) {
+        console.error('Error creating manual article:', error);
+        res.status(500).json({ error: 'No se pudo generar la nota.' });
+    }
+});
 
 // POST /api/articles/:id/rewrite-seo - Generate the SEO rewrite (title, volanta, bajada, HTML body, tags)
 app.post('/api/articles/:id/rewrite-seo', async (req, res) => {
@@ -865,7 +893,7 @@ app.post('/api/articles/:id/rewrite-seo', async (req, res) => {
         if (!article) return res.status(404).json({ error: 'Article not found' });
 
         const instructions = [await getUserRewriteInstructions((req as AuthRequest).user!.id), req.body?.instructions || req.body?.comments].filter(Boolean).join('\n');
-        const rewritten = await aiService.rewriteSeo(article.originalTitle, article.originalContent, 'neutral', instructions);
+        const rewritten = await aiService.rewriteSeo(article.originalTitle, article.originalContent, 'neutral', instructions, manualPromptType(article.editorialData));
         const existingData = (article.editorialData as any) || {};
         const updated = await prisma.article.update({
             where: { id: article.id },
@@ -1073,7 +1101,7 @@ app.post('/api/articles/:id/rewrite', async (req, res) => {
             score: article.interestScore ?? 5
         });
         const instructions = [await getUserRewriteInstructions((req as AuthRequest).user!.id), req.body?.instructions || req.body?.comments].filter(Boolean).join('\n');
-        const result = await aiService.rewriteSeo(article.originalTitle, article.originalContent, editorial.style, instructions);
+        const result = await aiService.rewriteSeo(article.originalTitle, article.originalContent, editorial.style, instructions, manualPromptType(article.editorialData));
 
         const existingData = (article.editorialData as any) || {};
         const updatedEditorial = {

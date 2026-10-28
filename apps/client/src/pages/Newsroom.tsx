@@ -509,6 +509,7 @@ export default function Newsroom() {
     if (loading) return <div className="text-editorial-text p-10 font-serif">Loading Editor...</div>;
     if (!article) return <div className="text-editorial-text p-10 font-serif">Article not found</div>;
 
+    const reviewPoints: string[] = (article?.editorialData as any)?.seo?.reviewPoints || [];
     const hasEditedDraft = loadedDraftRef.current !== JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
 
     return (
@@ -789,9 +790,15 @@ export default function Newsroom() {
                                     </span>
                                 )}
                             </div>
-                            <a href={article.originalUrl} target="_blank" rel="noreferrer" className="text-sm font-mono text-editorial-text/70 truncate hover:underline block cursor-pointer">
-                                {article.originalUrl}
-                            </a>
+                            {article.originalUrl.startsWith('manual://') ? (
+                                <span className="text-sm font-mono text-editorial-text/70 block">
+                                    Carga manual ({(article.editorialData as any)?.manual?.mode === 'POLICE' ? 'parte policial' : 'redactor'})
+                                </span>
+                            ) : (
+                                <a href={article.originalUrl} target="_blank" rel="noreferrer" className="text-sm font-mono text-editorial-text/70 truncate hover:underline block cursor-pointer">
+                                    {article.originalUrl}
+                                </a>
+                            )}
                         </div>
 
                         <h2 className="text-3xl font-black text-editorial-text mb-8 leading-tight italic">
@@ -1042,6 +1049,16 @@ export default function Newsroom() {
                                         {learning ? 'Analizando...' : 'Aprender de mis cambios'}
                                     </button>}
                                 </div>
+
+                                {/* Puntos a revisar (notas manuales): solo para el editor, no se publican */}
+                                {reviewPoints.length > 0 && (
+                                    <div className="border-l-4 border-amber-600 bg-amber-50 px-4 py-3 font-sans">
+                                        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-amber-800">Puntos a revisar antes de publicar</p>
+                                        <ul className="list-disc space-y-1 pl-5 text-sm text-amber-900">
+                                            {reviewPoints.map((point, index) => <li key={index}>{point}</li>)}
+                                        </ul>
+                                    </div>
+                                )}
 
                                 {/* Volanta */}
                                 <div>

@@ -5,6 +5,10 @@ import { ConfigService } from './ConfigService';
 // gpt-5+ and the o-series reject `max_tokens` and spend part of
 // `max_completion_tokens` on hidden reasoning; without headroom a small limit
 // (like the interest score's 3) comes back empty.
+function plainText(value: unknown): string {
+    return String(value ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export function usesReasoningModel(model: string): boolean {
     const normalized = model.trim().toLowerCase();
     const major = normalized.match(/^gpt-(\d+)/);
@@ -219,10 +223,27 @@ export class AIService {
             const rawContent = await runOnce([{ role: "user", content: prompt }]);
             const result = parseJson(rawContent);
             if (result && result.title && result.content) {
+                // Some prompts or models leave "bajada" empty (or use another key) and the
+                // editor then showed the start of the body as a repeated bajada.
+                let bajada = plainText(result.bajada || result.copete || result.subtitle || '');
+                if (!bajada) {
+                    console.warn('[AIService] Rewrite returned no bajada; asking for one separately.');
+                    const followUp = parseJson(await runOnce([{
+                        role: "user",
+                        content: `Escribí la bajada (copete) de esta nota: 1 o 2 oraciones en texto plano que resuman lo central, sin copiar textual el primer párrafo y sin datos que no estén en la nota.
+Respondé SOLO un JSON: {"bajada": "..."}
+
+Título: ${result.title}
+
+Nota:
+${plainText(result.content).slice(0, 4000)}`
+                    }]));
+                    bajada = plainText(followUp?.bajada || '');
+                }
                 return {
                     title: result.title,
                     volanta: result.volanta || '',
-                    bajada: result.bajada || '',
+                    bajada,
                     content: result.content,
                     tags: result.tags || '',
                     ...(Array.isArray(result.reviewPoints)

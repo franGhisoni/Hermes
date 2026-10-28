@@ -16,6 +16,11 @@ interface Target {
     config?: any;
 }
 
+// contentPreview is the start of the body, so using it as the bajada of a
+// rewritten note repeats the first paragraph; only legacy notes fall back to it.
+const initialBajada = (seo: any, article: any): string =>
+    seo.content ? (seo.bajada || '') : (seo.bajada || article.contentPreview || '');
+
 type EditorDraft = { title: string; volanta: string; bajada: string; content: string; tags: string };
 
 const readableSource = (name?: string) => ({ ElDiarioSur: 'El Diario Sur', AvellanedaHoy: 'Avellaneda Hoy', LaUnion: 'La Unión' } as Record<string, string>)[name || ''] || (name || 'Medio original').replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -118,7 +123,7 @@ export default function Newsroom() {
 
                 const title = seo.title || data.rewrittenTitle || data.originalTitle || '';
                 const volanta = seo.volanta || (data.location ? data.location.toUpperCase() : (data.section ? data.section.toUpperCase() : 'POLÍTICA'));
-                const bajada = seo.bajada || data.contentPreview || '';
+                const bajada = initialBajada(seo, data);
                 const rawContent = seo.content || data.rewrittenContent || data.originalContent || '';
                 const content = formatToHtml(rawContent);
                 const tags = seo.tags || [data.section, data.location].filter(Boolean).join(', ');
@@ -308,13 +313,13 @@ export default function Newsroom() {
             const seo = (updated.editorialData as any)?.seo || {};
             setSeoTitle(seo.title || updated.rewrittenTitle || '');
             setSeoVolanta(seo.volanta || (updated.location ? updated.location.toUpperCase() : (updated.section ? updated.section.toUpperCase() : 'POLÍTICA')));
-            setSeoBajada(seo.bajada || updated.contentPreview || '');
+            setSeoBajada(initialBajada(seo, updated));
             setSeoContent(formatToHtml(seo.content || updated.rewrittenContent || ''));
             setSeoTags(seo.tags || [updated.section, updated.location].filter(Boolean).join(', '));
             loadedDraftRef.current = JSON.stringify({
                 title: seo.title || updated.rewrittenTitle || '',
                 volanta: seo.volanta || (updated.location ? updated.location.toUpperCase() : (updated.section ? updated.section.toUpperCase() : 'POLÍTICA')),
-                bajada: seo.bajada || updated.contentPreview || '',
+                bajada: initialBajada(seo, updated),
                 content: formatToHtml(seo.content || updated.rewrittenContent || ''),
                 tags: seo.tags || [updated.section, updated.location].filter(Boolean).join(', ')
             });

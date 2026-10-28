@@ -117,7 +117,7 @@ export function NotificationsPanel() {
             </button>
 
             {open && (
-                <div className="absolute top-full right-0 mt-4 bg-editorial-bg border border-editorial-text/20 shadow-xl w-[420px] max-w-[90vw] z-50">
+                <div className="max-sm:fixed max-sm:inset-x-3 max-sm:top-20 max-sm:mt-0 absolute top-full right-0 mt-4 bg-editorial-bg border border-editorial-text/20 shadow-xl sm:w-[420px] max-w-[90vw] max-sm:max-w-none max-h-[75vh] overflow-y-auto z-50">
                     <div className="flex items-center justify-between px-4 py-3 border-b border-editorial-text/10">
                         <div className="font-sans text-xs font-bold uppercase tracking-widest">
                             Notificaciones {unreadCount > 0 && <span className="text-red-600 ml-1">({unreadCount} nuevas)</span>}

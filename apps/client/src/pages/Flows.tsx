@@ -275,20 +275,20 @@ export default function Flows() {
 
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif pb-24">
-            <header className="border-b border-editorial-text/10 px-8 py-6 flex items-center justify-between bg-editorial-bg/95 backdrop-blur z-20 sticky top-0">
-                <div className="flex items-center gap-4">
+            <header className="border-b border-editorial-text/10 px-4 sm:px-8 py-4 sm:py-6 flex flex-wrap gap-3 items-center justify-between bg-editorial-bg/95 backdrop-blur z-20 sticky top-0">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-8 w-auto object-contain" />
                     </Link>
-                    <span className="text-xl font-black uppercase tracking-widest italic">Flujos y Envíos</span>
+                    <span className="text-base sm:text-xl font-black uppercase tracking-widest italic">Flujos y Envíos</span>
                 </div>
-                <div className="flex gap-4">
-                    <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 hover:underline">Volver al Dashboard</Link>
+                <div className="flex gap-2 sm:gap-4">
+                    <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-2 sm:px-4 py-2 hover:underline"><span className="sm:hidden">← Volver</span><span className="hidden sm:inline">Volver al Dashboard</span></Link>
                     <button onClick={logout} className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors">Salir</button>
                 </div>
             </header>
 
-            <main className="max-w-[1400px] mx-auto px-8 py-8 flex flex-col gap-8">
+            <main className="max-w-[1400px] mx-auto px-4 sm:px-8 py-6 sm:py-8 flex flex-col gap-8">
 
                 {/* TOP: collapsible form */}
                 <div ref={formRef} className={`border bg-white/50 transition-colors ${editingId ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-editorial-text/15'}`}>
@@ -298,7 +298,7 @@ export default function Flows() {
                             if (formOpen) resetWorkflowForm();
                             else openCreateForm();
                         }}
-                        className="w-full px-6 py-4 border-b border-editorial-text/10 flex items-center gap-3 text-left hover:bg-editorial-text/[0.02] transition-colors"
+                        className="w-full px-4 sm:px-6 py-4 border-b border-editorial-text/10 flex flex-wrap items-center gap-3 text-left hover:bg-editorial-text/[0.02] transition-colors"
                         aria-expanded={formOpen}
                     >
                         {editingId ? <Settings2 size={16} /> : <Plus size={16} />}
@@ -324,7 +324,7 @@ export default function Flows() {
                     </button>
 
                     {formOpen && (
-                    <form onSubmit={handleSubmitWorkflow} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 p-6 font-sans">
+                    <form onSubmit={handleSubmitWorkflow} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 p-4 sm:p-6 font-sans">
                         <div>
                             <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Nombre</label>
                             <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Clarín Matutino" />

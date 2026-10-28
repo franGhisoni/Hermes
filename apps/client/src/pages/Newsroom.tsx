@@ -33,6 +33,8 @@ export default function Newsroom() {
 
     // Editor Tab: 'normal' | 'social' | 'seo'
     const [editorTab, setEditorTab] = useState<'normal' | 'social' | 'seo'>('normal');
+    // Below lg the split view doesn't fit, so only one pane shows at a time.
+    const [mobilePane, setMobilePane] = useState<'original' | 'draft'>('draft');
     const [visualMode, setVisualMode] = useState(true);
 
     // SEO & Editorial fields (unified)
@@ -518,11 +520,11 @@ export default function Newsroom() {
     const hasEditedDraft = loadedDraftRef.current !== JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
 
     return (
-        <div className="h-screen flex flex-col bg-editorial-bg text-editorial-text font-serif overflow-hidden">
+        <div className="h-screen h-[100dvh] flex flex-col bg-editorial-bg text-editorial-text font-serif overflow-hidden">
             {/* Header */}
             <header className="min-h-16 border-b border-editorial-text/10 flex flex-wrap items-center gap-3 px-4 lg:px-6 py-2 justify-between bg-editorial-bg/95 backdrop-blur z-10">
-                <div className="flex items-center gap-4">
-                    <Link to="/" className="flex items-center">
+                <div className="flex items-center gap-3 sm:gap-4">
+                    <Link to="/" className="hidden sm:flex items-center">
                                     <img src="/logo%20hermes.png" alt="Hermes" className="h-9 w-auto object-contain" />
                     </Link>
                     <Link to="/" className="inline-flex items-center gap-2 border border-editorial-text/20 px-3 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:border-editorial-text hover:bg-editorial-text hover:text-editorial-bg"><span aria-hidden="true">←</span> Noticias</Link>
@@ -580,7 +582,7 @@ export default function Newsroom() {
             </EditorialModal>}
             {showRewriteModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowRewriteModal(false)}>
-                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-lg mx-4 relative" onClick={e => e.stopPropagation()}>
+                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-5 sm:p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto relative" onClick={e => e.stopPropagation()}>
                         <button
                             onClick={() => setShowRewriteModal(false)}
                             className="absolute top-4 right-4 text-editorial-text/40 hover:text-editorial-text text-lg font-mono leading-none"
@@ -637,7 +639,7 @@ export default function Newsroom() {
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 pt-4 border-t border-editorial-text/10 font-sans text-xs font-bold uppercase tracking-widest">
+                        <div className="flex flex-wrap justify-end gap-3 pt-4 border-t border-editorial-text/10 font-sans text-xs font-bold uppercase tracking-widest">
                             <button
                                 type="button"
                                 onClick={() => setShowRewriteModal(false)}
@@ -661,7 +663,7 @@ export default function Newsroom() {
             {/* Publish Modal */}
             {showPublishModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowPublishModal(false)}>
-                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-8 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-5 sm:p-8 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <h3 className="text-xl font-bold mb-1">{isDemo ? 'Vista previa de publicación' : 'Publicar Noticia'}</h3>
                         <p className="font-sans text-xs text-editorial-text/60 mb-6">
                             Elegí el medio de destino para esta nota.
@@ -779,10 +781,20 @@ export default function Newsroom() {
                 </div>
             )}
 
+            {/* Mobile pane switcher */}
+            <div role="tablist" aria-label="Vista de la nota" className="lg:hidden grid grid-cols-2 border-b border-editorial-text/10 font-sans text-[11px] font-bold uppercase tracking-widest">
+                {([['original', 'Fuente original'], ['draft', 'Borrador IA']] as const).map(([pane, label]) => (
+                    <button key={pane} type="button" role="tab" aria-selected={mobilePane === pane} onClick={() => setMobilePane(pane)}
+                        className={`py-3 border-b-2 transition-colors ${mobilePane === pane ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40'}`}>
+                        {label}
+                    </button>
+                ))}
+            </div>
+
             {/* Split View */}
             <div className="flex-1 flex overflow-hidden">
                 {/* Left: Original Source */}
-                <div className="flex-1 border-r border-editorial-text/10 p-12 overflow-y-auto bg-editorial-text/5 scrollbar-thin scrollbar-thumb-editorial-text/20">
+                <div className={`${mobilePane === 'original' ? 'block' : 'hidden'} lg:block flex-1 min-w-0 lg:border-r border-editorial-text/10 p-4 sm:p-8 xl:p-12 overflow-y-auto bg-editorial-text/5 scrollbar-thin scrollbar-thumb-editorial-text/20`}>
                     <div className="max-w-2xl mx-auto">
                         <div className="mb-8 pb-4 border-b border-editorial-text/10">
                             <div className="flex items-center gap-2 mb-2">
@@ -806,7 +818,7 @@ export default function Newsroom() {
                             )}
                         </div>
 
-                        <h2 className="text-3xl font-black text-editorial-text mb-8 leading-tight italic">
+                        <h2 className="text-2xl sm:text-3xl font-black text-editorial-text mb-8 leading-tight italic">
                             {article.originalTitle}
                         </h2>
 
@@ -823,9 +835,9 @@ export default function Newsroom() {
                 </div>
 
                 {/* Right: AI Rewrite Editor */}
-                <div className="flex-1 p-12 overflow-y-auto bg-editorial-bg">
+                <div className={`${mobilePane === 'draft' ? 'block' : 'hidden'} lg:block flex-1 min-w-0 p-4 sm:p-8 xl:p-12 pb-24 lg:pb-12 overflow-y-auto bg-editorial-bg`}>
                     <div className="max-w-2xl mx-auto">
-                        <div className="mb-8 flex justify-between items-center border-b border-editorial-text/10 pb-4">
+                        <div className="mb-8 flex flex-wrap gap-2 justify-between items-center border-b border-editorial-text/10 pb-4">
                             <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text">Borrador IA</span>
                             <div className="flex items-center gap-2">
                                 <span className="font-sans text-xs uppercase tracking-widest text-editorial-text/50">Score de Interés</span>
@@ -993,7 +1005,7 @@ export default function Newsroom() {
                         })()}
 
                         {/* Editorial Tabs */}
-                        <div className="flex border-b border-editorial-text/20 mb-8 gap-6 font-sans text-xs font-bold uppercase tracking-widest items-center">
+                        <div className="flex border-b border-editorial-text/20 mb-8 gap-6 font-sans text-xs font-bold uppercase tracking-widest items-center overflow-x-auto whitespace-nowrap">
                             <button
                                 type="button"
                                 onClick={() => setEditorTab('normal')}
@@ -1021,7 +1033,7 @@ export default function Newsroom() {
                         {/* Tab 1: Noticia Completa (Editorial) */}
                         {editorTab === 'normal' && (
                             <div className="space-y-6">
-                                <div className="flex justify-between items-center pb-3 border-b border-editorial-text/10">
+                                <div className="flex flex-wrap gap-3 justify-between items-center pb-3 border-b border-editorial-text/10">
                                     <div>
                                         <h4 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
                                             Redacción
@@ -1126,7 +1138,7 @@ export default function Newsroom() {
 
                                 {/* Cuerpo de la Nota */}
                                 <div>
-                                    <div className="flex justify-between items-center mb-2">
+                                    <div className="flex flex-wrap gap-2 justify-between items-center mb-2">
                                         <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
                                             Cuerpo de la Nota
                                         </label>
@@ -1160,7 +1172,7 @@ export default function Newsroom() {
                                                 setSeoContent(html);
                                                 setArticle(prev => prev ? { ...prev, rewrittenContent: html } : null);
                                             }}
-                                            className="prose prose-base max-w-none border border-editorial-text/15 p-6 bg-white/60 min-h-[380px] leading-relaxed font-serif rounded focus:outline-none focus:border-editorial-text shadow-sm overflow-y-auto"
+                                            className="prose prose-base max-w-none border border-editorial-text/15 p-4 sm:p-6 bg-white/60 min-h-[380px] leading-relaxed font-serif rounded focus:outline-none focus:border-editorial-text shadow-sm overflow-y-auto"
                                         />
                                     ) : (
                                         <textarea

@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { Menu, X } from 'lucide-react';
 import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
@@ -29,6 +30,7 @@ export default function Dashboard() {
     const [configSections, setConfigSections] = useState<DashboardSection[]>([]);
     const [filterCategories, setFilterCategories] = useState<FilterCategory[]>([]);
     const [loading, setLoading] = useState(true);
+    const [menuOpen, setMenuOpen] = useState(false);
 
     const [filterSource, setFilterSource] = useState<string>('all');
     const [filterSection, setFilterSection] = useState<string>('all');
@@ -171,13 +173,17 @@ export default function Dashboard() {
             <nav className="border-b border-editorial-text/10 px-4 lg:px-8 py-4 flex flex-wrap justify-between gap-3 items-center sticky top-0 bg-editorial-bg/95 backdrop-blur z-10">
                 <div className="flex items-center gap-4">
                     <Link to="/">
-                        <img src="/logo%20hermes.png" alt="Hermes" className="h-12 w-auto object-contain opacity-90 transition-opacity hover:opacity-100" />
+                        <img src="/logo%20hermes.png" alt="Hermes" className="h-10 sm:h-12 w-auto object-contain opacity-90 transition-opacity hover:opacity-100" />
                     </Link>
                     <div className="hidden 2xl:block h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <span className="hidden 2xl:block text-sm font-sans uppercase tracking-widest text-editorial-text/60">PLATAFORMA AUTOMATICA DE NOTICIAS</span>
                     {isDemo && <span className="text-[10px] font-sans font-bold uppercase tracking-widest border border-amber-700/30 text-amber-800 px-2 py-1">Modo demo · simulación</span>}
                 </div>
-                <div className="flex flex-wrap gap-2 lg:gap-4 items-center">
+                <button type="button" onClick={() => setMenuOpen(open => !open)} aria-expanded={menuOpen} aria-label={menuOpen ? 'Cerrar menú' : 'Abrir menú'}
+                    className="lg:hidden p-2 border border-editorial-text/20 hover:bg-editorial-text/5">
+                    {menuOpen ? <X size={20} /> : <Menu size={20} />}
+                </button>
+                <div className={`${menuOpen ? 'flex' : 'hidden'} lg:flex w-full lg:w-auto flex-wrap gap-x-4 gap-y-3 items-center border-t border-editorial-text/10 pt-3 lg:border-0 lg:pt-0`}>
                     {user?.role === 'ADMIN' && <NotificationsPanel />}
                     <ScraperControl />
                     {!isDemo && <ManualNoteButton />}
@@ -202,14 +208,14 @@ export default function Dashboard() {
             </nav>
 
             {/* Main Content */}
-            <main className="p-8 max-w-[1600px] mx-auto">
-                <div className="flex items-baseline justify-between mb-8">
+            <main className="p-4 sm:p-8 pb-24 max-w-[1600px] mx-auto">
+                <div className="flex flex-wrap gap-2 items-baseline justify-between mb-8">
                     <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h2>
                     <span className="font-sans text-sm text-editorial-text/50">{totalArticles} Artículos Procesados (Página {page} de {totalPages})</span>
                 </div>
                 {/* Toolbar */}
-                <div className="mb-8 flex flex-wrap gap-4 items-end font-sans text-xs">
-                    <div className="flex flex-col gap-1 min-w-[260px] flex-1">
+                <div className="mb-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-4 items-end font-sans text-xs [&_select]:py-2 sm:[&_select]:py-1 [&_input]:py-2 sm:[&_input]:py-1">
+                    <div className="col-span-2 flex flex-col gap-1 w-full sm:w-auto sm:min-w-[260px] flex-1">
                         <label className="font-bold uppercase tracking-widest text-editorial-text/50">Buscar noticias</label>
                         <input
                             type="search"
@@ -315,7 +321,7 @@ export default function Dashboard() {
 
                 {/* Pagination Controls */}
                 {!loading && totalPages > 1 && (
-                    <div className="flex justify-center items-center gap-4 mt-12 mb-8 pt-8 border-t border-editorial-text/20">
+                    <div className="flex justify-center items-center gap-3 sm:gap-4 mt-12 mb-8 pt-8 border-t border-editorial-text/20">
                         <button
                             onClick={() => setPage(p => Math.max(1, p - 1))}
                             disabled={page === 1}

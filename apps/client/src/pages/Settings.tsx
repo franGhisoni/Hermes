@@ -582,8 +582,8 @@ export default function Settings() {
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto object-contain" />
                     </Link>
-                    <div className="h-6 w-px bg-editorial-text/20 mx-2"></div>
-                    <h1 className="font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
+                    <div className="hidden sm:block h-6 w-px bg-editorial-text/20 mx-2"></div>
+                    <h1 className="hidden sm:block font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
                 </div>
                 <div className="flex flex-wrap gap-3 items-center">
                     <ScraperControl />
@@ -602,7 +602,7 @@ export default function Settings() {
                  * the viewport. On smaller screens it falls back to a normal
                  * horizontally-scrollable strip above the content.
                  */}
-                <aside className="lg:fixed lg:left-8 lg:top-[110px] lg:w-[220px] lg:z-10 px-8 lg:px-0 pt-6 lg:pt-0">
+                <aside className="lg:fixed lg:left-8 lg:top-[110px] lg:w-[220px] lg:z-10 px-4 sm:px-8 lg:px-0 pt-4 sm:pt-6 lg:pt-0">
                     <nav className="flex lg:flex-col gap-2 lg:gap-1 overflow-x-auto lg:overflow-visible">
                         {TABS.map(tab => {
                             const Icon = tab.icon;
@@ -620,8 +620,8 @@ export default function Settings() {
                                     <Icon size={isActive ? 22 : 18} />
                                     <span className={`font-serif italic transition-all duration-200 ${
                                         isActive
-                                            ? 'text-3xl font-black underline decoration-2 underline-offset-4'
-                                            : 'text-2xl font-bold'
+                                            ? 'text-2xl lg:text-3xl font-black underline decoration-2 underline-offset-4'
+                                            : 'text-xl lg:text-2xl font-bold'
                                     }`}>
                                         {tab.label}
                                     </span>
@@ -632,7 +632,7 @@ export default function Settings() {
                 </aside>
 
                 {/* Main panel — centered on the viewport, sidebar floats over the gutter */}
-                <main className="max-w-5xl mx-auto px-8 py-10 min-w-0">
+                <main className="max-w-5xl mx-auto px-4 sm:px-8 py-6 sm:py-10 pb-24 min-w-0">
                     {activeTab === 'prompts' && (
                         <PromptsTab
                             prompts={prompts}
@@ -983,7 +983,7 @@ function FuentesTab(props: FuentesTabProps) {
 
                 <Card>
                     <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">Nueva sección de scraping</h3>
-                    <form onSubmit={handleCreateSection} className="grid grid-cols-2 gap-3 font-sans">
+                    <form onSubmit={handleCreateSection} className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-sans">
                         <input
                             type="text"
                             placeholder="Nombre (ej. Política)"

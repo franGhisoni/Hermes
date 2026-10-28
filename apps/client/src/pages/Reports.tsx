@@ -44,9 +44,9 @@ export default function Reports() {
             <Link to="/" className="flex items-center gap-3"><img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto" /><span className="border-l border-editorial-text/20 pl-3 text-xs font-bold uppercase tracking-widest">Reportes</span></Link>
             <div className="flex flex-wrap items-center gap-3"><EditorialActions /><Link to="/" className="border border-editorial-text/20 px-4 py-2 text-xs font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:bg-editorial-text hover:text-editorial-bg">← Noticias</Link></div>
         </nav>
-        <main className="mx-auto max-w-5xl px-4 py-10 sm:px-8">
+        <main className="mx-auto max-w-5xl px-4 py-8 sm:py-10 pb-24 sm:px-8">
             <div className="mb-8 flex flex-wrap items-end justify-between gap-4 border-b border-editorial-text/20 pb-6">
-                <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.22em] text-editorial-text/45">Participación de usuarios</p><h1 className="font-serif text-4xl font-black italic">Tickets de error y sugerencias</h1></div>
+                <div><p className="mb-2 text-[10px] font-bold uppercase tracking-[.22em] text-editorial-text/45">Participación de usuarios</p><h1 className="font-serif text-3xl sm:text-4xl font-black italic">Tickets de error y sugerencias</h1></div>
                 <span className="border border-editorial-text/20 px-3 py-2 text-xs font-bold uppercase tracking-wider">{openCount} pendientes</span>
             </div>
             {error && <p role="alert" className="mb-5 border-l-2 border-red-700 bg-red-50 p-3 text-sm text-red-700">{error}</p>}

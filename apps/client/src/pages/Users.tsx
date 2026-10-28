@@ -78,24 +78,24 @@ export default function Users() {
     return (
         <div className="min-h-screen bg-editorial-bg text-editorial-text font-serif">
             {/* Header */}
-            <header className="border-b border-editorial-text/10 px-8 py-6 flex items-center justify-between bg-editorial-bg/95 backdrop-blur z-10 sticky top-0">
-                <div className="flex items-center gap-4">
+            <header className="border-b border-editorial-text/10 px-4 sm:px-8 py-4 sm:py-6 flex flex-wrap gap-3 items-center justify-between bg-editorial-bg/95 backdrop-blur z-10 sticky top-0">
+                <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-8 w-auto object-contain" />
                     </Link>
-                    <span className="text-xl font-black uppercase tracking-widest italic">Panel de Usuarios</span>
+                    <span className="text-base sm:text-xl font-black uppercase tracking-widest italic">Panel de Usuarios</span>
                 </div>
-                <div className="flex gap-4">
-                    <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 hover:underline">Volver al Dashboard</Link>
+                <div className="flex gap-2 sm:gap-4">
+                    <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-2 sm:px-4 py-2 hover:underline"><span className="sm:hidden">← Volver</span><span className="hidden sm:inline">Volver al Dashboard</span></Link>
                     <button onClick={logout} className="font-sans text-xs font-bold uppercase tracking-widest px-4 py-2 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors">Salir</button>
                 </div>
             </header>
 
-            <main className="max-w-4xl mx-auto p-12">
+            <main className="max-w-4xl mx-auto p-4 sm:p-8 lg:p-12 pb-24">
 
-                <div className="mb-12 border border-editorial-text/20 p-8 bg-white/50">
-                    <h2 className="text-xl font-bold uppercase tracking-widest mb-6 font-sans">Crear Nuevo Usuario</h2>
-                    <form onSubmit={handleCreateUser} className="flex gap-4 items-end font-sans">
+                <div className="mb-12 border border-editorial-text/20 p-5 sm:p-8 bg-white/50">
+                    <h2 className="text-lg sm:text-xl font-bold uppercase tracking-wider sm:tracking-widest mb-6 font-sans">Crear Nuevo Usuario</h2>
+                    <form onSubmit={handleCreateUser} className="flex flex-col sm:flex-row gap-4 sm:items-end font-sans">
                         <div className="flex flex-col gap-2 flex-1">
                             <label className="text-xs font-bold uppercase tracking-widest opacity-60">Usuario</label>
                             <input
@@ -116,7 +116,7 @@ export default function Users() {
                                 required
                             />
                         </div>
-                        <div className="flex flex-col gap-2 w-44">
+                        <div className="flex flex-col gap-2 sm:w-44">
                             <label className="text-xs font-bold uppercase tracking-widest opacity-60">Tipo</label>
                             <select
                                 value={newRole}
@@ -127,18 +127,18 @@ export default function Users() {
                                 <option value="DEMO">Demo · solo lectura</option>
                             </select>
                         </div>
-                        <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors self-end h-[41px]">
+                        <button type="submit" className="bg-editorial-text text-editorial-bg px-6 py-2 font-bold uppercase tracking-widest hover:bg-black transition-colors sm:self-end h-[41px]">
                             Crear
                         </button>
                     </form>
                 </div>
 
-                <div className="border border-editorial-text/10 p-8">
-                    <h2 className="text-xl font-bold uppercase tracking-widest mb-6 font-sans">Usuarios Registrados</h2>
+                <div className="border border-editorial-text/10 p-5 sm:p-8 overflow-x-auto">
+                    <h2 className="text-lg sm:text-xl font-bold uppercase tracking-wider sm:tracking-widest mb-6 font-sans">Usuarios Registrados</h2>
                     {loading ? (
                         <div className="animate-pulse opacity-50">Cargando...</div>
                     ) : (
-                        <table className="w-full text-left font-sans">
+                        <table className="w-full min-w-[480px] text-left font-sans">
                             <thead>
                                 <tr className="border-b border-editorial-text/20 text-xs uppercase tracking-widest opacity-60">
                                     <th className="pb-4 font-normal">Usuario</th>
@@ -153,7 +153,7 @@ export default function Users() {
                                         <td className="py-4 font-bold">{u.username} {u.id === user?.id && <span className="ml-2 text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded uppercase tracking-widest">Tú</span>}</td>
                                         <td className="py-4 text-xs">{u.role}</td>
                                         <td className="py-4 text-xs opacity-60">{new Date(u.createdAt).toLocaleDateString()}</td>
-                                        <td className="py-4 text-right flex justify-end gap-3 opacity-30 group-hover:opacity-100 transition-opacity">
+                                        <td className="py-4 text-right flex justify-end gap-3 sm:opacity-30 group-hover:opacity-100 transition-opacity">
                                             <button
                                                 onClick={() => handleChangePassword(u.id, u.username)}
                                                 className="p-1 hover:text-blue-500"

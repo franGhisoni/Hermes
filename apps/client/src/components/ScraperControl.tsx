@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Play, Loader2, ChevronRight, ListPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
@@ -18,11 +18,39 @@ interface ScraperConfig {
     active: boolean;
 }
 
+// Keep in sync with the w-64 / sm:w-60 classes below.
+const DROPDOWN_WIDTH = 256;
+const SUBMENU_WIDTH = 240;
+
 export function ScraperControl() {
     const { token, user } = useAuth();
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('');
     const [hoveredSource, setHoveredSource] = useState<string | null>(null);
+    // Touch screens have no hover, so the menu also opens on tap.
+    const [open, setOpen] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+    // The header wraps, so the trigger can sit on either side of the screen: pick the side with room.
+    const [placement, setPlacement] = useState({ alignLeft: false, submenuRight: false });
+
+    const updatePlacement = () => {
+        const rect = containerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        const viewport = window.innerWidth - 8;
+        const alignLeft = rect.right - DROPDOWN_WIDTH < 8 && rect.left + DROPDOWN_WIDTH <= viewport;
+        const dropdownLeft = alignLeft ? rect.left : rect.right - DROPDOWN_WIDTH;
+        const submenuRight = dropdownLeft - SUBMENU_WIDTH - 4 < 8 && dropdownLeft + DROPDOWN_WIDTH + 4 + SUBMENU_WIDTH <= viewport;
+        setPlacement({ alignLeft, submenuRight });
+    };
+
+    useEffect(() => {
+        if (!open) return;
+        const onPointerDown = (event: PointerEvent) => {
+            if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+        };
+        document.addEventListener('pointerdown', onPointerDown);
+        return () => document.removeEventListener('pointerdown', onPointerDown);
+    }, [open]);
     const [scrapers, setScrapers] = useState<ScraperConfig[]>([]);
     // Cache effective sections per source so we don't refetch on every hover.
     const [sectionsBySource, setSectionsBySource] = useState<Record<string, EffectiveSection[]>>({});
@@ -98,11 +126,11 @@ export function ScraperControl() {
     };
 
     return (
-        <div className="relative group flex items-center h-full">
-            <button className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4 flex items-center gap-1">
+        <div ref={containerRef} onPointerEnter={updatePlacement} className="relative group flex items-center h-full">
+            <button type="button" onClick={() => { updatePlacement(); setOpen(o => !o); }} aria-expanded={open} className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4 flex items-center gap-1">
                 Scraper Manual
             </button>
-            <div className="absolute top-full right-0 mt-4 hidden group-hover:block bg-editorial-bg backdrop-blur border border-editorial-text/20 p-4 rounded shadow-xl w-64 z-50 before:absolute before:-top-4 before:left-0 before:w-full before:h-4">
+            <div className={`${open ? 'block' : 'hidden'} sm:group-hover:block max-sm:fixed max-sm:inset-x-3 max-sm:top-20 max-sm:mt-0 max-sm:w-auto max-sm:max-h-[75vh] max-sm:overflow-y-auto absolute top-full ${placement.alignLeft ? 'left-0' : 'right-0'} mt-4 bg-editorial-bg backdrop-blur border border-editorial-text/20 p-4 rounded shadow-xl w-64 z-50 before:absolute before:-top-4 before:left-0 before:w-full before:h-4`}>
                 <div className="flex flex-col gap-1">
                     {message && (
                         <div className="bg-editorial-text text-editorial-bg px-3 py-2 rounded mb-2 text-xs font-bold uppercase tracking-widest animate-fade-in text-center">
@@ -127,7 +155,7 @@ export function ScraperControl() {
                             <div
                                 key={s.source}
                                 className="relative"
-                                onMouseEnter={() => setHoveredSource(s.source)}
+                                onPointerEnter={event => { if (event.pointerType === 'mouse') setHoveredSource(s.source); }}
                             >
                                 <div className="flex items-center justify-between gap-3 px-3 py-2 hover:bg-editorial-text/5 rounded transition-colors text-sm font-serif text-editorial-text">
                                     <button
@@ -138,12 +166,12 @@ export function ScraperControl() {
                                     >
                                         {s.label}
                                     </button>
-                                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3 text-editorial-text/50" />}
+                                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <button type="button" onClick={() => setHoveredSource(s.source)} aria-label={`Ver secciones de ${s.label}`} className="-m-2 p-2"><ChevronRight className={`w-3 h-3 text-editorial-text/50 transition-transform ${hoveredSource === s.source ? 'max-sm:rotate-90' : ''}`} /></button>}
                                 </div>
 
-                                {/* Submenu: opens to the LEFT of the dropdown (which is anchored to the header's right edge). */}
+                                {/* Submenu: opens beside the dropdown, on whichever side has room. */}
                                 <div
-                                    className="absolute top-0 right-full mr-1 bg-editorial-bg border border-editorial-text/20 p-2 rounded shadow-xl w-60 z-50"
+                                    className={`sm:absolute sm:top-0 ${placement.submenuRight ? 'sm:left-full sm:ml-1' : 'sm:right-full sm:mr-1'} sm:w-60 max-sm:my-1 bg-editorial-bg border border-editorial-text/20 p-2 rounded sm:shadow-xl z-50`}
                                     style={{ display: hoveredSource === s.source ? 'block' : 'none' }}
                                 >
                                     <div className="text-[10px] uppercase tracking-widest font-sans font-bold opacity-60 px-2 py-1 border-b border-editorial-text/10 mb-1">

@@ -838,6 +838,11 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
                                             SEO HTML
                                         </span>
                                     )}
+                                    {(prompt.type === 'MANUAL_WRITER' || prompt.type === 'POLICE_REPORT') && (
+                                        <span className="font-sans text-[9px] font-bold uppercase tracking-wider bg-editorial-text/10 text-editorial-text px-2 py-0.5 rounded border border-editorial-text/20">
+                                            NOTA MANUAL
+                                        </span>
+                                    )}
                                     {prompt.type === 'SOCIAL_COPY' && (
                                         <span className="font-sans text-[9px] font-bold uppercase tracking-wider bg-editorial-text/10 text-editorial-text px-2 py-0.5 rounded border border-editorial-text/20">
                                             REDES SOCIALES
@@ -849,7 +854,7 @@ function PromptsTab({ prompts, loading, savePrompt }: PromptsTabProps) {
                                 </span>
                             </div>
                             <textarea
-                                className={`w-full ${prompt.type === 'REWRITE_VORKNEWS' ? 'h-72' : 'h-48'} p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none leading-relaxed`}
+                                className={`w-full ${['REWRITE_VORKNEWS', 'MANUAL_WRITER', 'POLICE_REPORT'].includes(prompt.type) ? 'h-72' : 'h-48'} p-3 font-mono text-xs bg-editorial-bg/30 border border-editorial-text/20 focus:border-editorial-text focus:outline-none resize-none leading-relaxed`}
                                 defaultValue={prompt.template}
                                 onBlur={(e) => savePrompt(prompt.id, e.target.value)}
                             />

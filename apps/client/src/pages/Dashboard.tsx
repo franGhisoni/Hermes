@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { ScraperControl } from '../components/ScraperControl';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 import { EditorialActions } from '../components/EditorialActions';
+import { ManualNoteButton } from '../components/ManualNoteButton';
 
 interface DashboardSection {
     id: string;
@@ -173,6 +174,7 @@ export default function Dashboard() {
                 <div className="flex flex-wrap gap-2 lg:gap-4 items-center">
                     <NotificationsPanel />
                     <ScraperControl />
+                    {!isDemo && <ManualNoteButton />}
                     {!isDemo && <EditorialActions />}
                     {user?.role === 'ADMIN' && (
                         <>

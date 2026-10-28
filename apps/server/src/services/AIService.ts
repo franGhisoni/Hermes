@@ -149,9 +149,11 @@ export class AIService {
         title: string,
         content: string,
         style: string = 'neutral',
-        customInstructions?: string
-    ): Promise<{ title: string; volanta: string; bajada: string; content: string; tags: string }> {
-        const config = await this.promptService.getPromptByType('REWRITE_VORKNEWS') ||
+        customInstructions?: string,
+        promptType: 'REWRITE_VORKNEWS' | 'MANUAL_WRITER' | 'POLICE_REPORT' = 'REWRITE_VORKNEWS'
+    ): Promise<{ title: string; volanta: string; bajada: string; content: string; tags: string; reviewPoints?: string[] }> {
+        const config = await this.promptService.getPromptByType(promptType) ||
+                       await this.promptService.getPromptByType('REWRITE_VORKNEWS') ||
                        await this.promptService.getPromptByName('Vorknews / Política del Sur (SEO HTML)') ||
                        await this.promptService.getPromptByType('REWRITE');
         
@@ -199,7 +201,10 @@ export class AIService {
                     volanta: result.volanta || '',
                     bajada: result.bajada || '',
                     content: result.content,
-                    tags: result.tags || ''
+                    tags: result.tags || '',
+                    ...(Array.isArray(result.reviewPoints)
+                        ? { reviewPoints: result.reviewPoints.map((point: unknown) => String(point).trim()).filter(Boolean) }
+                        : {})
                 };
             }
         } catch (error) {

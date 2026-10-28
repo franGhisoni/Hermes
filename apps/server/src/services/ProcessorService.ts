@@ -17,6 +17,16 @@ export interface ProcessingDiagnostics {
     items: ProcessingDiagnosticItem[];
 }
 
+export type ManualNoteMode = 'WRITER' | 'POLICE';
+
+// Manual notes keep their mode so a later "reescribir" reuses the same prompt.
+export function manualPromptType(editorialData: unknown): 'MANUAL_WRITER' | 'POLICE_REPORT' | undefined {
+    const mode = (editorialData as { manual?: { mode?: string } } | null)?.manual?.mode;
+    if (mode === 'POLICE') return 'POLICE_REPORT';
+    if (mode === 'WRITER') return 'MANUAL_WRITER';
+    return undefined;
+}
+
 export type ProcessingDiagnosticOutcome = 'saved' | 'duplicateUrl' | 'duplicateSemantic' | 'failed';
 
 export interface ProcessingDiagnosticItem {
@@ -178,6 +188,129 @@ export class ProcessorService {
         };
 
         // 5. Image Strategy
+        const { featureImageUrl, imageCandidates, imageScoresDict, aiTrace } = await this.findFeatureImage(article, rewritten.title);
+
+        // 6. Save
+        let newArticle;
+        try {
+            newArticle = await this.articleService.saveArticle({
+                sourceId,
+                section: article.section,
+                location: article.location,
+                originalTitle: article.title,
+                originalContent: article.content,
+                originalUrl: article.url,
+                originalImageUrl: article.imageUrl,
+                featureImageUrl: featureImageUrl,
+                imageCandidates: imageCandidates,
+                imageScores: imageScoresDict,
+                aiDecisions: aiTrace,
+                editorialData: {
+                    ...buildEditorialData(editorial),
+                    seo: vorknewsRewrite
+                },
+                embedding,
+                rewrittenTitle: rewritten.title,
+                rewrittenContent: rewritten.content,
+                aiRewriteSnapshot: vorknewsRewrite,
+                interestScore: editorial.effectiveScore,
+                status: editorial.publicationBlocked ? 'REJECTED' : 'PENDING',
+                publicationBlocked: editorial.publicationBlocked,
+                publicationBlockReason: editorial.publicationBlockReason
+            });
+        } catch (error) {
+            if (!this.isOriginalUrlUniqueConflict(error)) throw error;
+
+            // With multiple workers, two sections can pass the initial URL check
+            // before either insert commits. The unique constraint is the final
+            // authority, so treat the losing insert as a normal duplicate.
+            const existing = await this.articleService.findByUrl(article.url);
+            console.log(`[Processor] Article inserted concurrently; skipping duplicate URL: ${article.title}`);
+            return {
+                outcome: 'duplicateUrl',
+                reason: 'La URL fue guardada por otra ejecución concurrente.',
+                matchedArticleId: existing?.id,
+                matchedArticleTitle: existing?.originalTitle
+            } satisfies ProcessArticleResult;
+        }
+
+        console.log(`[Processor] ✅ Saved new article: ${rewritten.title}`);
+        return {
+            outcome: 'saved',
+            reason: 'Nota guardada como nueva.',
+            articleId: newArticle.id
+        } satisfies ProcessArticleResult;
+    }
+
+    // Turns material typed or pasted by an editor (a note, an idea or a police
+    // report) into a pending article. Skips deduplication on purpose: the
+    // editor decided to write it.
+    async processManualArticle(input: {
+        mode: ManualNoteMode;
+        text: string;
+        title?: string;
+        section?: string;
+        imageUrl?: string;
+        instructions?: string;
+        userId?: string;
+    }) {
+        const sourceName = 'Carga manual';
+        const source = await this.articleService.getSourceByName(sourceName)
+            || await this.articleService.createSource(sourceName, 'manual://');
+
+        const text = input.text.trim();
+        const suggestedTitle = (input.title || '').trim();
+        const promptType = input.mode === 'POLICE' ? 'POLICE_REPORT' : 'MANUAL_WRITER';
+        const instructions = [await getAutomaticRewriteInstructions(), input.instructions].filter(Boolean).join('\n');
+        const seoRewrite = await this.aiService.rewriteForVorknews(suggestedTitle, text, 'neutral', instructions, promptType);
+        const title = seoRewrite.title || suggestedTitle || text.split('\n')[0].slice(0, 120);
+
+        const embeddingChars = await this.configService.getEmbeddingTextChars();
+        const embedding = await this.aiService.generateEmbedding(`${title}\n\n${text.substring(0, embeddingChars)}`);
+        const interestScore = await this.aiService.calculateInterestScore(title, seoRewrite.content);
+
+        const article: ScrapedArticle = {
+            title: suggestedTitle || title,
+            content: text,
+            url: `manual://${crypto.randomUUID()}`,
+            section: input.section || (input.mode === 'POLICE' ? 'Policiales' : undefined)
+        };
+
+        const userImage = (input.imageUrl || '').trim();
+        const image = userImage.startsWith('http')
+            ? { featureImageUrl: userImage, imageCandidates: [userImage], imageScoresDict: { [userImage]: 10 }, aiTrace: undefined }
+            : await this.findFeatureImage(article, title);
+
+        const saved = await this.articleService.saveArticle({
+            sourceId: source.id,
+            section: article.section,
+            originalTitle: title,
+            originalContent: text,
+            originalUrl: article.url,
+            originalImageUrl: userImage.startsWith('http') ? userImage : undefined,
+            featureImageUrl: image.featureImageUrl,
+            imageCandidates: image.imageCandidates,
+            imageScores: image.imageScoresDict,
+            aiDecisions: image.aiTrace,
+            editorialData: {
+                seo: seoRewrite,
+                manual: { mode: input.mode, createdBy: input.userId || null }
+            },
+            embedding,
+            rewrittenTitle: seoRewrite.title || title,
+            rewrittenContent: seoRewrite.content,
+            aiRewriteSnapshot: seoRewrite,
+            interestScore,
+            status: 'PENDING'
+        });
+
+        console.log(`[Processor] ✅ Saved manual ${input.mode} article: ${title}`);
+        return saved;
+    }
+
+    // Picks the feature image for a new article: AI-driven search, DALL-E
+    // fallback, and the source image only as a last resort.
+    private async findFeatureImage(article: ScrapedArticle, rewrittenTitle: string) {
         // Original image is treated as last resort — it often has text overlays,
         // branding, or watermarks from the source publication.
         let featureImageUrl: string | undefined = undefined;
@@ -213,7 +346,7 @@ export class ProcessorService {
         const smartQueryResult = await this.aiService.generateImageSearchQueries({
             title: article.title,
             content: article.content,
-            rewrittenTitle: rewritten.title,
+            rewrittenTitle: rewrittenTitle,
             originalImageUrl: article.imageUrl
         });
         aiTrace.smartQueries = smartQueryResult.queries;
@@ -222,7 +355,7 @@ export class ProcessorService {
         const { images: searchResults, trace: searchTrace } = await imageService.searchImages({
             title: article.title,
             content: article.content,
-            rewrittenTitle: rewritten.title,
+            rewrittenTitle: rewrittenTitle,
             smartQueries: smartQueryResult.queries
         });
         aiTrace.searchExecutions = searchTrace.executions;
@@ -331,56 +464,7 @@ export class ProcessorService {
             console.log(`[Processor] ⚠️ All strategies failed. Using original as last resort.`);
         }
 
-        // 6. Save
-        let newArticle;
-        try {
-            newArticle = await this.articleService.saveArticle({
-                sourceId,
-                section: article.section,
-                location: article.location,
-                originalTitle: article.title,
-                originalContent: article.content,
-                originalUrl: article.url,
-                originalImageUrl: article.imageUrl,
-                featureImageUrl: featureImageUrl,
-                imageCandidates: imageCandidates,
-                imageScores: imageScoresDict,
-                aiDecisions: aiTrace,
-                editorialData: {
-                    ...buildEditorialData(editorial),
-                    seo: vorknewsRewrite
-                },
-                embedding,
-                rewrittenTitle: rewritten.title,
-                rewrittenContent: rewritten.content,
-                aiRewriteSnapshot: vorknewsRewrite,
-                interestScore: editorial.effectiveScore,
-                status: editorial.publicationBlocked ? 'REJECTED' : 'PENDING',
-                publicationBlocked: editorial.publicationBlocked,
-                publicationBlockReason: editorial.publicationBlockReason
-            });
-        } catch (error) {
-            if (!this.isOriginalUrlUniqueConflict(error)) throw error;
-
-            // With multiple workers, two sections can pass the initial URL check
-            // before either insert commits. The unique constraint is the final
-            // authority, so treat the losing insert as a normal duplicate.
-            const existing = await this.articleService.findByUrl(article.url);
-            console.log(`[Processor] Article inserted concurrently; skipping duplicate URL: ${article.title}`);
-            return {
-                outcome: 'duplicateUrl',
-                reason: 'La URL fue guardada por otra ejecución concurrente.',
-                matchedArticleId: existing?.id,
-                matchedArticleTitle: existing?.originalTitle
-            } satisfies ProcessArticleResult;
-        }
-
-        console.log(`[Processor] ✅ Saved new article: ${rewritten.title}`);
-        return {
-            outcome: 'saved',
-            reason: 'Nota guardada como nueva.',
-            articleId: newArticle.id
-        } satisfies ProcessArticleResult;
+        return { featureImageUrl, imageCandidates, imageScoresDict, aiTrace };
     }
 
     private isOriginalUrlUniqueConflict(error: unknown): boolean {

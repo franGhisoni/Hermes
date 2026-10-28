@@ -385,6 +385,8 @@ enum PromptType {
   IMAGE_SELECT
   REWRITE_VORKNEWS
   SOCIAL_COPY
+  MANUAL_WRITER
+  POLICE_REPORT
 }
 
 enum EditorialRuleMatchType {

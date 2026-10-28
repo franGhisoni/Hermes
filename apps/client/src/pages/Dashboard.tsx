@@ -351,7 +351,8 @@ function pathAlias(path?: string | null) {
 
 function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {
     // Manual notes have no source photo: show the one picked for publication.
-    const cardImage = article.originalUrl.startsWith('manual://')
+    // The list endpoint omits originalUrl, so detect them by source name.
+    const cardImage = article.source?.name === 'Carga manual'
         ? article.featureImageUrl || article.originalImageUrl
         : article.originalImageUrl;
     return (

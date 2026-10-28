@@ -1099,7 +1099,7 @@ export default function Newsroom() {
                                     </span>
                                 )}
                             </div>
-                            {article.originalUrl.startsWith('manual://') ? (
+                            {article.originalUrl?.startsWith('manual://') ? (
                                 <span className="text-sm font-mono text-editorial-text/70 block">
                                     Carga manual ({(article.editorialData as any)?.manual?.mode === 'POLICE' ? 'parte policial' : 'redactor'})
                                 </span>

@@ -352,7 +352,7 @@ export class SchedulerService {
                         ? await this.buildRepublishedVariant(article)
                         : article;
                     const category = fresh.targetCategory || dispatchArticle.section || undefined;
-                    const ok = await this.targetPublisher.publish(target, dispatchArticle, category);
+                    const { ok } = await this.targetPublisher.publish(target, dispatchArticle, category);
                     if (!ok) {
                         await dailyOperationalLogService.recordPublication(false).catch(error =>
                             console.error('[DailyOperationalLog] Failed to record publication failure counter:', error)

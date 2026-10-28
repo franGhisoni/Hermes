@@ -14,7 +14,21 @@ interface Target {
     type?: string;
     email: string | null;
     apiUrl?: string | null;
+    sectionMap?: Record<string, string> | null;
 }
+
+/** For a CMS target, the section slugs its map points to; the CMS rejects any other. */
+const cmsSections = (target?: Target): string[] =>
+    target?.type === 'IMPACTO_API' && target.sectionMap
+        ? [...new Set(Object.values(target.sectionMap))].sort()
+        : [];
+
+/** The slug the target's map gives a Hermes section, matched like the server does. */
+const mappedSection = (target: Target | undefined, section?: string | null): string => {
+    if (!section || !target?.sectionMap) return '';
+    const key = section.trim().toLowerCase();
+    return Object.entries(target.sectionMap).find(([name]) => name.trim().toLowerCase() === key)?.[1] || '';
+};
 
 // contentPreview is the start of the body, so using it as the bajada of a
 // rewritten note repeats the first paragraph; only legacy notes fall back to it.
@@ -463,6 +477,18 @@ export default function Newsroom() {
         );
     }, [targets, targetSearch]);
 
+    const selectedTarget = targets.find(target => target.id === selectedTargetId);
+    const isCmsTarget = selectedTarget?.type === 'IMPACTO_API';
+    const selectedCmsSections = cmsSections(selectedTarget);
+
+    // A CMS target takes its own section slugs, an email target Hermes's section names.
+    useEffect(() => {
+        if (!selectedTarget) return;
+        setSelectedCategory(selectedTarget.type === 'IMPACTO_API'
+            ? mappedSection(selectedTarget, article?.section)
+            : article?.section || '');
+    }, [selectedTargetId, targets]);
+
     const handlePublish = async () => {
         if (!id || !article) return;
         if (article.publicationBlocked) {
@@ -471,6 +497,10 @@ export default function Newsroom() {
         }
         if (!selectedTargetId) {
             alert('Por favor selecciona un medio de destino.');
+            return;
+        }
+        if (isCmsTarget && !selectedCategory.trim()) {
+            alert('Elegí la sección del CMS donde va la nota.');
             return;
         }
         setPublishing(true);
@@ -714,7 +744,32 @@ export default function Newsroom() {
                             </div>
 
                             <div>
-                                <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-1 font-sans">Categoría</label>
+                                <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-1 font-sans">{isCmsTarget ? 'Sección del CMS' : 'Categoría'}</label>
+                                {isCmsTarget ? (selectedCmsSections.length > 0 ? (
+                                    <select
+                                        value={selectedCategory}
+                                        onChange={e => setSelectedCategory(e.target.value)}
+                                        className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
+                                    >
+                                        <option value="">Elegí una sección</option>
+                                        {selectedCmsSections.map(slug => (
+                                            <option key={slug} value={slug}>{slug}</option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={selectedCategory}
+                                            onChange={e => setSelectedCategory(e.target.value)}
+                                            placeholder="slug de la sección, ej. policiales"
+                                            className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text"
+                                        />
+                                        <p className="mt-1 text-[11px] font-sans text-editorial-text/50">
+                                            Este medio no tiene mapa de secciones. Cargalo en Flujos para elegir de una lista.
+                                        </p>
+                                    </>
+                                )) : (
                                 <select
                                     value={selectedCategory}
                                     onChange={e => setSelectedCategory(e.target.value)}
@@ -725,6 +780,7 @@ export default function Newsroom() {
                                         <option key={s.id} value={s.name}>{s.name}</option>
                                     ))}
                                 </select>
+                                )}
                             </div>
 
                             {/* Preview of what is sent */}

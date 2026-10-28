@@ -1030,11 +1030,12 @@ app.post('/api/articles/:id/publish', async (req, res) => {
         // Use provided category, or fall back to article's section
         const articleCategory = category || article.section || undefined;
         const sent = await targetPublisher.publish(target, articleForTarget as any, articleCategory);
-        if (!sent) {
+        if (!sent.ok) {
             await dailyOperationalLogService.recordPublication(false).catch(logError => {
                 console.error('[DailyOperationalLog] Failed to record publication failure counter:', logError);
             });
-            return res.status(500).json({ error: target.type === 'IMPACTO_API' ? 'Failed to publish to Impacto API' : 'Failed to send email' });
+            const fallback = target.type === 'IMPACTO_API' ? 'No se pudo publicar en el CMS' : 'No se pudo enviar el email';
+            return res.status(502).json({ error: sent.error ? `${target.name}: ${sent.error}` : fallback });
         }
 
         // Update article status to PUBLISHED

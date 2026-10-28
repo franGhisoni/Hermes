@@ -5,23 +5,30 @@ import { ConfigService } from './ConfigService';
 import { prisma } from '../lib/prisma';
 import { appendAiAttribution, sourceDisplayName } from './AiAttribution';
 
-/** Sends an article to a target, whatever its type. Returns true when it was accepted. */
+export interface PublishOutcome {
+    ok: boolean;
+    /** Why the target refused the article, when it says so (e.g. the CMS's 422 message). */
+    error?: string;
+}
+
+/** Sends an article to a target, whatever its type. */
 export class TargetPublisher {
     private impactoApi = new ImpactoApiService();
     private configService = new ConfigService();
 
     constructor(private mailService: MailService) {}
 
-    public async publish(target: Target, article: Article, category?: string): Promise<boolean> {
+    public async publish(target: Target, article: Article, category?: string): Promise<PublishOutcome> {
         const outgoing = await this.withAiAttribution(article);
         if (target.type === 'IMPACTO_API') {
-            return (await this.impactoApi.publish(target, outgoing, category)).ok;
+            const { ok, error } = await this.impactoApi.publish(target, outgoing, category);
+            return { ok, error };
         }
         if (!target.email) {
             console.error(`[TargetPublisher] Target ${target.name} has no email configured.`);
-            return false;
+            return { ok: false, error: `El medio ${target.name} no tiene email configurado.` };
         }
-        return this.mailService.sendArticleToTarget(target.email, outgoing, category);
+        return { ok: await this.mailService.sendArticleToTarget(target.email, outgoing, category) };
     }
 
     /** What to store as the publication's destination address. */

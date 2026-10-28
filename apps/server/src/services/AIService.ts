@@ -2,6 +2,28 @@ import OpenAI from 'openai';
 import { PromptService } from './PromptService';
 import { ConfigService } from './ConfigService';
 
+// gpt-5+ and the o-series reject `max_tokens` and spend part of
+// `max_completion_tokens` on hidden reasoning, so they get extra headroom.
+export function usesReasoningModel(model: string): boolean {
+    const normalized = model.trim().toLowerCase();
+    const major = normalized.match(/^gpt-(\d+)/);
+    return (major !== null && Number(major[1]) >= 5) || /^o[1-9](?:-|$)/.test(normalized);
+}
+
+export function tokenLimitParams(model: string, maxTokens: number, reasoningEffort: string, reasoningHeadroom: number): Record<string, unknown> {
+    return usesReasoningModel(model)
+        ? { max_completion_tokens: maxTokens + reasoningHeadroom, reasoning_effort: reasoningEffort }
+        : { max_tokens: maxTokens };
+}
+
+export async function configuredTokenLimits(config: ConfigService, model: string, maxTokens: number, reasoningEffort?: string) {
+    const [effort, headroom] = await Promise.all([
+        reasoningEffort ? Promise.resolve(reasoningEffort) : config.getTextReasoningEffort(),
+        config.getReasoningTokenHeadroom()
+    ]);
+    return tokenLimitParams(model, maxTokens, effort, headroom);
+}
+
 export class AIService {
     private static readonly MIN_REWRITE_LENGTH_RATIO = 0.6;
     private static readonly MAX_REWRITE_LENGTH_RATIO = 1.4;
@@ -55,8 +77,8 @@ export class AIService {
                 messages,
                 model,
                 response_format: { type: "json_object" },
-                max_tokens: maxTokens,
-            });
+                ...(await configuredTokenLimits(this.configService, model, maxTokens)),
+            } as any);
             return completion.choices[0].message.content || '{}';
         };
 
@@ -192,8 +214,8 @@ export class AIService {
             completion = await this.openai.chat.completions.create({
                 messages: [{ role: "user", content: prompt }],
                 model,
-                max_tokens: maxTokens,
-            });
+                ...(await configuredTokenLimits(this.configService, model, maxTokens)),
+            } as any);
         } catch (error) {
             console.error('[AIService] API error during calculateInterestScore:', error);
             return 5;
@@ -252,10 +274,10 @@ Return strictly a JSON object with this shape:
                 );
             }
 
-            const request = {
+            const request: any = {
                 model,
                 response_format: { type: "json_object" as const },
-                max_tokens: maxTokens,
+                ...(await configuredTokenLimits(this.configService, model, maxTokens)),
                 messages: [
                     { role: "system" as const, content: systemPrompt },
                     { role: "user" as const, content: userContent }
@@ -424,18 +446,12 @@ Return a JSON object:
                 ];
 
                 try {
-                    const usesReasoning = this.supportsReasoningEffort(scoringModel);
                     const request: any = {
                         model: scoringModel,
                         messages: messages,
-                        response_format: { type: "json_object" }
+                        response_format: { type: "json_object" },
+                        ...(await configuredTokenLimits(this.configService, scoringModel, scoringMaxTokens, scoringReasoningEffort))
                     };
-                    if (usesReasoning) {
-                        request.max_completion_tokens = scoringMaxTokens;
-                        request.reasoning_effort = scoringReasoningEffort;
-                    } else {
-                        request.max_tokens = scoringMaxTokens;
-                    }
                     const completion = await this.openai.chat.completions.create(request);
                     rawResult = JSON.parse(completion.choices[0].message.content || '{}');
                     break;
@@ -561,11 +577,6 @@ Return a JSON object:
                 protagonist: null
             };
         }
-    }
-
-    private supportsReasoningEffort(model: string): boolean {
-        const normalized = model.trim().toLowerCase();
-        return normalized.startsWith('gpt-5') || /^o[1-4](?:-|$)/.test(normalized);
     }
 
     private isImageDownloadError(err: any, message: string): boolean {

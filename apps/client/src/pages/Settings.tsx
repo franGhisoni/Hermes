@@ -90,6 +90,8 @@ interface ExtendedSettings {
     modelImageScoring: string;
     modelImageGeneration: string;
     aiImageScoringReasoningEffort: string;
+    aiTextReasoningEffort: string;
+    aiReasoningTokenHeadroom: number;
     aiRewriteMaxTokens: number;
     aiRewriteContentChars: number;
     aiInterestMaxTokens: number;
@@ -230,6 +232,8 @@ export default function Settings() {
                     modelImageScoring: d.modelImageScoring,
                     modelImageGeneration: d.modelImageGeneration,
                     aiImageScoringReasoningEffort: d.aiImageScoringReasoningEffort ?? 'medium',
+                    aiTextReasoningEffort: d.aiTextReasoningEffort ?? 'low',
+                    aiReasoningTokenHeadroom: d.aiReasoningTokenHeadroom ?? 2000,
                     aiRewriteMaxTokens: d.aiRewriteMaxTokens,
                     aiRewriteContentChars: d.aiRewriteContentChars,
                     aiInterestMaxTokens: d.aiInterestMaxTokens,
@@ -1475,6 +1479,23 @@ function SistemaTab(props: SistemaTabProps) {
                         <NumericCard title="Scoring – max tokens" description="Reasonings + scores de hasta N candidatos."
                             value={extended.aiImageScoringMaxTokens} unit="tokens" min={1}
                             onCommit={(v) => updateExtended('aiImageScoringMaxTokens', v)} />
+                        <NumericCard title="Margen para razonamiento" description="Solo modelos de razonamiento (gpt-5 en adelante, o-series): se suma a cada max tokens y el total va como max_completion_tokens. Si una respuesta sale vacía o cortada, subilo."
+                            value={extended.aiReasoningTokenHeadroom} unit="tokens" min={0}
+                            onCommit={(v) => updateExtended('aiReasoningTokenHeadroom', v)} />
+                        <SelectCard
+                            title="Razonamiento de tareas de texto"
+                            description="Reescritura, interés, queries de imagen, redes y aprendizaje. Solo afecta a modelos de razonamiento; más alto = más lento y más tokens."
+                            value={extended.aiTextReasoningEffort}
+                            options={[
+                                { value: 'none', label: 'Ninguno' },
+                                { value: 'low', label: 'Bajo (recomendado)' },
+                                { value: 'medium', label: 'Medio' },
+                                { value: 'high', label: 'Alto' },
+                                { value: 'xhigh', label: 'Muy alto' },
+                                { value: 'max', label: 'Máximo' }
+                            ]}
+                            onCommit={(value) => updateExtended('aiTextReasoningEffort', value)}
+                        />
                     </div>
                 </div>
             )}

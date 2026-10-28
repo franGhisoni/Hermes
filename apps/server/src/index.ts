@@ -409,6 +409,8 @@ const SETTINGS: SettingDef[] = [
     { api: 'modelImageScoring', key: 'model_image_scoring', kind: 'string' },
     { api: 'modelImageGeneration', key: 'model_image_generation', kind: 'string' },
     { api: 'aiImageScoringReasoningEffort', key: 'ai_image_scoring_reasoning_effort', kind: 'string', validate: validateReasoningEffort },
+    { api: 'aiTextReasoningEffort', key: 'ai_text_reasoning_effort', kind: 'string', validate: validateReasoningEffort },
+    { api: 'aiReasoningTokenHeadroom', key: 'ai_reasoning_token_headroom', kind: 'int', min: 0 },
     { api: 'aiRewriteMaxTokens', key: 'ai_rewrite_max_tokens', kind: 'int', min: 1 },
     { api: 'aiRewriteContentChars', key: 'ai_rewrite_content_chars', kind: 'int', min: 1 },
     { api: 'aiInterestMaxTokens', key: 'ai_interest_max_tokens', kind: 'int', min: 1 },

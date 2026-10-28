@@ -36,6 +36,8 @@ export class ConfigService {
             model_image_scoring: 'gpt-4o',
             model_image_generation: 'gpt-image-2',
             ai_image_scoring_reasoning_effort: 'medium',
+            ai_text_reasoning_effort: 'low',
+            ai_reasoning_token_headroom: '2000',
             ai_rewrite_max_tokens: '1500',
             ai_rewrite_content_chars: '3000',
             ai_interest_max_tokens: '3',
@@ -188,6 +190,20 @@ export class ConfigService {
         return (REASONING_EFFORTS as readonly string[]).includes(value)
             ? value as ReasoningEffort
             : 'medium';
+    }
+
+    // Reasoning effort for every text call (rewrite, interest, queries, social, learning).
+    async getTextReasoningEffort(): Promise<ReasoningEffort> {
+        const value = await this.getSetting('ai_text_reasoning_effort', 'low');
+        return (REASONING_EFFORTS as readonly string[]).includes(value)
+            ? value as ReasoningEffort
+            : 'low';
+    }
+
+    // Extra max_completion_tokens granted to reasoning models on top of each
+    // task's max tokens, since hidden reasoning counts against that limit.
+    async getReasoningTokenHeadroom(): Promise<number> {
+        return this.getIntSetting('ai_reasoning_token_headroom', 2000);
     }
 
     async getImageGenerationModel(): Promise<string> {

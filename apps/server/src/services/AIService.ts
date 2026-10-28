@@ -5,18 +5,25 @@ import { ConfigService } from './ConfigService';
 // gpt-5+ and the o-series reject `max_tokens` and spend part of
 // `max_completion_tokens` on hidden reasoning; without headroom a small limit
 // (like the interest score's 3) comes back empty.
-const REASONING_TOKEN_HEADROOM = 2000;
-
 export function usesReasoningModel(model: string): boolean {
     const normalized = model.trim().toLowerCase();
     const major = normalized.match(/^gpt-(\d+)/);
     return (major !== null && Number(major[1]) >= 5) || /^o[1-9](?:-|$)/.test(normalized);
 }
 
-export function tokenLimitParams(model: string, maxTokens: number, reasoningEffort = 'low'): Record<string, unknown> {
+export function tokenLimitParams(model: string, maxTokens: number, reasoningEffort: string, reasoningHeadroom: number): Record<string, unknown> {
     return usesReasoningModel(model)
-        ? { max_completion_tokens: maxTokens + REASONING_TOKEN_HEADROOM, reasoning_effort: reasoningEffort }
+        ? { max_completion_tokens: maxTokens + reasoningHeadroom, reasoning_effort: reasoningEffort }
         : { max_tokens: maxTokens };
+}
+
+// Same as tokenLimitParams, with effort and headroom read from settings.
+export async function configuredTokenLimits(config: ConfigService, model: string, maxTokens: number, reasoningEffort?: string) {
+    const [effort, headroom] = await Promise.all([
+        reasoningEffort ? Promise.resolve(reasoningEffort) : config.getTextReasoningEffort(),
+        config.getReasoningTokenHeadroom()
+    ]);
+    return tokenLimitParams(model, maxTokens, effort, headroom);
 }
 
 export class AIService {
@@ -73,7 +80,7 @@ export class AIService {
                 messages,
                 model,
                 response_format: { type: "json_object" },
-                ...tokenLimitParams(model, maxTokens),
+                ...(await configuredTokenLimits(this.configService, model, maxTokens)),
             } as any);
             return completion.choices[0].message.content || '{}';
         };
@@ -194,7 +201,7 @@ export class AIService {
                 messages,
                 model,
                 response_format: { type: "json_object" },
-                ...tokenLimitParams(model, Math.max(maxTokens, 2500)),
+                ...(await configuredTokenLimits(this.configService, model, Math.max(maxTokens, 2500))),
             } as any);
             return completion.choices[0].message.content || '{}';
         };
@@ -302,7 +309,7 @@ Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
                 messages: [{ role: "user", content: prompt }],
                 model,
                 response_format: { type: "json_object" },
-                ...tokenLimitParams(model, 1500),
+                ...(await configuredTokenLimits(this.configService, model, 1500)),
             } as any);
             const raw = completion.choices[0].message.content || '{}';
             const parsed = JSON.parse(raw.replace(/```json/g, '').replace(/```/g, '').trim());
@@ -425,7 +432,7 @@ Responde ÚNICAMENTE un JSON estricto con esta estructura exacta:
             completion = await this.openai.chat.completions.create({
                 messages: [{ role: "user", content: prompt }],
                 model,
-                ...tokenLimitParams(model, maxTokens),
+                ...(await configuredTokenLimits(this.configService, model, maxTokens)),
             } as any);
         } catch (error) {
             console.error('[AIService] API error during calculateInterestScore:', error);
@@ -487,7 +494,7 @@ Return strictly a JSON object with this shape:
             const completion = await this.openai.chat.completions.create({
                 model,
                 response_format: { type: "json_object" },
-                ...tokenLimitParams(model, maxTokens),
+                ...(await configuredTokenLimits(this.configService, model, maxTokens)),
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: userContent }
@@ -637,7 +644,7 @@ Return a JSON object:
                         model: scoringModel,
                         messages: messages,
                         response_format: { type: "json_object" },
-                        ...tokenLimitParams(scoringModel, scoringMaxTokens, scoringReasoningEffort)
+                        ...(await configuredTokenLimits(this.configService, scoringModel, scoringMaxTokens, scoringReasoningEffort))
                     };
                     const completion = await this.openai.chat.completions.create(request);
                     rawResult = JSON.parse(completion.choices[0].message.content || '{}');

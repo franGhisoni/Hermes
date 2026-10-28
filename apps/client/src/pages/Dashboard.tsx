@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { api } from '../lib/api';
+import { api, resolveAssetUrl } from '../lib/api';
 import type { Article } from '../types';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -356,15 +356,19 @@ function pathAlias(path?: string | null) {
 }
 
 function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {
+    // Manual notes have no source photo: show the one picked for publication.
+    const cardImage = article.originalUrl.startsWith('manual://')
+        ? article.featureImageUrl || article.originalImageUrl
+        : article.originalImageUrl;
     return (
         <article className="group flex flex-col h-full">
-            {article.originalImageUrl && (
+            {cardImage && (
                 <div className="aspect-[4/3] overflow-hidden mb-4 border border-editorial-text/10 relative">
                     <div className="absolute top-2 right-2 bg-editorial-bg px-2 py-1 font-sans text-xs font-bold border border-editorial-text/20 z-[1]">
                         Score: {article.interestScore || '-'}
                     </div>
                     <img
-                        src={article.originalImageUrl}
+                        src={resolveAssetUrl(cardImage)}
                         alt=""
                         className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-700"
                     />

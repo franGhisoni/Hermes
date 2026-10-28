@@ -183,7 +183,7 @@ export default function Dashboard() {
                     className="lg:hidden p-2 border border-editorial-text/20 hover:bg-editorial-text/5">
                     {menuOpen ? <X size={20} /> : <Menu size={20} />}
                 </button>
-                <div className={`${menuOpen ? 'flex' : 'hidden'} lg:flex w-full lg:w-auto flex-wrap gap-x-4 gap-y-3 items-center border-t border-editorial-text/10 pt-3 lg:border-0 lg:pt-0`}>
+                <div className={`${menuOpen ? 'flex' : 'hidden'} lg:flex w-full lg:w-auto lg:ml-auto lg:justify-end flex-wrap gap-x-4 gap-y-3 items-center border-t border-editorial-text/10 pt-3 lg:border-0 lg:pt-0`}>
                     {user?.role === 'ADMIN' && <NotificationsPanel />}
                     <ScraperControl />
                     {!isDemo && <ManualNoteButton />}

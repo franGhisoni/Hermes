@@ -4,7 +4,9 @@ import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { EditorialModal } from './EditorialModal';
 
-export function FeedbackButton({ kind, articleUrl = '' }: { kind: 'ERROR' | 'SUGGESTION'; articleUrl?: string }) {
+export const MENU_ITEM_CLASS = 'flex w-full items-center gap-2.5 rounded px-3 py-2 text-left font-sans text-xs font-bold uppercase tracking-wider text-editorial-text/80 transition-colors hover:bg-editorial-text/5 hover:text-editorial-text';
+
+export function FeedbackButton({ kind, articleUrl = '', menuItem = false }: { kind: 'ERROR' | 'SUGGESTION'; articleUrl?: string; menuItem?: boolean }) {
     const [open, setOpen] = useState(false);
     const [message, setMessage] = useState('');
     const [url, setUrl] = useState(articleUrl);
@@ -32,7 +34,7 @@ export function FeedbackButton({ kind, articleUrl = '' }: { kind: 'ERROR' | 'SUG
     };
 
     return <>
-        <button type="button" onClick={() => { setUrl(articleUrl); setNotice(''); setOpen(true); }} aria-label={label} className="inline-flex items-center gap-1.5 rounded border border-editorial-text/15 px-2.5 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/75 transition-colors hover:border-editorial-text/50 hover:bg-editorial-text/5 hover:text-editorial-text" title={label}><Icon size={14} /><span className="hidden xl:inline">{label}</span></button>
+        <button type="button" onClick={() => { setUrl(articleUrl); setNotice(''); setOpen(true); }} aria-label={label} className={menuItem ? MENU_ITEM_CLASS : 'inline-flex items-center gap-1.5 rounded border border-editorial-text/15 px-2.5 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/75 transition-colors hover:border-editorial-text/50 hover:bg-editorial-text/5 hover:text-editorial-text'} title={label}><Icon size={14} /><span className={menuItem ? '' : 'hidden xl:inline'}>{label}</span></button>
         {notice && !open && createPortal(<span role="status" className="fixed bottom-6 right-6 z-[110] border border-editorial-text/15 bg-editorial-bg px-4 py-3 font-sans text-xs shadow-lg">{notice}</span>, document.body)}
         {open && <EditorialModal title={label} eyebrow="Tu opinión" onClose={() => setOpen(false)}>
             <p className="text-sm leading-relaxed text-editorial-text/65">{kind === 'ERROR' ? 'Contanos qué falló para que podamos revisarlo. Si la nota está en Hermes, el ticket guardará sus destinos de publicación registrados.' : 'Contanos qué mejorarías en el sistema.'}</p>

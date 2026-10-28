@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { SlidersHorizontal } from 'lucide-react';
 import { api } from '../lib/api';
 import { EditorialModal } from './EditorialModal';
+import { MENU_ITEM_CLASS } from './FeedbackButton';
 
 interface Preference { id: string; instruction: string; active: boolean; createdAt: string }
 
@@ -25,7 +26,7 @@ function PreferenceRow({ item, onUpdate }: { item: Preference; onUpdate: (item: 
     </article>;
 }
 
-export function MyPreferencesButton() {
+export function MyPreferencesButton({ menuItem = false }: { menuItem?: boolean }) {
     const [open, setOpen] = useState(false);
     const [items, setItems] = useState<Preference[]>([]);
     const [loading, setLoading] = useState(false);
@@ -48,7 +49,7 @@ export function MyPreferencesButton() {
         }
     };
     return <>
-        <button type="button" onClick={() => { setOpen(true); void load(); }} aria-label="Mis ajustes de escritura" title="Mis ajustes de escritura" className="inline-flex items-center gap-1.5 rounded border border-editorial-text/15 px-2.5 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/75 transition-colors hover:border-editorial-text/50 hover:bg-editorial-text/5 hover:text-editorial-text"><SlidersHorizontal size={14} /><span className="hidden xl:inline">Mis ajustes</span></button>
+        <button type="button" onClick={() => { setOpen(true); void load(); }} aria-label="Mis ajustes de escritura" title="Mis ajustes de escritura" className={menuItem ? MENU_ITEM_CLASS : 'inline-flex items-center gap-1.5 rounded border border-editorial-text/15 px-2.5 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/75 transition-colors hover:border-editorial-text/50 hover:bg-editorial-text/5 hover:text-editorial-text'}><SlidersHorizontal size={14} /><span className={menuItem ? '' : 'hidden xl:inline'}>Mis ajustes</span></button>
         {open && <EditorialModal title="Mis ajustes de escritura" eyebrow="Aprendizaje" onClose={() => setOpen(false)} wide>
             <p className="text-sm leading-relaxed text-editorial-text/65">Revisá las indicaciones que guardaste con “Aprender de mis cambios”. Podés editarlas o pausarlas.</p>
             {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

@@ -585,7 +585,7 @@ export default function Settings() {
                     <div className="hidden sm:block h-6 w-px bg-editorial-text/20 mx-2"></div>
                     <h1 className="hidden sm:block font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
                 </div>
-                <div className="flex flex-wrap gap-3 items-center">
+                <div className="ml-auto flex flex-wrap justify-end gap-3 items-center">
                     <ScraperControl />
                     <EditorialActions />
                     <Link to="/" className="border border-editorial-text/20 px-4 py-2 font-sans text-xs font-bold uppercase tracking-wider text-editorial-text/70 transition-colors hover:bg-editorial-text hover:text-editorial-bg">← Noticias</Link>

@@ -66,6 +66,9 @@ export default function Newsroom() {
     const [socialInstagram, setSocialInstagram] = useState('');
     const [socialFacebook, setSocialFacebook] = useState('');
     const [socialHashtags, setSocialHashtags] = useState('');
+    // Texto de la placa que el CMS publica en Facebook e Instagram.
+    const [cardHeadline, setCardHeadline] = useState('');
+    const [cardKicker, setCardKicker] = useState('');
     const [generatingSocial, setGeneratingSocial] = useState(false);
     const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -143,6 +146,8 @@ export default function Newsroom() {
                     setSocialInstagram(editorial.social.instagram || '');
                     setSocialFacebook(editorial.social.facebook || '');
                     setSocialHashtags(editorial.social.hashtags || '');
+                    setCardHeadline(editorial.social.card?.headline || '');
+                    setCardKicker(editorial.social.card?.kicker || '');
                 }
                 setLoading(false);
             });
@@ -353,7 +358,8 @@ export default function Newsroom() {
                 twitter: socialTwitter,
                 instagram: socialInstagram,
                 facebook: socialFacebook,
-                hashtags: socialHashtags
+                hashtags: socialHashtags,
+                ...(cardHeadline.trim() ? { card: { headline: cardHeadline.trim(), kicker: cardKicker.trim() || undefined } } : {})
             }
         };
 
@@ -424,6 +430,8 @@ export default function Newsroom() {
             setSocialInstagram(res.data.instagram || '');
             setSocialFacebook(res.data.facebook || '');
             setSocialHashtags(res.data.hashtags || '');
+            setCardHeadline(res.data.card?.headline || '');
+            setCardKicker(res.data.card?.kicker || '');
             setArticle(prev => prev ? {
                 ...prev,
                 editorialData: res.data.editorialData || {
@@ -1406,6 +1414,33 @@ export default function Newsroom() {
                                     </div>
                                 ) : (
                                     <div className="space-y-6">
+                                        {/* Placa para Facebook e Instagram (la publica el CMS) */}
+                                        <div className="border border-editorial-text/15 bg-white/40 p-4 rounded space-y-3">
+                                            <div className="font-sans">
+                                                <span className="text-xs font-bold uppercase tracking-widest text-editorial-text">Placa (Facebook e Instagram)</span>
+                                                <p className="text-[11px] text-editorial-text/50">La arma el CMS al publicar. Las palabras entre *asteriscos* salen resaltadas.</p>
+                                            </div>
+                                            <label className="block font-sans">
+                                                <span className="block text-[10px] font-bold uppercase tracking-widest text-editorial-text/60 mb-1">Volanta</span>
+                                                <input
+                                                    value={cardKicker}
+                                                    onChange={e => setCardKicker(e.target.value)}
+                                                    maxLength={60}
+                                                    className="w-full bg-transparent border-b border-editorial-text/20 text-sm py-1 focus:outline-none"
+                                                />
+                                            </label>
+                                            <label className="block font-sans">
+                                                <span className="block text-[10px] font-bold uppercase tracking-widest text-editorial-text/60 mb-1">Titular de la placa</span>
+                                                <textarea
+                                                    value={cardHeadline}
+                                                    onChange={e => setCardHeadline(e.target.value)}
+                                                    maxLength={200}
+                                                    rows={2}
+                                                    className="w-full bg-transparent border border-editorial-text/20 rounded p-2 text-sm focus:outline-none resize-none"
+                                                />
+                                            </label>
+                                        </div>
+
                                         {/* X / Twitter */}
                                         <div className="border border-editorial-text/15 bg-white/40 p-4 rounded">
                                             <div className="flex justify-between items-center mb-2 font-sans">

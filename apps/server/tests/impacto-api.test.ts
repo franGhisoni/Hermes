@@ -121,3 +121,39 @@ test('contentToHtml deja pasar el HTML de la reescritura SEO', () => {
     const html = '<p>Primer <strong>párrafo</strong>.</p><h2>Subtítulo</h2><p>Otro.</p>';
     assert.equal(contentToHtml(`  ${html}\n`), html);
 });
+
+test('publish manda el copy para redes y la placa en "redes", recortados a los límites del CMS', async t => {
+    const calls: any[] = [];
+    t.mock.method(globalThis, 'fetch', async (url: string, init: any) => {
+        calls.push({ url, init });
+        return new Response(JSON.stringify({ id: 7 }), { status: 201 });
+    });
+    const withSocial = {
+        ...article,
+        editorialData: {
+            social: {
+                facebook: 'Copy de Facebook',
+                instagram: 'x'.repeat(2500),
+                hashtags: '#Castex',
+                card: { headline: 'El Concejo aprobó *el presupuesto*', kicker: 'Política local' },
+            },
+        },
+    };
+
+    await new ImpactoApiService().publish(target, withSocial, 'Política');
+
+    const { redes } = JSON.parse(calls[0].init.body);
+    assert.equal(redes.facebook, 'Copy de Facebook');
+    assert.equal(redes.instagram.length, 2200);
+    assert.deepEqual(redes.placa, { titulo: 'El Concejo aprobó *el presupuesto*', volanta: 'Política local' });
+});
+
+test('publish no manda "redes" si la nota no tiene copy para redes', async t => {
+    const calls: any[] = [];
+    t.mock.method(globalThis, 'fetch', async (url: string, init: any) => {
+        calls.push({ url, init });
+        return new Response(JSON.stringify({ id: 8 }), { status: 201 });
+    });
+    await new ImpactoApiService().publish(target, { ...article, editorialData: { social: { twitter: 'solo X' } } }, 'Política');
+    assert.equal('redes' in JSON.parse(calls[0].init.body), false);
+});

@@ -55,6 +55,29 @@ const seoText = (article: Article, key: string): string | undefined => {
     return typeof value === 'string' && value.trim() ? value.trim() : undefined;
 };
 
+/** Trims to the CMS limits so a long copy never makes the whole note fail with a 422. */
+const clip = (text: unknown, max: number): string | undefined =>
+    typeof text === 'string' && text.trim() ? text.trim().slice(0, max) : undefined;
+
+/**
+ * The social copy edited in the newsroom (editorialData.social), in the shape the
+ * CMS expects. The CMS posts it to Facebook/Instagram with the card when the note
+ * is published; without it, the CMS writes its own copy.
+ */
+export const socialPayload = (article: Article): Record<string, unknown> | undefined => {
+    const social = (article.editorialData as any)?.social;
+    const facebook = clip(social?.facebook, 5000);
+    const instagram = clip(social?.instagram, 2200);
+    if (!facebook && !instagram) return undefined;
+    const headline = clip(social?.card?.headline, 200);
+    return {
+        facebook,
+        instagram,
+        hashtags: clip(social?.hashtags, 500),
+        placa: headline ? { titulo: headline, volanta: clip(social?.card?.kicker, 60) } : undefined,
+    };
+};
+
 /** The CMS downgrades to draft (with a warning) if the key's account cannot publish. */
 const STATUS_BY_MODE: Record<string, string> = { DRAFT: 'draft', IN_REVIEW: 'in_review', PUBLISHED: 'published' };
 
@@ -84,6 +107,7 @@ export class ImpactoApiService {
             status,
             // Retrying with the same ref never duplicates the note in the CMS.
             externalRef: article.id,
+            redes: socialPayload(article),
         };
         if (imageUrl) {
             payload.imageUrl = imageUrl;

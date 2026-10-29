@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X, FileText, UserRound } from 'lucide-react';
+import { Trash2, Sparkles, Layers, SlidersHorizontal, Image as ImageIcon, Settings as SettingsIcon, RefreshCw, Ban, FileSearch, ExternalLink, X, FileText, UserRound, Share2 } from 'lucide-react';
 import { ScraperControl } from '../components/ScraperControl';
 import { AdminRewritePreferencesButton } from '../components/AdminRewritePreferencesButton';
 import { EditorialActions } from '../components/EditorialActions';
 import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
+import { SocialCmsTab } from '../components/SocialCmsTab';
 import type { DailyOperationalLog, ScrapeRun } from '../types';
 
 interface PromptConfig {
@@ -91,13 +92,14 @@ const CRON_PRESETS = [
     { label: 'Dos veces al día (8AM y 6PM)', value: '0 8,18 * * *' },
 ];
 
-type TabKey = 'prompts' | 'fuentes' | 'editorial' | 'sistema' | 'imagenes';
+type TabKey = 'prompts' | 'fuentes' | 'editorial' | 'sistema' | 'imagenes' | 'redes';
 
 const TABS: { key: TabKey; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
     { key: 'prompts', label: 'Prompts IA', icon: Sparkles },
     { key: 'fuentes', label: 'Fuentes', icon: Layers },
     { key: 'editorial', label: 'Editorial', icon: FileText },
     { key: 'imagenes', label: 'Imágenes', icon: ImageIcon },
+    { key: 'redes', label: 'Redes', icon: Share2 },
     { key: 'sistema', label: 'Sistema', icon: SlidersHorizontal }
 ];
 
@@ -744,6 +746,8 @@ export default function Settings() {
                             updateExtended={updateExtended}
                         />
                     )}
+
+                    {activeTab === 'redes' && <SocialCmsTab />}
 
                     {activeTab === 'sistema' && (
                         <SistemaTab

@@ -924,6 +924,30 @@ app.post('/api/articles/:id/rewrite-seo', async (req, res) => {
     }
 });
 
+// GET /api/social/cms - Facebook/Instagram connection of each CMS target.
+// The CMS publishes to the networks (Hermes only sends the copy), so the
+// connection lives there; this only reports it and links to where it's made.
+app.get('/api/social/cms', requireAdmin, async (_req, res) => {
+    const targets = await prisma.target.findMany({ where: { type: 'IMPACTO_API' }, orderBy: { name: 'asc' } });
+    const results = await Promise.all(targets.map(async target => {
+        const base = { targetId: target.id, name: target.name };
+        if (!target.apiUrl || !target.apiKey) return { ...base, error: 'Falta la URL o la clave de API del CMS.' };
+        try {
+            const response = await fetch(`${target.apiUrl.replace(/\/+$/, '')}/api/v1/redes`, {
+                headers: { Authorization: `Bearer ${target.apiKey}` },
+                signal: AbortSignal.timeout(10_000),
+            });
+            if (response.status === 404) return { ...base, error: 'El CMS todavía no tiene la sección de redes: hay que actualizarlo.' };
+            if (!response.ok) return { ...base, error: `El CMS respondió ${response.status}.` };
+            const body: any = await response.json();
+            return { ...base, connected: Boolean(body.connected), page: body.page ?? null, connectUrl: body.connectUrl };
+        } catch (error: any) {
+            return { ...base, error: error?.name === 'TimeoutError' ? 'El CMS no respondió.' : 'No se pudo consultar el CMS.' };
+        }
+    }));
+    res.json(results);
+});
+
 // POST /api/articles/:id/generate-social - Generate social media copy
 app.post('/api/articles/:id/generate-social', async (req, res) => {
     try {

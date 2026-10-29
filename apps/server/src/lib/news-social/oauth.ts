@@ -43,6 +43,8 @@ export function metaLoginUrl(app: MetaApp, redirectUri: string, state: string): 
     url.searchParams.set('redirect_uri', redirectUri);
     url.searchParams.set('config_id', app.configId);
     url.searchParams.set('response_type', 'code');
+    // Login for Business: sin esto, algunas configuraciones ignoran response_type=code.
+    url.searchParams.set('override_default_response_type', 'true');
     url.searchParams.set('state', state);
     return url.toString();
 }

@@ -8,6 +8,10 @@ export * from './types';
 export { renderCard, FORMAT_SIZE } from './render';
 export { defineTheme, themeFromEnv, BASE_THEME, CLASSIC_COLORS } from './themes';
 export { MetaPublisher, MetaApiError } from './meta';
+export {
+    metaAppFromEnv, metaLoginUrl, newOAuthState, exchangeCode, listManagedPages, canPublishOnPage,
+    encryptSecret, decryptSecret, tokenSecretFromEnv, type MetaApp, type ManagedPage,
+} from './oauth';
 export { parseHighlights, stripHighlights } from './templates';
 export {
     buildSocialCopyPrompt, parseSocialCopy, fallbackSocialCopy, generateSocialCopy,

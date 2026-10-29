@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma';
+import { socialConnectService } from './SocialConnectService';
 import {
-    defineTheme, metaConfigFromEnv, publishNewsToSocial, renderCard, stripHighlights, themeFromEnv,
+    defineTheme, publishNewsToSocial, renderCard, stripHighlights, themeFromEnv,
     type CardContent, type CardFormat, type CardTemplate, type CardTheme, type NetworkResult, type SocialNetwork,
 } from '../lib/news-social';
 
@@ -48,12 +49,16 @@ export class SocialPublishService {
         return overrides.format ? { ...theme, format: overrides.format } : theme;
     }
 
-    isConfigured(): boolean {
-        return metaConfigFromEnv() !== null;
+    async isConfigured(): Promise<boolean> {
+        return (await socialConnectService.metaConfig()) !== null;
     }
 
-    autoPublishEnabled(): boolean {
-        return process.env.SOCIAL_AUTO_PUBLISH === 'true' && this.isConfigured();
+    async hasInstagram(): Promise<boolean> {
+        return Boolean((await socialConnectService.metaConfig())?.igUserId);
+    }
+
+    async autoPublishEnabled(): Promise<boolean> {
+        return process.env.SOCIAL_AUTO_PUBLISH === 'true' && await this.isConfigured();
     }
 
     private async loadArticle(articleId: string) {
@@ -95,8 +100,8 @@ export class SocialPublishService {
     }
 
     async publish(articleId: string, options: SocialPublishOptions = {}): Promise<{ facebook?: NetworkResult; instagram?: NetworkResult }> {
-        const meta = metaConfigFromEnv();
-        if (!meta) throw new Error('Faltan META_PAGE_ID y META_PAGE_ACCESS_TOKEN para publicar en redes');
+        const meta = await socialConnectService.metaConfig();
+        if (!meta) throw new Error('Las redes no están conectadas: conectá la página en Configuración → Redes');
 
         const article: any = await this.loadArticle(articleId);
         const editorial = article.editorialData || {};

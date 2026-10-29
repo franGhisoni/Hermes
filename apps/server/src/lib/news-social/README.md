@@ -77,6 +77,19 @@ const result = await publishNewsToSocial({
   El link va como primer comentario (en el texto no se puede tocar).
 - Cada red se intenta por separado: si una falla, la otra queda publicada.
 
+### "Conectar con Facebook" (lo hace el cliente desde el panel)
+
+`oauth.ts` resuelve el login con **Facebook Login for Business**: `metaLoginUrl` → la persona
+autoriza → `exchangeCode` (token de usuario de ~60 días) → `listManagedPages` (tokens de página,
+que no vencen) → se guarda el de la página elegida, cifrado con `encryptSecret` (AES-256-GCM).
+
+- Hermes: pestaña **Configuración → Redes**. Vuelta en `GET /oauth/meta/callback` del servidor.
+- Impacto Castex: **Panel → Redes**. Vuelta en `/panel/redes/callback`.
+- Si hay una página conectada se usa esa; si no, las variables `META_PAGE_*` de siempre.
+
+Variables: `META_APP_ID`, `META_APP_SECRET`, `META_LOGIN_CONFIG_ID` y `SOCIAL_TOKEN_SECRET`
+(si falta, se cifra con `META_APP_SECRET`; cambiar cualquiera de las dos obliga a reconectar).
+
 ### Credenciales de Meta
 
 1. App de Meta (tipo Business) con los permisos `pages_show_list`, `pages_read_engagement`,

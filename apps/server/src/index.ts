@@ -120,6 +120,12 @@ app.get('/api/images/:id', async (req, res) => {
     }
 });
 
+// Vuelta de Facebook al conectar redes: la abre el navegador, sin token de Hermes.
+// La valida el "state" que se generó al empezar (lo pidió un admin logueado).
+app.get('/oauth/meta/callback', async (req, res) => {
+    res.redirect(await socialConnectService.callback(req.query as Record<string, unknown>));
+});
+
 // Protected global routers
 app.use('/api/users', userRouter);
 app.use('/api/targets', targetRouter);
@@ -849,6 +855,7 @@ import { MailService } from './services/MailService';
 import { AIService } from './services/AIService';
 import { VorknewsPublishService } from './services/VorknewsPublishService';
 import { socialPublishService, type CardOverrides } from './services/SocialPublishService';
+import { socialConnectService } from './services/SocialConnectService';
 const mailService = new MailService();
 const aiService = new AIService();
 const vorknewsPublishService = new VorknewsPublishService();
@@ -937,13 +944,50 @@ const cardOverrides = (src: any): CardOverrides => ({
 });
 
 // GET /api/social/status - Whether Facebook/Instagram publishing is configured
-app.get('/api/social/status', (_req, res) => {
+app.get('/api/social/status', async (_req, res) => {
     res.json({
-        configured: socialPublishService.isConfigured(),
-        instagram: Boolean(process.env.META_IG_USER_ID),
-        autoPublish: socialPublishService.autoPublishEnabled(),
+        configured: await socialPublishService.isConfigured(),
+        instagram: await socialPublishService.hasInstagram(),
+        autoPublish: await socialPublishService.autoPublishEnabled(),
         template: socialPublishService.theme().template,
     });
+});
+
+// "Conectar con Facebook" (admin)
+app.get('/api/social/connection', requireAdmin, async (_req, res) => {
+    res.json(await socialConnectService.status());
+});
+
+app.post('/api/social/connect/start', requireAdmin, (req: AuthRequest, res) => {
+    const missing = socialConnectService.missingConfig();
+    if (missing) return res.status(400).json({ error: `Faltan en el servidor: ${missing}` });
+    // Solo se vuelve al mismo panel desde el que se pidió (evita redirigir a otro sitio).
+    const origin = req.get('origin') || '';
+    const returnTo = typeof req.body.returnTo === 'string' && origin && req.body.returnTo.startsWith(`${origin}/`)
+        ? req.body.returnTo
+        : `${origin}/settings`;
+    res.json({ url: socialConnectService.start(req, req.user!.id, returnTo) });
+});
+
+app.get('/api/social/connect/pages', requireAdmin, async (req: AuthRequest, res) => {
+    try {
+        res.json(await socialConnectService.listPages(String(req.query.estado || ''), req.user!.id));
+    } catch (error: any) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.post('/api/social/connect/select', requireAdmin, async (req: AuthRequest, res) => {
+    try {
+        res.json(await socialConnectService.select(String(req.body.estado || ''), req.user!.id, req.user!.username, String(req.body.pageId || '')));
+    } catch (error: any) {
+        res.status(400).json({ error: error.message });
+    }
+});
+
+app.delete('/api/social/connection', requireAdmin, async (_req, res) => {
+    await socialConnectService.disconnect();
+    res.json(await socialConnectService.status());
 });
 
 // GET /api/articles/:id/social-card - JPEG preview of the social card

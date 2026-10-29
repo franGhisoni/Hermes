@@ -238,7 +238,7 @@ export class PublishQueueService {
 
                 console.log(`[PublishQueue] Successfully published article "${finalTitle}" to Vorknews (ID: ${result.vorknewsId || 'N/A'}).`);
 
-                if (result.mode === 'PUBLISHED' && socialPublishService.autoPublishEnabled()) {
+                if (result.mode === 'PUBLISHED' && await socialPublishService.autoPublishEnabled()) {
                     await this.publishToSocial(article.id, finalTitle, result.vorknewsId);
                 }
 

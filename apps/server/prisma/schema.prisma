@@ -461,3 +461,17 @@ model RouteRule {
 
   active Boolean @default(true)
 }
+
+/// Página de Facebook (y su Instagram) conectada con "Conectar con Facebook". Hay una sola; el token va cifrado.
+model SocialAccount {
+  id             String   @id @default(uuid())
+  pageId         String   @unique
+  pageName       String
+  pagePictureUrl String?
+  igUserId       String?
+  igUsername     String?
+  pageToken      String
+  connectedBy    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}

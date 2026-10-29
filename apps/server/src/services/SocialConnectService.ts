@@ -34,7 +34,7 @@ export class SocialConnectService {
     private pending = new Map<string, PendingConnect>();
 
     missingConfig(): string | null {
-        if (!metaAppFromEnv()) return 'META_APP_ID, META_APP_SECRET y META_LOGIN_CONFIG_ID';
+        if (!metaAppFromEnv()) return 'META_APP_ID y META_APP_SECRET';
         if (!tokenSecretFromEnv()) return 'SOCIAL_TOKEN_SECRET';
         return null;
     }

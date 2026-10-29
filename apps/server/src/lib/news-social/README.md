@@ -79,7 +79,7 @@ const result = await publishNewsToSocial({
 
 ### "Conectar con Facebook" (lo hace el cliente desde el panel)
 
-`oauth.ts` resuelve el login con **Facebook Login for Business**: `metaLoginUrl` → la persona
+`oauth.ts` resuelve el login con **Facebook Login for Business**: `metaLoginUrl` (pide los permisos de `LOGIN_SCOPES`) → la persona
 autoriza → `exchangeCode` (token de usuario de ~60 días) → `listManagedPages` (tokens de página,
 que no vencen) → se guarda el de la página elegida, cifrado con `encryptSecret` (AES-256-GCM).
 
@@ -87,7 +87,7 @@ que no vencen) → se guarda el de la página elegida, cifrado con `encryptSecre
 - Impacto Castex: **Panel → Redes**. Vuelta en `/panel/redes/callback`.
 - Si hay una página conectada se usa esa; si no, las variables `META_PAGE_*` de siempre.
 
-Variables: `META_APP_ID`, `META_APP_SECRET`, `META_LOGIN_CONFIG_ID` y `SOCIAL_TOKEN_SECRET`
+Variables: `META_APP_ID`, `META_APP_SECRET` y `SOCIAL_TOKEN_SECRET` (`META_LOGIN_CONFIG_ID` es opcional: si está, se usa esa configuración de Login for Business en lugar de pedir los permisos; con Sodium Redes el diálogo falló así que no se usa)
 (si falta, se cifra con `META_APP_SECRET`; cambiar cualquiera de las dos obliga a reconectar).
 
 ### Credenciales de Meta

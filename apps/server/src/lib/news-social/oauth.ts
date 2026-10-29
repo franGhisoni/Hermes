@@ -9,8 +9,11 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 export interface MetaApp {
     appId: string;
     appSecret: string;
-    /** Configuración de Facebook Login for Business (define permisos y tipo de token). */
-    configId: string;
+    /**
+     * Configuración de Facebook Login for Business. Opcional: con la app Sodium
+     * Redes el diálogo falla con config_id, así que por defecto se piden los permisos.
+     */
+    configId?: string;
     graphVersion?: string;
 }
 
@@ -26,25 +29,44 @@ export interface ManagedPage {
 
 const DEFAULT_GRAPH_VERSION = 'v21.0';
 
+/** Permisos que se piden al conectar: publicar en la página y en su Instagram. */
+export const LOGIN_SCOPES = [
+    'pages_show_list',
+    'pages_read_engagement',
+    'pages_manage_posts',
+    'business_management',
+    'instagram_basic',
+    'instagram_content_publish',
+    'instagram_manage_comments',
+];
+
 export function metaAppFromEnv(env: Record<string, string | undefined> = process.env, prefix = 'META_'): MetaApp | null {
     const appId = env[`${prefix}APP_ID`];
     const appSecret = env[`${prefix}APP_SECRET`];
-    const configId = env[`${prefix}LOGIN_CONFIG_ID`];
-    if (!appId || !appSecret || !configId) return null;
-    return { appId, appSecret, configId, graphVersion: env[`${prefix}GRAPH_VERSION`] || undefined };
+    if (!appId || !appSecret) return null;
+    return {
+        appId,
+        appSecret,
+        configId: env[`${prefix}LOGIN_CONFIG_ID`] || undefined,
+        graphVersion: env[`${prefix}GRAPH_VERSION`] || undefined,
+    };
 }
 
 export const newOAuthState = () => randomBytes(24).toString('base64url');
 
 /** Dirección a la que se manda a la persona para que autorice. */
 export function metaLoginUrl(app: MetaApp, redirectUri: string, state: string): string {
-    const url = new URL(`https://www.facebook.com/${app.graphVersion || DEFAULT_GRAPH_VERSION}/dialog/oauth`);
+    // Sin versión en la ruta: el diálogo usa la versión por defecto de la app.
+    const url = new URL('https://www.facebook.com/dialog/oauth');
     url.searchParams.set('client_id', app.appId);
     url.searchParams.set('redirect_uri', redirectUri);
-    url.searchParams.set('config_id', app.configId);
+    if (app.configId) {
+        url.searchParams.set('config_id', app.configId);
+        url.searchParams.set('override_default_response_type', 'true');
+    } else {
+        url.searchParams.set('scope', LOGIN_SCOPES.join(','));
+    }
     url.searchParams.set('response_type', 'code');
-    // Login for Business: sin esto, algunas configuraciones ignoran response_type=code.
-    url.searchParams.set('override_default_response_type', 'true');
     url.searchParams.set('state', state);
     return url.toString();
 }

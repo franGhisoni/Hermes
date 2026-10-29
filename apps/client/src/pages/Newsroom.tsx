@@ -30,6 +30,24 @@ const mappedSection = (target: Target | undefined, section?: string | null): str
     return Object.entries(target.sectionMap).find(([name]) => name.trim().toLowerCase() === key)?.[1] || '';
 };
 
+interface CmsSection { slug: string; name: string; active: boolean; puedeCargar: boolean }
+
+const normalizeName = (text?: string | null) =>
+    (text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase();
+
+/**
+ * The CMS section a note goes to by default: the target's map if it has one,
+ * otherwise the CMS section whose name or slug matches the note's section.
+ */
+const defaultCmsSection = (target: Target | undefined, sections: CmsSection[], section?: string | null): string => {
+    const mapped = mappedSection(target, section);
+    if (mapped) return mapped;
+    const wanted = normalizeName(section);
+    if (!wanted) return '';
+    const match = sections.find(s => s.puedeCargar && (normalizeName(s.name) === wanted || normalizeName(s.slug) === wanted));
+    return match?.slug || '';
+};
+
 // contentPreview is the start of the body, so using it as the bajada of a
 // rewritten note repeats the first paragraph; only legacy notes fall back to it.
 const initialBajada = (seo: any, article: any): string =>
@@ -87,6 +105,8 @@ export default function Newsroom() {
     const [sections, setSections] = useState<{ id: string, name: string, path: string }[]>([]);
     const [selectedTargetId, setSelectedTargetId] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('');
+    // Sections the CMS reports for the selected target (empty for older CMSs or non-CMS targets).
+    const [cmsSectionList, setCmsSectionList] = useState<CmsSection[]>([]);
     const [targetSearch, setTargetSearch] = useState('');
     const [publishing, setPublishing] = useState(false);
     const [loadingTargets, setLoadingTargets] = useState(false);
@@ -492,9 +512,22 @@ export default function Newsroom() {
     // A CMS target takes its own section slugs, an email target Hermes's section names.
     useEffect(() => {
         if (!selectedTarget) return;
-        setSelectedCategory(selectedTarget.type === 'IMPACTO_API'
-            ? mappedSection(selectedTarget, article?.section)
-            : article?.section || '');
+        if (selectedTarget.type !== 'IMPACTO_API') {
+            setCmsSectionList([]);
+            setSelectedCategory(article?.section || '');
+            return;
+        }
+        let cancelled = false;
+        setSelectedCategory(mappedSection(selectedTarget, article?.section));
+        api.get(`/api/targets/${selectedTarget.id}/cms-sections`)
+            .then(res => {
+                if (cancelled) return;
+                const list: CmsSection[] = Array.isArray(res.data) ? res.data : [];
+                setCmsSectionList(list);
+                setSelectedCategory(defaultCmsSection(selectedTarget, list, article?.section));
+            })
+            .catch(() => { if (!cancelled) setCmsSectionList([]); });
+        return () => { cancelled = true; };
     }, [selectedTargetId, targets]);
 
     const handlePublish = async () => {
@@ -753,7 +786,27 @@ export default function Newsroom() {
 
                             <div>
                                 <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-1 font-sans">{isCmsTarget ? 'Sección del CMS' : 'Categoría'}</label>
-                                {isCmsTarget ? (selectedCmsSections.length > 0 ? (
+                                {isCmsTarget ? (cmsSectionList.length > 0 ? (
+                                    <>
+                                        <select
+                                            value={selectedCategory}
+                                            onChange={e => setSelectedCategory(e.target.value)}
+                                            className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
+                                        >
+                                            <option value="">Elegí una sección</option>
+                                            {cmsSectionList.map(s => (
+                                                <option key={s.slug} value={s.slug} disabled={!s.puedeCargar}>
+                                                    {s.name}{!s.active ? ' (oculta)' : ''}{!s.puedeCargar ? ' · sin permiso' : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {!selectedCategory && article?.section && (
+                                            <p className="mt-1 text-[11px] font-sans text-editorial-text/50">
+                                                No hay una sección del diario que coincida con "{article.section}". Elegila de la lista.
+                                            </p>
+                                        )}
+                                    </>
+                                ) : selectedCmsSections.length > 0 ? (
                                     <select
                                         value={selectedCategory}
                                         onChange={e => setSelectedCategory(e.target.value)}

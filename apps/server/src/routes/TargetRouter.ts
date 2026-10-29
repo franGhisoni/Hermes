@@ -74,6 +74,27 @@ router.get('/', async (req, res) => {
 });
 
 // POST /api/targets
+// GET /api/targets/:id/cms-sections - The CMS's own sections, so the newsroom can
+// offer a list instead of asking for a slug. Empty for non-CMS targets.
+router.get('/:id/cms-sections', async (req, res) => {
+    if (isDemoUser(req)) return res.json([]);
+    const target = await prisma.target.findUnique({ where: { id: req.params.id } });
+    if (!target || target.type !== 'IMPACTO_API' || !target.apiUrl || !target.apiKey) return res.json([]);
+    try {
+        const response = await fetch(`${target.apiUrl.replace(/\/+$/, '')}/api/v1/secciones`, {
+            headers: { Authorization: `Bearer ${target.apiKey}` },
+            signal: AbortSignal.timeout(10_000),
+        });
+        // An older CMS without the endpoint: the newsroom falls back to the section map.
+        if (!response.ok) return res.json([]);
+        const sections = await response.json();
+        res.json(Array.isArray(sections) ? sections : []);
+    } catch (error) {
+        console.warn(`[TargetRouter] Could not read sections from ${target.name}:`, error);
+        res.json([]);
+    }
+});
+
 router.post('/', requireAdmin, async (req, res) => {
     const input: TargetInput = req.body;
     if (!input.name) return res.status(400).json({ error: 'Name is required' });

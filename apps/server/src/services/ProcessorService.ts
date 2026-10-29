@@ -4,7 +4,7 @@ import { ScrapedArticle } from '../scrapers/BaseScraper';
 import { ImageService } from './ImageService';
 import { ConfigService } from './ConfigService';
 import { Prisma } from '@prisma/client';
-import { isLaNacionAccessWall } from './ContentSafetyService';
+import { isLaNacionAccessWall, isPlaceholderContent } from './ContentSafetyService';
 
 export interface ProcessingDiagnostics {
     attempted: number;
@@ -76,6 +76,13 @@ export class ProcessorService {
                     outcome: 'failed',
                     reason
                 });
+                console.warn(`[Processor] ${reason} ${article.url}`);
+                continue;
+            }
+            if (isPlaceholderContent(article.content)) {
+                diagnostics.failures++;
+                const reason = 'Cuerpo vacío o provisorio (ej. "Noticia en desarrollo"): se reintenta en el próximo scrapeo.';
+                diagnostics.items.push({ url: article.url, title: article.title, outcome: 'failed', reason });
                 console.warn(`[Processor] ${reason} ${article.url}`);
                 continue;
             }

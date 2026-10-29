@@ -2,7 +2,8 @@ import { Resend } from 'resend';
 import { Article } from '@prisma/client';
 import { ConfigService } from './ConfigService';
 import { prisma } from '../lib/prisma';
-import { isLaNacionAccessWall } from './ContentSafetyService';
+import { isLaNacionAccessWall, isPlaceholderContent } from './ContentSafetyService';
+import { stripMediaAttributions } from './MediaAttribution';
 
 export class MailService {
     private resend: Resend;
@@ -27,8 +28,11 @@ export class MailService {
         if (isLaNacionAccessWall(article)) {
             throw new Error('Publicación bloqueada: promoción o muro de acceso de La Nación.');
         }
-        const title = article.rewrittenTitle || article.originalTitle;
-        const content = article.rewrittenContent || article.originalContent;
+        if (isPlaceholderContent(article.rewrittenContent || article.originalContent)) {
+            throw new Error('Publicación bloqueada: la nota no tiene cuerpo (ej. "Noticia en desarrollo").');
+        }
+        const title = stripMediaAttributions(article.rewrittenTitle || article.originalTitle);
+        const content = stripMediaAttributions(article.rewrittenContent || article.originalContent);
         const imageUrl = article.featureImageUrl || article.originalImageUrl;
 
         // Postie reads category from the SUBJECT line, not the body

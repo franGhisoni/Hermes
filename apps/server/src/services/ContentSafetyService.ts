@@ -54,3 +54,12 @@ function safeHostname(url: string): string {
         return '';
     }
 }
+
+// Breaking-news stubs ("Noticia en desarrollo.-") are scraped before the
+// outlet writes the body. Not saving them lets a later scrape pick up the full note.
+const MIN_BODY_CHARS = 200;
+
+export function isPlaceholderContent(content?: string | null): boolean {
+    const text = (content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    return text.length < MIN_BODY_CHARS;
+}

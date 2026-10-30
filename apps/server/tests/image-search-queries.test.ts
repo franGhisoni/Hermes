@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ImageService } from '../src/services/ImageService';
 import { AIService } from '../src/services/AIService';
+import { imageAlt } from '../src/services/ImpactoApiService';
 
 function fallback() {
     const service: any = Object.create(ImageService.prototype);
@@ -67,4 +68,32 @@ test('broken reference retries with text and unrelated model queries are rejecte
     });
     assert.equal(calls, 2);
     assert.deepEqual(result.queries, ['BlackRock oficinas']);
+});
+
+test('image alt comes from the scoring trace and falls back when missing', () => {
+    const article: any = { aiDecisions: { imageScoring: [{ url: 'https://x.test/a.jpg', alt: 'Fachada roja de la sede de la UCR' }] } };
+    assert.equal(imageAlt(article, 'https://x.test/a.jpg', 'Nota'), 'Fachada roja de la sede de la UCR');
+    assert.equal(imageAlt(article, 'https://x.test/otra.jpg', 'Nota'), 'Imagen de la nota: Nota');
+    assert.equal(imageAlt({} as any, 'https://x.test/a.jpg', 'Nota'), 'Imagen de la nota: Nota');
+});
+
+test('scoring always asks for reasons and alts, even with a stored prompt', async () => {
+    const service: any = Object.create(AIService.prototype);
+    service.promptService = { getPromptByType: async () => ({ template: 'Only return scores.' }) };
+    service.configService = {
+        getImagePoolSize: async () => 30, getImageScoringModel: async () => 'mock',
+        getImageScoringReasoningEffort: async () => 'low', getImageScoringMaxTokens: async () => 100,
+        getImageScoringContentChars: async () => 100, getImageScoringMaxRetries: async () => 1,
+        getReasoningTokenHeadroom: async () => 0
+    };
+    let request: any;
+    service.openai = { chat: { completions: { create: async (r: any) => {
+        request = r;
+        return { choices: [{ message: { content: JSON.stringify({ scores: [8], reasonings: ['Bien'], alts: ['Una sede'] }) } }] };
+    } } } };
+    const result = await service.selectBestImage('T', 'C', ['https://x.test/a.jpg'], undefined, 4);
+    assert.match(request.messages[0].content, /"reasonings"/);
+    assert.match(request.messages[0].content, /"alts"/);
+    assert.equal(request.max_tokens, 620);
+    assert.deepEqual(result.alts, ['Una sede']);
 });

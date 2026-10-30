@@ -18,6 +18,19 @@ function plainText(value: unknown): string {
     return String(value ?? '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+// Appended to the IMAGE_SELECT prompt, including templates stored in the database:
+// the seeded one only asks for scores, so the trace often came back without reasons.
+const IMAGE_SELECT_OUTPUT_CONTRACT = `MANDATORY OUTPUT, overriding any format described above. Return a JSON object with these keys, each array with exactly one entry per candidate, in order:
+{
+  "protagonist": string,    // short entity name of who/what the story is about
+  "reasonings": [string],   // why it got that score, at most 20 words, in Spanish
+  "scores": [number],       // 0-10
+  "alts": [string],         // alt text for blind readers, in Spanish, at most 125 characters; "" when the score is below 5
+  "selectedIndex": number   // best candidate, or -1 if none is suitable
+}
+Alt text describes what is visible in the image, plainly, without "imagen de" or "foto de". Name a person or place only if the article text supports it; never guess.`;
+
+
 export function usesReasoningModel(model: string): boolean {
     const normalized = model.trim().toLowerCase();
     const major = normalized.match(/^gpt-(\d+)/);
@@ -589,7 +602,7 @@ Return strictly a JSON object with this shape:
         }
     }
 
-    async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[], reasonings: string[], protagonist: string | null }> {
+    async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[], reasonings: string[], alts?: string[], protagonist: string | null }> {
         if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [], reasonings: [], protagonist: null };
         // Single candidate still goes through AI — don't auto-approve without evaluation
 
@@ -691,7 +704,7 @@ Return a JSON object:
                 ];
 
                 const messages: any[] = [
-                    { role: "system", content: promptTemplate },
+                    { role: "system", content: `${promptTemplate}\n\n${IMAGE_SELECT_OUTPUT_CONTRACT}` },
                     {
                         role: "user",
                         content: [
@@ -710,10 +723,16 @@ Return a JSON object:
                         model: scoringModel,
                         messages: messages,
                         response_format: { type: "json_object" },
-                        ...(await configuredTokenLimits(this.configService, scoringModel, scoringMaxTokens, scoringReasoningEffort))
+                        // Reasons and alts must fit for every candidate: a truncated
+                        // reply isn't valid JSON and would lose the whole batch.
+                        ...(await configuredTokenLimits(this.configService, scoringModel, Math.max(scoringMaxTokens, attemptUrls.length * 120 + 500), scoringReasoningEffort))
                     };
                     const completion = await this.openai.chat.completions.create(request);
                     rawResult = JSON.parse(completion.choices[0].message.content || '{}');
+                    if (!Array.isArray(rawResult?.scores)) {
+                        // Reasoning can use up the token limit, and every candidate then scores 0.
+                        console.warn(`[AIService] Image scoring returned no scores (finish_reason: ${completion.choices[0].finish_reason}, tokens: ${JSON.stringify(completion.usage)}).`);
+                    }
                     break;
                 } catch (err: any) {
                     lastScoringError = err?.error?.message || err?.message || String(err);
@@ -772,11 +791,14 @@ Return a JSON object:
             const attemptReasonings: string[] = Array.isArray(rawResult?.reasonings) ? rawResult.reasonings : [];
             const scores: number[] = imageUrls.map(() => 0);
             const reasonings: string[] = imageUrls.map(() => '');
+            const attemptAlts: unknown[] = Array.isArray(rawResult?.alts) ? rawResult.alts : [];
+            const alts: string[] = imageUrls.map(() => '');
             attemptUrls.forEach((url, idx) => {
                 const origIdx = imageUrls.indexOf(url);
                 if (origIdx >= 0) {
                     scores[origIdx] = attemptScores[idx] ?? 0;
                     if (attemptReasonings[idx]) reasonings[origIdx] = attemptReasonings[idx];
+                    alts[origIdx] = plainText(attemptAlts[idx]);
                 }
             });
             droppedUrls.forEach(url => {
@@ -821,11 +843,11 @@ Return a JSON object:
             // Reject if no image scored at or above the configured minimum
             if (bestIndex === -1 || bestScore < minScore) {
                 console.log(`[AIService] ❌ No suitable candidate (best score: ${bestScore}, min required: ${minScore}).`);
-                return { url: null, scores, reasonings, protagonist };
+                return { url: null, scores, reasonings, alts, protagonist };
             }
 
             console.log(`[AIService] ✅ Best candidate: index ${bestIndex}, score ${bestScore}/10`);
-            return { url: imageUrls[bestIndex], scores, reasonings, protagonist };
+            return { url: imageUrls[bestIndex], scores, reasonings, alts, protagonist };
 
         } catch (error) {
             console.error('[AIService] Image selection failed:', error);

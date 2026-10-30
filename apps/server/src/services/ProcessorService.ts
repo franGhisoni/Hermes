@@ -341,7 +341,7 @@ export class ProcessorService {
                 providerUrl: string;
                 resultCount: number;
             }>;
-            imageScoring: Array<{ url: string; score: number; reason: string; sourceEngine?: string }>;
+            imageScoring: Array<{ url: string; score: number; reason: string; alt?: string; sourceEngine?: string }>;
             fallbackUsed: 'dalle' | 'original' | null;
         } = {
             imageProtagonist: null,
@@ -414,6 +414,7 @@ export class ProcessorService {
                     url,
                     score,
                     reason: bestImageResult.reasonings[i] || '',
+                    alt: bestImageResult.alts?.[i] || undefined,
                     sourceEngine: searchTrace.sourceByUrl[url]
                 });
             });

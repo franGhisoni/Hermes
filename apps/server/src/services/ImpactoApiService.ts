@@ -78,6 +78,16 @@ export const socialPayload = (article: Article): Record<string, unknown> | undef
     };
 };
 
+/**
+ * The alt text vision wrote for this image while scoring. Images scored low,
+ * generated or pasted by hand have none, and the CMS still requires one.
+ */
+export const imageAlt = (article: Article, imageUrl: string | null | undefined, title: string): string => {
+    const scoring = (article.aiDecisions as any)?.imageScoring;
+    const entry = Array.isArray(scoring) ? scoring.find((item: any) => item?.url === imageUrl) : undefined;
+    return clip(entry?.alt, 300) || `Imagen de la nota: ${title}`.slice(0, 300);
+};
+
 /** The CMS downgrades to draft (with a warning) if the key's account cannot publish. */
 const STATUS_BY_MODE: Record<string, string> = { DRAFT: 'draft', IN_REVIEW: 'in_review', PUBLISHED: 'published' };
 
@@ -112,7 +122,7 @@ export class ImpactoApiService {
         if (imageUrl) {
             payload.imageUrl = imageUrl;
             // The CMS requires alt text to move a note with an image to review.
-            payload.imageAlt = `Imagen de la nota: ${title}`.slice(0, 300);
+            payload.imageAlt = imageAlt(article, article.featureImageUrl || article.originalImageUrl, title);
         }
 
         const endpoint = `${target.apiUrl.replace(/\/+$/, '')}/api/v1/notas`;

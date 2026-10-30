@@ -36,6 +36,7 @@ export class SchedulerService {
     private editorialService: EditorialService;
     private vorknewsPublishService: VorknewsPublishService;
     private activeJobs: Map<string, ScheduledTask> = new Map();
+    private runningWorkflows: Set<string> = new Set();
 
     constructor(queueService: QueueService, articleService: ArticleService) {
         this.queueService = queueService;
@@ -246,11 +247,30 @@ export class SchedulerService {
         }
 
         const task = cron.schedule(workflow.cron, async () => {
-            await this.executeWorkflow(workflow);
+            if (!this.startWorkflowRun(workflow)) {
+                console.warn(`[CRON-PUBLISH] Skipping ${workflow.name}: it is already running.`);
+            }
         });
 
         this.activeJobs.set(jobId, task);
         console.log(`Scheduled workflow: ${workflow.name} -> ${workflow.targets?.length || 0} targets [${workflow.cron}]`);
+    }
+
+    public isWorkflowRunning(workflowId: string): boolean {
+        return this.runningWorkflows.has(workflowId);
+    }
+
+    // Starts the run in the background and returns false if the workflow is
+    // already running: two overlapping runs would pick the same PENDING notes
+    // and publish them twice.
+    public startWorkflowRun(workflow: { id: string; name: string }): boolean {
+        if (this.runningWorkflows.has(workflow.id)) return false;
+
+        this.runningWorkflows.add(workflow.id);
+        this.executeWorkflow(workflow)
+            .catch(error => console.error(`[CRON-PUBLISH] Failed workflow ${workflow.name}:`, error))
+            .finally(() => this.runningWorkflows.delete(workflow.id));
+        return true;
     }
 
     private async executeWorkflow(workflow: any) {

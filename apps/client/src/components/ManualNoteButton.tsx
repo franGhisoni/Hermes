@@ -118,7 +118,7 @@ export function ManualNoteButton() {
                 <input value={title} onChange={e => setTitle(e.target.value)} disabled={submitting} className={`${inputClass} font-normal normal-case tracking-normal`} />
             </label>
             <div className="space-y-1">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">Foto de la nota (opcional: si no elegís, se busca una)</p>
+                <p id="manual-note-photo" className="text-[10px] font-bold uppercase tracking-wider text-editorial-text/50">Foto de la nota (opcional: si no elegís, se busca una)</p>
                 {preview ? (
                     <div className="relative w-full max-w-xs">
                         <img src={preview} alt="Foto elegida" className="aspect-[4/3] w-full border border-editorial-text/15 object-cover" />
@@ -129,9 +129,9 @@ export function ManualNoteButton() {
                     <div className="flex flex-col gap-2 sm:flex-row">
                         <label className={`inline-flex shrink-0 cursor-pointer items-center justify-center gap-2 border border-editorial-text/30 px-3 py-2 text-xs font-bold uppercase tracking-wider hover:bg-editorial-text/5 ${submitting ? 'pointer-events-none opacity-40' : ''}`}>
                             <ImagePlus size={14} /> Subir foto
-                            <input type="file" accept="image/*" className="hidden" disabled={submitting} onChange={e => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
+                            <input type="file" accept="image/*" className="sr-only" aria-describedby="manual-note-photo" disabled={submitting} onChange={e => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
                         </label>
-                        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} placeholder="o pegá la URL de una imagen" disabled={submitting} className={inputClass} />
+                        <input value={imageUrl} onChange={e => setImageUrl(e.target.value)} aria-label="URL de la foto" placeholder="o pegá la URL de una imagen" disabled={submitting} className={inputClass} />
                     </div>
                 )}
             </div>
@@ -141,7 +141,7 @@ export function ManualNoteButton() {
             </label>
             {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
             <div className="flex items-center justify-end gap-4">
-                {submitting && <span className="text-xs text-editorial-text/55">Redactando y buscando imagen, puede tardar un minuto...</span>}
+                {submitting && <span role="status" className="text-xs text-editorial-text/55">Redactando y buscando imagen, puede tardar un minuto...</span>}
                 <button type="button" onClick={() => void submit()} disabled={submitting || text.trim().length < 20}
                     className="inline-flex items-center gap-2 border border-editorial-text bg-editorial-text px-4 py-2 text-xs font-bold uppercase tracking-wider text-editorial-bg disabled:opacity-40">
                     {submitting && <Loader2 size={14} className="animate-spin" />}

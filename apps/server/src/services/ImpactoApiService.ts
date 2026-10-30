@@ -79,13 +79,15 @@ export const socialPayload = (article: Article): Record<string, unknown> | undef
 };
 
 /**
- * The alt text vision wrote for this image while scoring. Images scored low,
- * generated or pasted by hand have none, and the CMS still requires one.
+ * The alt text vision wrote for this image while scoring or on an editor's
+ * request. Images not described yet have none, and the CMS still requires one.
  */
 export const imageAlt = (article: Article, imageUrl: string | null | undefined, title: string): string => {
-    const scoring = (article.aiDecisions as any)?.imageScoring;
+    const trace = article.aiDecisions as any;
+    const scoring = trace?.imageScoring;
     const entry = Array.isArray(scoring) ? scoring.find((item: any) => item?.url === imageUrl) : undefined;
-    return clip(entry?.alt, 300) || `Imagen de la nota: ${title}`.slice(0, 300);
+    const described = imageUrl ? trace?.imageAlts?.[imageUrl] : undefined;
+    return clip(entry?.alt || described, 300) || `Imagen de la nota: ${title}`.slice(0, 300);
 };
 
 /** The CMS downgrades to draft (with a warning) if the key's account cannot publish. */

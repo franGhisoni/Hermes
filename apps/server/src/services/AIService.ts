@@ -602,6 +602,24 @@ Return strictly a JSON object with this shape:
         }
     }
 
+    /** Alt text on demand, for images scoring left without one (low score, original, generated, pasted). */
+    async describeImage(imageUrl: string, title: string): Promise<string> {
+        const model = await this.configService.getImageScoringModel();
+        const reasoningEffort = await this.configService.getImageScoringReasoningEffort();
+        const completion = await this.openai.chat.completions.create({
+            model,
+            messages: [{
+                role: 'user',
+                content: [
+                    { type: 'text', text: `Write alt text for blind readers, in Spanish, at most 125 characters. Describe what is visible in the image, plainly, without "imagen de" or "foto de". Name a person or place only if the article title supports it; never guess. Reply with the alt text only.\n\nArticle title: ${title}` },
+                    { type: 'image_url', image_url: { url: imageUrl, detail: 'low' } }
+                ]
+            }],
+            ...(await configuredTokenLimits(this.configService, model, 200, reasoningEffort))
+        } as any);
+        return plainText(completion.choices[0].message.content).slice(0, 300);
+    }
+
     async selectBestImage(title: string, content: string, imageUrls: string[], originalImageUrl?: string, minScore: number = 6): Promise<{ url: string | null, scores: number[], reasonings: string[], alts?: string[], protagonist: string | null }> {
         if (!imageUrls || imageUrls.length === 0) return { url: null, scores: [], reasonings: [], protagonist: null };
         // Single candidate still goes through AI — don't auto-approve without evaluation

@@ -3,12 +3,18 @@ import { Bell, AlertCircle, AlertTriangle, Info, X, CheckCheck, Trash2 } from 'l
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import type { Notification } from '../types';
+import { announce } from '../lib/a11y';
 
 const SOURCE_LABEL: Record<Notification['source'], string> = {
     SCRAPER: 'Scraper',
     WORKFLOW: 'Flujo',
     PUBLISH: 'Publicación',
     SYSTEM: 'Sistema'
+};
+
+const LEVEL_LABEL: Partial<Record<Notification['level'], string>> = {
+    ERROR: 'Error',
+    WARN: 'Advertencia'
 };
 
 function levelStyles(level: Notification['level']) {
@@ -40,6 +46,7 @@ export function NotificationsPanel() {
     const [items, setItems] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [open, setOpen] = useState(false);
+    const lastUnreadRef = useRef<number | null>(null);
     const containerRef = useRef<HTMLDivElement>(null);
 
     const fetchNotifications = async () => {
@@ -68,6 +75,21 @@ export function NotificationsPanel() {
         };
         document.addEventListener('mousedown', onClick);
         return () => document.removeEventListener('mousedown', onClick);
+    }, [open]);
+
+    // Say so when new ones arrive, without reading the count on first load.
+    useEffect(() => {
+        if (lastUnreadRef.current !== null && unreadCount > lastUnreadRef.current) {
+            announce(`Notificaciones nuevas. ${unreadCount} sin leer`);
+        }
+        lastUnreadRef.current = unreadCount;
+    }, [unreadCount]);
+
+    useEffect(() => {
+        if (!open) return;
+        const onEscape = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        document.addEventListener('keydown', onEscape);
+        return () => document.removeEventListener('keydown', onEscape);
     }, [open]);
 
     const markRead = async (id: string) => {
@@ -106,7 +128,8 @@ export function NotificationsPanel() {
             <button
                 onClick={() => setOpen(o => !o)}
                 className="relative font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4 flex items-center gap-1.5 px-1"
-                aria-label="Notificaciones"
+                aria-label={unreadCount > 0 ? `Notificaciones: ${unreadCount} sin leer` : 'Notificaciones'}
+                aria-expanded={open}
             >
                 <Bell className="w-4 h-4" />
                 {unreadCount > 0 && (
@@ -127,6 +150,7 @@ export function NotificationsPanel() {
                                 onClick={markAllRead}
                                 disabled={unreadCount === 0}
                                 title="Marcar todas como leídas"
+                                aria-label="Marcar todas como leídas"
                                 className="text-editorial-text/60 hover:text-editorial-text disabled:opacity-30 disabled:hover:text-editorial-text/60 transition-colors"
                             >
                                 <CheckCheck className="w-4 h-4" />
@@ -135,6 +159,7 @@ export function NotificationsPanel() {
                                 onClick={clearAll}
                                 disabled={items.length === 0}
                                 title="Eliminar todas"
+                                aria-label="Eliminar todas"
                                 className="text-editorial-text/60 hover:text-red-600 disabled:opacity-30 disabled:hover:text-editorial-text/60 transition-colors"
                             >
                                 <Trash2 className="w-4 h-4" />
@@ -165,6 +190,7 @@ export function NotificationsPanel() {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-baseline justify-between gap-2">
                                                     <div className="font-sans text-[10px] font-bold uppercase tracking-widest text-editorial-text/50">
+                                                        <span className="sr-only">{LEVEL_LABEL[n.level] || ''}{unread ? ', sin leer. ' : '. '}</span>
                                                         {SOURCE_LABEL[n.source]}
                                                     </div>
                                                     <div className="font-sans text-[10px] text-editorial-text/40 whitespace-nowrap">
@@ -179,11 +205,12 @@ export function NotificationsPanel() {
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                                                 {unread && (
                                                     <button
                                                         onClick={() => markRead(n.id)}
                                                         title="Marcar como leída"
+                                                        aria-label={`Marcar como leída: ${n.title}`}
                                                         className="text-editorial-text/40 hover:text-editorial-text transition-colors"
                                                     >
                                                         <CheckCheck className="w-3.5 h-3.5" />
@@ -192,6 +219,7 @@ export function NotificationsPanel() {
                                                 <button
                                                     onClick={() => deleteOne(n.id)}
                                                     title="Eliminar"
+                                                    aria-label={`Eliminar: ${n.title}`}
                                                     className="text-editorial-text/40 hover:text-red-600 transition-colors"
                                                 >
                                                     <X className="w-3.5 h-3.5" />

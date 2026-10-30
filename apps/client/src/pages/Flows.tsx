@@ -6,6 +6,7 @@ import { Trash2, Settings2, Mail, Pencil, X, History, Workflow as WorkflowIcon, 
 import { MultiSelect } from '../components/MultiSelect';
 import { CronBuilder } from '../components/CronBuilder';
 import { WorkflowPublicationLimits, type PublicationOverrideDraft } from '../components/WorkflowPublicationLimits';
+import { usePageTitle } from '../lib/a11y';
 
 interface Target {
     id: string;
@@ -62,6 +63,7 @@ interface Workflow {
 
 export default function Flows() {
     const { user, logout } = useAuth();
+    usePageTitle('Flujos');
     const [targets, setTargets] = useState<Target[]>([]);
     const [workflows, setWorkflows] = useState<Workflow[]>([]);
     const [sections, setSections] = useState<any[]>([]);
@@ -312,7 +314,7 @@ export default function Flows() {
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-8 w-auto object-contain" />
                     </Link>
-                    <span className="text-base sm:text-xl font-black uppercase tracking-widest italic">Flujos y Envíos</span>
+                    <h1 className="text-base sm:text-xl font-black uppercase tracking-widest italic">Flujos y Envíos</h1>
                 </div>
                 <div className="flex gap-2 sm:gap-4">
                     <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-2 sm:px-4 py-2 hover:underline"><span className="sm:hidden">← Volver</span><span className="hidden sm:inline">Volver al Dashboard</span></Link>
@@ -324,46 +326,46 @@ export default function Flows() {
 
                 {/* TOP: collapsible form */}
                 <div ref={formRef} className={`border bg-white/50 transition-colors ${editingId ? 'border-amber-500 ring-2 ring-amber-500/20' : 'border-editorial-text/15'}`}>
-                    <button
-                        type="button"
-                        onClick={() => {
-                            if (formOpen) resetWorkflowForm();
-                            else openCreateForm();
-                        }}
-                        className="w-full px-4 sm:px-6 py-4 border-b border-editorial-text/10 flex flex-wrap items-center gap-3 text-left hover:bg-editorial-text/[0.02] transition-colors"
-                        aria-expanded={formOpen}
-                    >
-                        {editingId ? <Settings2 size={16} /> : <Plus size={16} />}
-                        <h2 className="text-xs font-bold uppercase tracking-widest font-sans">
-                            {editingId ? 'Editar flujo automático' : 'Crear flujo automático'}
+                    <div className="flex flex-wrap items-center gap-3 px-4 sm:px-6 py-4 border-b border-editorial-text/10 hover:bg-editorial-text/[0.02] transition-colors">
+                        <h2 className="flex-1 min-w-0 text-xs font-bold uppercase tracking-widest font-sans">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (formOpen) resetWorkflowForm();
+                                    else openCreateForm();
+                                }}
+                                className="w-full flex items-center gap-3 text-left uppercase font-bold tracking-widest"
+                                aria-expanded={formOpen}
+                            >
+                                {editingId ? <Settings2 size={16} /> : <Plus size={16} />}
+                                {editingId ? 'Editar flujo automático' : 'Crear flujo automático'}
+                                <ChevronDown
+                                    size={16}
+                                    className={`ml-auto transition-transform duration-200 ${formOpen ? 'rotate-180' : ''} opacity-60`}
+                                />
+                            </button>
                         </h2>
                         {editingId && formOpen && (
-                            <span
-                                role="button"
-                                tabIndex={0}
-                                onClick={(e) => { e.stopPropagation(); resetWorkflowForm(); }}
-                                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); resetWorkflowForm(); } }}
-                                className="ml-auto inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors cursor-pointer"
-                                title="Cancelar edición"
+                            <button
+                                type="button"
+                                onClick={resetWorkflowForm}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1 border border-editorial-text/20 hover:bg-editorial-text/5 transition-colors font-sans"
                             >
                                 <X size={12} /> Cancelar edición
-                            </span>
+                            </button>
                         )}
-                        <ChevronDown
-                            size={16}
-                            className={`${editingId && formOpen ? '' : 'ml-auto'} transition-transform duration-200 ${formOpen ? 'rotate-180' : ''} opacity-60`}
-                        />
-                    </button>
+                    </div>
 
                     {formOpen && (
                     <form onSubmit={handleSubmitWorkflow} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 p-4 sm:p-6 font-sans">
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Nombre</label>
-                            <input type="text" value={wfName} onChange={e => setWfName(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Clarín Matutino" />
+                            <label htmlFor="workflow-field-1" className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Nombre</label>
+                            <input id="workflow-field-1" type="text" value={wfName} onChange={e => setWfName(e.target.value)} required className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Clarín Matutino" />
                         </div>
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Destino(s)</label>
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Destino(s)</span>
                             <MultiSelect
+                                label="Destinos"
                                 options={targets.map(t => ({ id: t.id, label: t.name }))}
                                 selectedIds={wfTargetIds}
                                 onChange={updateWorkflowTargetIds}
@@ -382,8 +384,9 @@ export default function Flows() {
                         />
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Fuente(s) <span className="opacity-40">(opcional)</span></label>
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Fuente(s) <span className="opacity-40">(opcional)</span></span>
                             <MultiSelect
+                                label="Fuentes"
                                 options={availableSources.map(src => ({ id: src.name, label: src.name }))}
                                 selectedIds={wfSources}
                                 onChange={setWfSources}
@@ -392,8 +395,8 @@ export default function Flows() {
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Sección <span className="opacity-40">(opcional)</span></label>
-                            <select value={wfSection} onChange={e => setWfSection(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text cursor-pointer text-sm">
+                            <label htmlFor="workflow-field-2" className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Sección <span className="opacity-40">(opcional)</span></label>
+                            <select id="workflow-field-2" value={wfSection} onChange={e => setWfSection(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text cursor-pointer text-sm">
                                 <option value="">Todas las secciones</option>
                                 {sections.map(sec => (
                                     <option key={sec.id} value={sec.name}>{sec.name}</option>
@@ -402,8 +405,8 @@ export default function Flows() {
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Score Mínimo <span className="opacity-40">(opcional)</span></label>
-                            <input
+                            <label htmlFor="workflow-field-3" className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Score Mínimo <span className="opacity-40">(opcional)</span></label>
+                            <input id="workflow-field-3"
                                 type="number"
                                 min="1" max="10"
                                 value={wfMinScore}
@@ -414,13 +417,13 @@ export default function Flows() {
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Categoría WP <span className="opacity-40">(opcional)</span></label>
-                            <input type="text" value={wfTargetCategory} onChange={e => setWfTargetCategory(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Política Nacional" />
+                            <label htmlFor="workflow-field-4" className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Categoría WP <span className="opacity-40">(opcional)</span></label>
+                            <input id="workflow-field-4" type="text" value={wfTargetCategory} onChange={e => setWfTargetCategory(e.target.value)} className="w-full border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text text-sm" placeholder="ej. Política Nacional" />
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Ventana de notas (hs) <span className="opacity-40">(opcional)</span></label>
-                            <input
+                            <label htmlFor="workflow-field-5" className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Ventana de notas (hs) <span className="opacity-40">(opcional)</span></label>
+                            <input id="workflow-field-5"
                                 type="number"
                                 min="1"
                                 value={wfArticleWindowHours}
@@ -432,7 +435,7 @@ export default function Flows() {
                         </div>
 
                         <div className="md:col-span-2">
-                            <label className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Horario (Cron)</label>
+                            <span className="text-[10px] font-bold uppercase tracking-widest opacity-60 block mb-1">Horario (Cron)</span>
                             <CronBuilder
                                 value={wfCron}
                                 onChange={setWfCron}

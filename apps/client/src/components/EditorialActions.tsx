@@ -18,8 +18,16 @@ export function EditorialActions({ articleUrl }: { articleUrl?: string }) {
         const onPointerDown = (event: PointerEvent) => {
             if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
         };
+        const onEscape = (event: KeyboardEvent) => {
+            // A modal opened from here handles its own Escape.
+            if (event.key === 'Escape' && containerRef.current?.contains(document.activeElement)) setOpen(false);
+        };
         document.addEventListener('pointerdown', onPointerDown);
-        return () => document.removeEventListener('pointerdown', onPointerDown);
+        document.addEventListener('keydown', onEscape);
+        return () => {
+            document.removeEventListener('pointerdown', onPointerDown);
+            document.removeEventListener('keydown', onEscape);
+        };
     }, [open]);
 
     if (user?.role === 'DEMO') return null;
@@ -33,12 +41,12 @@ export function EditorialActions({ articleUrl }: { articleUrl?: string }) {
 
     // The items stay mounted while the menu is hidden so their modals (portaled to body) survive it closing.
     return <div ref={containerRef} className="relative">
-        <button type="button" onClick={toggle} aria-expanded={open} aria-haspopup="menu" className="inline-flex items-center gap-1.5 rounded border border-editorial-text/15 px-2.5 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/75 transition-colors hover:border-editorial-text/50 hover:bg-editorial-text/5 hover:text-editorial-text">
+        <button type="button" onClick={toggle} aria-expanded={open} className="inline-flex items-center gap-1.5 rounded border border-editorial-text/15 px-2.5 py-2 font-sans text-[10px] font-bold uppercase tracking-wider text-editorial-text/75 transition-colors hover:border-editorial-text/50 hover:bg-editorial-text/5 hover:text-editorial-text">
             <UserRound size={14} />
             <span>Personal</span>
             <ChevronDown size={12} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
-        <div role="menu" aria-label="Ayuda y ajustes de escritura" onClick={() => setOpen(false)} className={`${open ? 'flex' : 'hidden'} absolute top-full ${alignLeft ? 'left-0' : 'right-0'} z-50 mt-2 w-56 flex-col gap-0.5 rounded border border-editorial-text/20 bg-editorial-bg p-1.5 shadow-xl`}>
+        <div role="group" aria-label="Ayuda y ajustes de escritura" onClick={() => setOpen(false)} className={`${open ? 'flex' : 'hidden'} absolute top-full ${alignLeft ? 'left-0' : 'right-0'} z-50 mt-2 w-56 flex-col gap-0.5 rounded border border-editorial-text/20 bg-editorial-bg p-1.5 shadow-xl`}>
             <MyPreferencesButton menuItem />
             <div className="my-1 border-t border-editorial-text/10" />
             <FeedbackButton kind="ERROR" articleUrl={articleUrl} menuItem />

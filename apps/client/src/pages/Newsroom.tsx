@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Copy, Check, Eye, Code, Sparkles } from 'lucide-react';
 import { api, resolveAssetUrl } from '../lib/api';
@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 import { EditorialActions } from '../components/EditorialActions';
 import { EditorialModal } from '../components/EditorialModal';
+import { announce, useDialog, usePageTitle } from '../lib/a11y';
 
 interface Target {
     id: string;
@@ -217,8 +218,35 @@ export default function Newsroom() {
                 imageCandidates: res.data.candidates ?? prev.imageCandidates,
                 imageScores: res.data.imageScores ?? prev.imageScores
             } : null);
+            announce(`Imagen seleccionada. ${imageDescription(url) || 'Sin descripción'}`);
         } catch (e: any) {
             alert(`No se pudo seleccionar la imagen: ${e?.response?.data?.error || e?.message || 'error desconocido'}`);
+        }
+    };
+
+    const imageDescription = (url?: string | null): string => {
+        if (!url) return '';
+        const trace = article?.aiDecisions;
+        return trace?.imageScoring?.find(entry => entry.url === url)?.alt || trace?.imageAlts?.[url] || '';
+    };
+
+    const [describingUrl, setDescribingUrl] = useState<string | null>(null);
+    const handleDescribeImage = async (url: string) => {
+        if (!id) return;
+        if (isDemo) {
+            alert('Demo: se simuló la descripción de la imagen. No se guardó nada.');
+            return;
+        }
+        setDescribingUrl(url);
+        announce('Describiendo la imagen');
+        try {
+            const res = await api.post(`/api/articles/${id}/describe-image`, { imageUrl: url });
+            setArticle(prev => prev ? { ...prev, aiDecisions: res.data.aiDecisions } : null);
+            announce(`Descripción: ${res.data.alt}`);
+        } catch (e: any) {
+            alert(`No se pudo describir la imagen: ${e?.response?.data?.error || e?.message || 'error desconocido'}`);
+        } finally {
+            setDescribingUrl(null);
         }
     };
 
@@ -288,7 +316,8 @@ export default function Newsroom() {
             setArticle(prev => prev ? {
                 ...prev,
                 imageCandidates: res.data.candidates,
-                imageScores: res.data.imageScores ?? prev.imageScores
+                imageScores: res.data.imageScores ?? prev.imageScores,
+                aiDecisions: res.data.aiDecisions ?? prev.aiDecisions
             } : null);
         } catch (e: any) {
             alert(`No se pudieron buscar imágenes: ${e?.response?.data?.error || e?.message || 'error desconocido'}`);
@@ -299,7 +328,7 @@ export default function Newsroom() {
 
     const handleReject = async () => {
         if (!id) return;
-        if (confirm('Are you sure you want to delete this article?')) {
+        if (confirm('¿Seguro que querés eliminar esta nota?')) {
             if (isDemo) {
                 alert('Demo: se simuló el rechazo de la nota. No se eliminó nada.');
                 navigate('/');
@@ -310,7 +339,7 @@ export default function Newsroom() {
                 await api.delete(`/api/articles/${id}`);
                 navigate('/');
             } catch (error) {
-                alert('Failed to delete');
+                alert('No se pudo eliminar la nota');
             }
         }
     };
@@ -578,14 +607,23 @@ export default function Newsroom() {
             setShowPublishModal(false);
             alert(`✅ ${res.data.message}`);
         } catch (error: any) {
-            alert('Error: ' + (error.response?.data?.error || 'Failed to publish'));
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo publicar'));
         } finally {
             setPublishing(false);
         }
     };
 
-    if (loading) return <div className="text-editorial-text p-10 font-serif">Loading Editor...</div>;
-    if (!article) return <div className="text-editorial-text p-10 font-serif">Article not found</div>;
+    useBusyAnnouncement(saving, 'Guardando', 'Terminó el guardado');
+    useBusyAnnouncement(rewriting, 'Reescribiendo la nota', 'Terminó la reescritura');
+    useBusyAnnouncement(generating, 'Generando imagen', 'Terminó la generación de imagen');
+    useBusyAnnouncement(searching, 'Buscando imágenes', 'Terminó la búsqueda de imágenes');
+    useBusyAnnouncement(generatingSocial, 'Generando textos para redes', 'Terminó la generación de textos para redes');
+    useBusyAnnouncement(learning, 'Analizando tus cambios', 'Terminó el análisis de tus cambios');
+    useBusyAnnouncement(publishing, 'Publicando', 'Terminó la publicación');
+    usePageTitle(loading ? 'Cargando nota' : article ? 'Editar nota' : 'Nota no encontrada');
+
+    if (loading) return <div role="status" className="text-editorial-text p-10 font-serif">Cargando la nota...</div>;
+    if (!article) return <h1 className="text-editorial-text p-10 font-serif">Nota no encontrada</h1>;
 
     const reviewPoints: string[] = (article?.editorialData as any)?.seo?.reviewPoints || [];
     const hasEditedDraft = loadedDraftRef.current !== JSON.stringify({ title: seoTitle, volanta: seoVolanta, bajada: seoBajada, content: seoContent, tags: seoTags });
@@ -653,9 +691,10 @@ export default function Newsroom() {
             </EditorialModal>}
             {showRewriteModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={() => setShowRewriteModal(false)}>
-                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-5 sm:p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto relative" onClick={e => e.stopPropagation()}>
+                    <DialogPanel labelledBy="rewrite-dialog-title" onClose={() => setShowRewriteModal(false)} className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-5 sm:p-8 w-full max-w-lg max-h-[90vh] overflow-y-auto relative">
                         <button
                             onClick={() => setShowRewriteModal(false)}
+                            aria-label="Cerrar"
                             className="absolute top-4 right-4 text-editorial-text/40 hover:text-editorial-text text-lg font-mono leading-none"
                         >
                             ✕
@@ -663,7 +702,7 @@ export default function Newsroom() {
 
                         <div className="flex items-center gap-2 mb-1.5">
                             <Sparkles className="w-4 h-4 text-editorial-text" />
-                            <h3 className="text-xl font-bold font-serif italic text-editorial-text">
+                            <h3 id="rewrite-dialog-title" className="text-xl font-bold font-serif italic text-editorial-text">
                                 Reescribir Noticia con IA
                             </h3>
                         </div>
@@ -672,10 +711,11 @@ export default function Newsroom() {
                         </p>
 
                         <div className="space-y-2 mb-4 font-sans">
-                            <label className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/60 block">
+                            <label htmlFor="rewrite-instructions" className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/60 block">
                                 ¿Agregar comentarios o sugerencias de cambios? (Opcional)
                             </label>
                             <textarea
+                                id="rewrite-instructions"
                                 rows={4}
                                 value={rewriteInstructions}
                                 onChange={e => setRewriteInstructions(e.target.value)}
@@ -727,15 +767,15 @@ export default function Newsroom() {
                                 {rewriteInstructions.trim() ? 'Reescribir con Sugerencias' : 'Reescribir Directo'}
                             </button>
                         </div>
-                    </div>
+                    </DialogPanel>
                 </div>
             )}
 
             {/* Publish Modal */}
             {showPublishModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={() => setShowPublishModal(false)}>
-                    <div className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-5 sm:p-8 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <h3 className="text-xl font-bold mb-1">{isDemo ? 'Vista previa de publicación' : 'Publicar Noticia'}</h3>
+                    <DialogPanel labelledBy="publish-dialog-title" onClose={() => setShowPublishModal(false)} className="bg-editorial-bg border border-editorial-text/20 shadow-2xl p-5 sm:p-8 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+                        <h3 id="publish-dialog-title" className="text-xl font-bold mb-1">{isDemo ? 'Vista previa de publicación' : 'Publicar Noticia'}</h3>
                         <p className="font-sans text-xs text-editorial-text/60 mb-6">
                             Elegí el medio de destino para esta nota.
                             {loadingTargets && <span className="ml-2 italic text-editorial-text/40">cargando...</span>}
@@ -743,8 +783,9 @@ export default function Newsroom() {
 
                         <div className="space-y-4 mb-6">
                             <div>
-                                <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
+                                <label htmlFor="publish-target-search" className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-2 font-sans">Buscar medio</label>
                                 <input
+                                    id="publish-target-search"
                                     type="search"
                                     value={targetSearch}
                                     onChange={e => setTargetSearch(e.target.value)}
@@ -753,7 +794,7 @@ export default function Newsroom() {
                                 />
                             </div>
 
-                            <div className="flex flex-col gap-2 max-h-48 overflow-y-auto">
+                            <div role="radiogroup" aria-label="Medio de destino" className="flex flex-col gap-2 max-h-48 overflow-y-auto">
                                 {filteredTargets.length === 0 ? (
                                     <div className="py-6 text-center font-sans text-sm text-editorial-text/50 border border-editorial-text/10">
                                         No hay medios configurados.
@@ -785,10 +826,11 @@ export default function Newsroom() {
                             </div>
 
                             <div>
-                                <label className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-1 font-sans">{isCmsTarget ? 'Sección del CMS' : 'Categoría'}</label>
+                                <label htmlFor="publish-category" className="text-xs font-bold uppercase tracking-widest text-editorial-text/50 block mb-1 font-sans">{isCmsTarget ? 'Sección del CMS' : 'Categoría'}</label>
                                 {isCmsTarget ? (cmsSectionList.length > 0 ? (
                                     <>
                                         <select
+                                            id="publish-category"
                                             value={selectedCategory}
                                             onChange={e => setSelectedCategory(e.target.value)}
                                             className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
@@ -808,6 +850,7 @@ export default function Newsroom() {
                                     </>
                                 ) : selectedCmsSections.length > 0 ? (
                                     <select
+                                        id="publish-category"
                                         value={selectedCategory}
                                         onChange={e => setSelectedCategory(e.target.value)}
                                         className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
@@ -820,6 +863,7 @@ export default function Newsroom() {
                                 ) : (
                                     <>
                                         <input
+                                            id="publish-category"
                                             type="text"
                                             value={selectedCategory}
                                             onChange={e => setSelectedCategory(e.target.value)}
@@ -832,6 +876,7 @@ export default function Newsroom() {
                                     </>
                                 )) : (
                                 <select
+                                    id="publish-category"
                                     value={selectedCategory}
                                     onChange={e => setSelectedCategory(e.target.value)}
                                     className="w-full border border-editorial-text/20 bg-transparent px-3 py-2 font-sans text-sm focus:outline-none focus:border-editorial-text cursor-pointer"
@@ -894,7 +939,7 @@ export default function Newsroom() {
                                 ) : 'Publicar'}
                             </button>
                         </div>
-                    </div>
+                    </DialogPanel>
                 </div>
             )}
 
@@ -909,9 +954,10 @@ export default function Newsroom() {
             </div>
 
             {/* Split View */}
-            <div className="flex-1 flex overflow-hidden">
+            <main className="flex-1 flex overflow-hidden">
+                <h1 className="sr-only">Editar nota: {seoTitle || article.rewrittenTitle || article.originalTitle}</h1>
                 {/* Left: Original Source */}
-                <div className={`${mobilePane === 'original' ? 'block' : 'hidden'} lg:block flex-1 min-w-0 lg:border-r border-editorial-text/10 p-4 sm:p-8 xl:p-12 overflow-y-auto bg-editorial-text/5 scrollbar-thin scrollbar-thumb-editorial-text/20`}>
+                <section aria-label="Fuente original" className={`${mobilePane === 'original' ? 'block' : 'hidden'} lg:block flex-1 min-w-0 lg:border-r border-editorial-text/10 p-4 sm:p-8 xl:p-12 overflow-y-auto bg-editorial-text/5 scrollbar-thin scrollbar-thumb-editorial-text/20`}>
                     <div className="max-w-2xl mx-auto">
                         <div className="mb-8 pb-4 border-b border-editorial-text/10">
                             <div className="flex items-center gap-2 mb-2">
@@ -941,7 +987,8 @@ export default function Newsroom() {
 
                         {article.originalImageUrl && (
                             <div className="mb-8 border border-editorial-text/10 p-2 bg-white shadow-sm">
-                                <img src={article.originalImageUrl} className="w-full" alt="Original" />
+                                <img src={article.originalImageUrl} className="w-full" alt={imageDescription(article.originalImageUrl) || 'Imagen original de la nota, sin descripción'} />
+                                <ImageDescription description={imageDescription(article.originalImageUrl)} describing={describingUrl === article.originalImageUrl} onDescribe={() => handleDescribeImage(article.originalImageUrl!)} />
                             </div>
                         )}
 
@@ -949,13 +996,13 @@ export default function Newsroom() {
                             <p className="whitespace-pre-wrap leading-relaxed">{article.originalContent}</p>
                         </div>
                     </div>
-                </div>
+                </section>
 
                 {/* Right: AI Rewrite Editor */}
-                <div className={`${mobilePane === 'draft' ? 'block' : 'hidden'} lg:block flex-1 min-w-0 p-4 sm:p-8 xl:p-12 pb-24 lg:pb-12 overflow-y-auto bg-editorial-bg`}>
+                <section aria-label="Borrador IA" className={`${mobilePane === 'draft' ? 'block' : 'hidden'} lg:block flex-1 min-w-0 p-4 sm:p-8 xl:p-12 pb-24 lg:pb-12 overflow-y-auto bg-editorial-bg`}>
                     <div className="max-w-2xl mx-auto">
                         <div className="mb-8 flex flex-wrap gap-2 justify-between items-center border-b border-editorial-text/10 pb-4">
-                            <span className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text">Borrador IA</span>
+                            <h2 className="font-sans text-xs font-bold uppercase tracking-widest text-editorial-text">Borrador IA</h2>
                             <div className="flex items-center gap-2">
                                 <span className="font-sans text-xs uppercase tracking-widest text-editorial-text/50">Score de Interés</span>
                                 <span className="bg-editorial-text text-editorial-bg text-xs font-bold px-2 py-0.5 rounded-full font-mono">
@@ -964,6 +1011,7 @@ export default function Newsroom() {
                                 {article.publicationBlocked && (
                                     <span className="bg-red-100 text-red-800 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-widest" title={article.publicationBlockReason || undefined}>
                                         No publicar
+                                        {article.publicationBlockReason && <span className="sr-only">. Motivo: {article.publicationBlockReason}</span>}
                                     </span>
                                 )}
                             </div>
@@ -992,21 +1040,21 @@ export default function Newsroom() {
                                                 Original
                                             </div>
                                         )}
-                                        <img src={resolveAssetUrl(article.featureImageUrl)} alt="Feature" className="w-full h-auto object-cover max-h-[400px]" />
-                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+                                        <img src={resolveAssetUrl(article.featureImageUrl)} alt={imageDescription(article.featureImageUrl) || 'Imagen elegida para la nota, sin descripción'} className="w-full h-auto object-cover max-h-[400px]" />
+                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity flex gap-2">
                                             <button
                                                 onClick={handleRegenerate}
                                                 disabled={generating}
                                                 className="bg-editorial-text text-editorial-bg px-3 py-1 rounded text-xs font-bold uppercase tracking-widest shadow flex items-center gap-2 hover:bg-black"
                                             >
-                                                {generating ? 'Generating...' : 'Regenerate'}
+                                                {generating ? 'Generando...' : 'Generar otra'}
                                             </button>
                                             <button
                                                 onClick={handleSearch}
                                                 disabled={searching}
                                                 className="bg-white text-editorial-text px-3 py-1 rounded text-xs font-bold uppercase tracking-widest shadow flex items-center gap-2 hover:bg-gray-100"
                                             >
-                                                {searching ? 'Searching...' : 'Search Web'}
+                                                {searching ? 'Buscando...' : 'Buscar en la web'}
                                             </button>
                                         </div>
 
@@ -1023,9 +1071,11 @@ export default function Newsroom() {
                                         )}
                                     </div>
 
+                                    <ImageDescription description={imageDescription(article.featureImageUrl)} describing={describingUrl === article.featureImageUrl} onDescribe={() => handleDescribeImage(article.featureImageUrl!)} />
+
                                     {/* Candidates Carousel */}
                                     <div className="mt-2">
-                                        <span className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/40 mb-1 block">Imágenes Candidatas</span>
+                                        <h3 id="image-candidates-title" className="text-[10px] font-bold uppercase tracking-widest text-editorial-text/40 mb-1 block">Imágenes Candidatas</h3>
 
                                         {(() => {
                                             // Hide candidates the AI scored at 0 — they are explicit
@@ -1047,38 +1097,61 @@ export default function Newsroom() {
 
                                             return visibleCandidates.length > 0 ? (
                                             <>
-                                            <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                                            <ul aria-labelledby="image-candidates-title" className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
                                                 {visibleCandidates.map((url, idx) => {
                                                     const isOriginal = url === article.originalImageUrl;
                                                     const isGenerated = url.startsWith('/api/images/');
                                                     const score = article.imageScores?.[url];
+                                                    const description = imageDescription(url);
+                                                    const details = [
+                                                        `Imagen ${idx + 1} de ${visibleCandidates.length}`,
+                                                        description || 'Sin descripción',
+                                                        score !== undefined && `Puntaje ${score} de 10`,
+                                                        isOriginal && 'Imagen original',
+                                                        isGenerated && 'Generada con IA'
+                                                    ].filter(Boolean).join('. ');
 
                                                     return (
-                                                        <div
-                                                            key={idx}
-                                                            onClick={() => handleSelectImage(url)}
-                                                            className={`relative flex-shrink-0 w-24 h-24 rounded border-2 cursor-pointer overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                                                        >
-                                                            {score !== undefined && (
-                                                                <div className="absolute top-0 right-0 bg-editorial-text text-editorial-bg text-[10px] font-bold px-1.5 py-0.5 opacity-90 z-10">
-                                                                    {score}/10
-                                                                </div>
+                                                        <li key={idx} className="flex-shrink-0 w-24">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSelectImage(url)}
+                                                                aria-pressed={article.featureImageUrl === url}
+                                                                aria-label={details}
+                                                                className={`relative block w-24 h-24 rounded border-2 cursor-pointer overflow-hidden transition-all ${article.featureImageUrl === url ? 'border-editorial-text scale-95 opacity-100 ring-1 ring-editorial-text' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                            >
+                                                                {score !== undefined && (
+                                                                    <span className="absolute top-0 right-0 bg-editorial-text text-editorial-bg text-[10px] font-bold px-1.5 py-0.5 opacity-90 z-10">
+                                                                        {score}/10
+                                                                    </span>
+                                                                )}
+                                                                <img src={resolveAssetUrl(url)} alt="" className="w-full h-full object-cover" />
+                                                                {isOriginal && (
+                                                                    <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] font-bold uppercase text-center py-0.5">
+                                                                        Original
+                                                                    </span>
+                                                                )}
+                                                                {isGenerated && (
+                                                                    <span className="absolute bottom-0 left-0 right-0 bg-purple-700/70 text-white text-[8px] font-bold uppercase text-center py-0.5">
+                                                                        Generada IA
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                            {!description && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleDescribeImage(url)}
+                                                                    disabled={describingUrl !== null}
+                                                                    aria-label={`Describir imagen ${idx + 1}`}
+                                                                    className="mt-1 w-full border border-editorial-text/20 py-0.5 font-sans text-[10px] font-bold hover:bg-editorial-text/5 disabled:opacity-50"
+                                                                >
+                                                                    {describingUrl === url ? 'Describiendo...' : 'Describir'}
+                                                                </button>
                                                             )}
-                                                            <img src={resolveAssetUrl(url)} className="w-full h-full object-cover" />
-                                                            {isOriginal && (
-                                                                <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] font-bold uppercase text-center py-0.5">
-                                                                    Original
-                                                                </div>
-                                                            )}
-                                                            {isGenerated && (
-                                                                <div className="absolute bottom-0 left-0 right-0 bg-purple-700/70 text-white text-[8px] font-bold uppercase text-center py-0.5">
-                                                                    Generada IA
-                                                                </div>
-                                                            )}
-                                                        </div>
+                                                        </li>
                                                     );
                                                 })}
-                                            </div>
+                                            </ul>
                                             {hiddenCount > 0 && (
                                                 <span className="text-[10px] font-sans italic text-editorial-text/40 block mt-1">
                                                     {hiddenCount} candidata{hiddenCount === 1 ? '' : 's'} oculta{hiddenCount === 1 ? '' : 's'} por puntaje 0.
@@ -1098,6 +1171,7 @@ export default function Newsroom() {
                                         <div className="mt-3 flex gap-2 items-center">
                                             <input
                                                 type="url"
+                                                aria-label="URL de imagen"
                                                 value={customImageUrl}
                                                 onChange={e => setCustomImageUrl(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleAddCustomUrl()}
@@ -1122,28 +1196,31 @@ export default function Newsroom() {
                         })()}
 
                         {/* Editorial Tabs */}
-                        <div className="flex border-b border-editorial-text/20 mb-8 gap-6 font-sans text-xs font-bold uppercase tracking-widest items-center overflow-x-auto whitespace-nowrap">
+                        <div role="group" aria-label="Sección del editor" className="flex border-b border-editorial-text/20 mb-8 gap-6 font-sans text-xs font-bold uppercase tracking-widest items-center overflow-x-auto whitespace-nowrap">
                             <button
                                 type="button"
                                 onClick={() => setEditorTab('normal')}
+                                aria-pressed={editorTab === 'normal'}
                                 className={`pb-3 border-b-2 transition-colors flex items-center gap-1.5 ${editorTab === 'normal' ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40 hover:text-editorial-text'}`}
                             >
-                                📰 Noticia Completa (Editorial)
+                                <span aria-hidden="true">📰</span> Noticia Completa (Editorial)
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setEditorTab('social')}
+                                aria-pressed={editorTab === 'social'}
                                 className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${editorTab === 'social' ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40 hover:text-editorial-text'}`}
                             >
-                                <span>📱 Copy para Redes</span>
-                                {socialTwitter && <span className="w-1.5 h-1.5 rounded-full bg-editorial-text inline-block" title="Copys generados"></span>}
+                                <span><span aria-hidden="true">📱</span> Copy para Redes</span>
+                                {socialTwitter && <span className="w-1.5 h-1.5 rounded-full bg-editorial-text inline-block" title="Copys generados"><span className="sr-only">Copys generados</span></span>}
                             </button>
                             <button
                                 type="button"
                                 onClick={() => setEditorTab('seo')}
+                                aria-pressed={editorTab === 'seo'}
                                 className={`pb-3 border-b-2 transition-colors flex items-center gap-2 ${editorTab === 'seo' ? 'border-editorial-text text-editorial-text' : 'border-transparent text-editorial-text/40 hover:text-editorial-text'}`}
                             >
-                                <span>‹/› Inspector SEO</span>
+                                <span><span aria-hidden="true">‹/›</span> Inspector SEO</span>
                             </button>
                         </div>
 
@@ -1152,9 +1229,9 @@ export default function Newsroom() {
                             <div className="space-y-6">
                                 <div className="flex flex-wrap gap-3 justify-between items-center pb-3 border-b border-editorial-text/10">
                                     <div>
-                                        <h4 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
+                                        <h3 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
                                             Redacción
-                                        </h4>
+                                        </h3>
                                         <p className="text-[11px] font-sans text-editorial-text/50">
                                             Formato enriquecido y optimizado para SEO
                                         </p>
@@ -1197,7 +1274,7 @@ export default function Newsroom() {
                                 {/* Volanta */}
                                 <div>
                                     <div className="flex justify-between items-center mb-1">
-                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                        <label htmlFor="note-volanta" className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
                                             Volanta / Localidad
                                         </label>
                                         <span className="text-[10px] font-sans text-editorial-text/40 uppercase tracking-widest">
@@ -1205,6 +1282,7 @@ export default function Newsroom() {
                                         </span>
                                     </div>
                                     <input
+                                        id="note-volanta"
                                         type="text"
                                         value={seoVolanta}
                                         onChange={e => setSeoVolanta(e.target.value)}
@@ -1215,10 +1293,11 @@ export default function Newsroom() {
 
                                 {/* Título */}
                                 <div>
-                                    <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50 block mb-1">
+                                    <label htmlFor="note-title" className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50 block mb-1">
                                         Título de la Noticia
                                     </label>
                                     <textarea
+                                        id="note-title"
                                         ref={titleRef}
                                         rows={2}
                                         value={seoTitle}
@@ -1237,7 +1316,7 @@ export default function Newsroom() {
                                 {/* Bajada / Copete */}
                                 <div>
                                     <div className="flex justify-between items-center mb-1">
-                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                        <label htmlFor="note-bajada" className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
                                             Bajada / Copete
                                         </label>
                                         <span className="text-[10px] font-sans text-editorial-text/40 italic">
@@ -1245,6 +1324,7 @@ export default function Newsroom() {
                                         </span>
                                     </div>
                                     <textarea
+                                        id="note-bajada"
                                         rows={3}
                                         value={seoBajada}
                                         onChange={e => setSeoBajada(e.target.value)}
@@ -1256,13 +1336,14 @@ export default function Newsroom() {
                                 {/* Cuerpo de la Nota */}
                                 <div>
                                     <div className="flex flex-wrap gap-2 justify-between items-center mb-2">
-                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                        <span id="note-body-label" className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
                                             Cuerpo de la Nota
-                                        </label>
+                                        </span>
                                         <div className="flex items-center gap-1 border border-editorial-text/20 p-0.5 rounded text-[11px] font-sans">
                                             <button
                                                 type="button"
                                                 onClick={() => setVisualMode(true)}
+                                                aria-pressed={visualMode}
                                                 className={`px-2.5 py-1 font-bold uppercase tracking-wider flex items-center gap-1 transition-colors ${visualMode ? 'bg-editorial-text text-editorial-bg' : 'text-editorial-text/60 hover:text-editorial-text'}`}
                                             >
                                                 <Eye className="w-3 h-3" />
@@ -1271,6 +1352,7 @@ export default function Newsroom() {
                                             <button
                                                 type="button"
                                                 onClick={() => setVisualMode(false)}
+                                                aria-pressed={!visualMode}
                                                 className={`px-2.5 py-1 font-bold uppercase tracking-wider flex items-center gap-1 transition-colors ${!visualMode ? 'bg-editorial-text text-editorial-bg' : 'text-editorial-text/60 hover:text-editorial-text'}`}
                                             >
                                                 <Code className="w-3 h-3" />
@@ -1282,6 +1364,9 @@ export default function Newsroom() {
                                     {visualMode ? (
                                         <div
                                             ref={visualEditorRef}
+                                            role="textbox"
+                                            aria-multiline="true"
+                                            aria-labelledby="note-body-label"
                                             contentEditable
                                             suppressContentEditableWarning
                                             onInput={e => {
@@ -1293,6 +1378,7 @@ export default function Newsroom() {
                                         />
                                     ) : (
                                         <textarea
+                                            aria-labelledby="note-body-label"
                                             value={seoContent}
                                             onChange={e => {
                                                 setSeoContent(e.target.value);
@@ -1308,7 +1394,7 @@ export default function Newsroom() {
                                 {/* Etiquetas / Palabras Clave */}
                                 <div className="pt-2 border-t border-editorial-text/10">
                                     <div className="flex justify-between items-center mb-1">
-                                        <label className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
+                                        <label htmlFor="note-tags" className="text-[10px] font-sans font-bold uppercase tracking-widest text-editorial-text/50">
                                             Etiquetas / Palabras Clave
                                         </label>
                                         <span className="text-[10px] font-sans text-editorial-text/40">
@@ -1316,6 +1402,7 @@ export default function Newsroom() {
                                         </span>
                                     </div>
                                     <input
+                                        id="note-tags"
                                         type="text"
                                         value={seoTags}
                                         onChange={e => setSeoTags(e.target.value)}
@@ -1339,9 +1426,9 @@ export default function Newsroom() {
                         {editorTab === 'seo' && (
                             <div className="space-y-6 font-sans">
                                 <div className="pb-3 border-b border-editorial-text/10">
-                                    <h4 className="text-xs font-bold uppercase tracking-widest text-editorial-text">
+                                    <h3 className="text-xs font-bold uppercase tracking-widest text-editorial-text">
                                         Inspector SEO & Métricas
-                                    </h4>
+                                    </h3>
                                     <p className="text-[11px] text-editorial-text/50">
                                         Análisis de metadatos, rendimiento para buscadores y código de la nota
                                     </p>
@@ -1406,6 +1493,7 @@ export default function Newsroom() {
                                         </button>
                                     </div>
                                     <textarea
+                                        aria-label="Código fuente HTML"
                                         readOnly
                                         rows={8}
                                         value={seoContent}
@@ -1420,9 +1508,9 @@ export default function Newsroom() {
                             <div className="space-y-6">
                                 <div className="flex justify-between items-center pb-4 border-b border-editorial-text/10">
                                     <div>
-                                        <h4 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
+                                        <h3 className="text-xs font-sans font-bold uppercase tracking-widest text-editorial-text">
                                             Copywriting para Redes Sociales
-                                        </h4>
+                                        </h3>
                                         <p className="text-[11px] font-sans text-editorial-text/50">
                                             Adaptado al tono del medio con ganchos y hashtags
                                         </p>
@@ -1506,12 +1594,14 @@ export default function Newsroom() {
                                                 <button
                                                     type="button"
                                                     onClick={() => copyToClipboard(socialTwitter, 'twitter')}
+                                                    aria-label={copiedKey === 'twitter' ? 'Copiado' : 'Copiar texto de X'}
                                                     className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
                                                 >
                                                     {copiedKey === 'twitter' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
                                                 </button>
                                             </div>
                                             <textarea
+                                                aria-label="Texto para X / Twitter"
                                                 value={socialTwitter}
                                                 onChange={e => setSocialTwitter(e.target.value)}
                                                 rows={4}
@@ -1526,12 +1616,14 @@ export default function Newsroom() {
                                                 <button
                                                     type="button"
                                                     onClick={() => copyToClipboard(socialInstagram, 'instagram')}
+                                                    aria-label={copiedKey === 'instagram' ? 'Copiado' : 'Copiar texto de Instagram'}
                                                     className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
                                                 >
                                                     {copiedKey === 'instagram' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
                                                 </button>
                                             </div>
                                             <textarea
+                                                aria-label="Texto para Instagram"
                                                 value={socialInstagram}
                                                 onChange={e => setSocialInstagram(e.target.value)}
                                                 rows={7}
@@ -1546,12 +1638,14 @@ export default function Newsroom() {
                                                 <button
                                                     type="button"
                                                     onClick={() => copyToClipboard(socialFacebook, 'facebook')}
+                                                    aria-label={copiedKey === 'facebook' ? 'Copiado' : 'Copiar texto de Facebook'}
                                                     className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
                                                 >
                                                     {copiedKey === 'facebook' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
                                                 </button>
                                             </div>
                                             <textarea
+                                                aria-label="Texto para Facebook"
                                                 value={socialFacebook}
                                                 onChange={e => setSocialFacebook(e.target.value)}
                                                 rows={5}
@@ -1567,12 +1661,14 @@ export default function Newsroom() {
                                                     <button
                                                         type="button"
                                                         onClick={() => copyToClipboard(socialHashtags, 'hashtags')}
+                                                    aria-label={copiedKey === 'hashtags' ? 'Copiado' : 'Copiar texto de hashtags'}
                                                         className="text-xs font-bold uppercase tracking-widest flex items-center gap-1 text-editorial-text/70 hover:text-editorial-text transition-colors"
                                                     >
                                                         {copiedKey === 'hashtags' ? <><Check className="w-3.5 h-3.5 text-green-600" /> Copiado</> : <><Copy className="w-3.5 h-3.5" /> Copiar</>}
                                                     </button>
                                                 </div>
                                                 <input
+                                                    aria-label="Hashtags recomendados"
                                                     type="text"
                                                     value={socialHashtags}
                                                     onChange={e => setSocialHashtags(e.target.value)}
@@ -1587,16 +1683,38 @@ export default function Newsroom() {
 
                         <div className="mt-8 pt-4 border-t border-editorial-text/10 text-right">
                             <span className="text-xs font-sans text-editorial-text/40 italic">
-                                AI generated content. Review before publishing.
+                                Contenido generado con IA. Revisalo antes de publicar.
                             </span>
                         </div>
                     </div>
-                </div>
-            </div>
+                </section>
+            </main>
 
         </div>
 
     );
+}
+
+function useBusyAnnouncement(busy: boolean, started: string, finished: string) {
+    const wasBusy = useRef(false);
+    useEffect(() => {
+        if (busy) announce(started);
+        else if (wasBusy.current) announce(finished);
+        wasBusy.current = busy;
+    }, [busy]);
+}
+
+function DialogPanel({ labelledBy, onClose, className, children }: { labelledBy: string; onClose: () => void; className: string; children: ReactNode }) {
+    const ref = useDialog<HTMLDivElement>(onClose);
+    return <div ref={ref} role="dialog" aria-modal="true" aria-labelledby={labelledBy} className={className} onClick={e => e.stopPropagation()}>{children}</div>;
+}
+
+/** What the image shows, in text, or the way to ask for it. */
+function ImageDescription({ description, describing, onDescribe }: { description: string; describing: boolean; onDescribe: () => void }) {
+    if (description) return <p className="mt-2 mb-3 font-sans text-xs text-editorial-text/80"><strong>Descripción:</strong> {description}</p>;
+    return <button type="button" onClick={onDescribe} disabled={describing} className="mt-2 mb-3 border border-editorial-text/30 px-3 py-1.5 font-sans text-xs font-bold hover:bg-editorial-text/5 disabled:opacity-50">
+        {describing ? 'Describiendo...' : 'Describir imagen con IA'}
+    </button>;
 }
 
 // ---------- AdminAiTracePanel ----------

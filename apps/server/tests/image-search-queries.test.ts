@@ -75,6 +75,8 @@ test('image alt comes from the scoring trace and falls back when missing', () =>
     assert.equal(imageAlt(article, 'https://x.test/a.jpg', 'Nota'), 'Fachada roja de la sede de la UCR');
     assert.equal(imageAlt(article, 'https://x.test/otra.jpg', 'Nota'), 'Imagen de la nota: Nota');
     assert.equal(imageAlt({} as any, 'https://x.test/a.jpg', 'Nota'), 'Imagen de la nota: Nota');
+    const described: any = { aiDecisions: { imageAlts: { 'https://x.test/b.jpg': 'Vecinos frente al municipio' } } };
+    assert.equal(imageAlt(described, 'https://x.test/b.jpg', 'Nota'), 'Vecinos frente al municipio');
 });
 
 test('scoring always asks for reasons and alts, even with a stored prompt', async () => {

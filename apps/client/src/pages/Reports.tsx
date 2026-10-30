@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertCircle, Lightbulb, Check } from 'lucide-react';
 import { EditorialActions } from '../components/EditorialActions';
+import { usePageTitle } from '../lib/a11y';
 
 interface PublicationContext {
     wasPublished: boolean;
@@ -14,6 +15,7 @@ interface Report { publicationContext?: PublicationContext | null; id: string; k
 
 export default function Reports() {
     const { user } = useAuth();
+    usePageTitle('Tickets de error');
     const [reports, setReports] = useState<Report[]>([]);
     const [loading, setLoading] = useState(true);
     const [updatingId, setUpdatingId] = useState<string | null>(null);

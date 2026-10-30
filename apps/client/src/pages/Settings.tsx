@@ -10,6 +10,7 @@ import { CronBuilder } from '../components/CronBuilder';
 import { SectionOverridesModal } from '../components/SectionOverridesModal';
 import { SocialCmsTab } from '../components/SocialCmsTab';
 import type { DailyOperationalLog, ScrapeRun } from '../types';
+import { usePageTitle } from '../lib/a11y';
 
 interface PromptConfig {
     id: string;
@@ -143,6 +144,7 @@ interface ExtendedSettings {
 
 export default function Settings() {
     const { user, logout } = useAuth();
+    usePageTitle('Configuración');
     const [prompts, setPrompts] = useState<PromptConfig[]>([]);
     const [sections, setSections] = useState<Section[]>([]);
     const [scrapers, setScrapers] = useState<ScraperConfig[]>([]);
@@ -585,7 +587,7 @@ export default function Settings() {
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-10 w-auto object-contain" />
                     </Link>
                     <div className="hidden sm:block h-6 w-px bg-editorial-text/20 mx-2"></div>
-                    <h1 className="hidden sm:block font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
+                    <h1 className="sr-only sm:not-sr-only font-sans uppercase tracking-widest text-sm font-bold">Configuración</h1>
                 </div>
                 <div className="ml-auto flex flex-wrap justify-end gap-3 items-center">
                     <ScraperControl />
@@ -605,7 +607,7 @@ export default function Settings() {
                  * horizontally-scrollable strip above the content.
                  */}
                 <aside className="lg:fixed lg:left-8 lg:top-[110px] lg:w-[220px] lg:z-10 px-4 sm:px-8 lg:px-0 pt-4 sm:pt-6 lg:pt-0">
-                    <nav className="flex lg:flex-col gap-2 lg:gap-1 overflow-x-auto lg:overflow-visible">
+                    <nav aria-label="Secciones de configuración" className="flex lg:flex-col gap-2 lg:gap-1 overflow-x-auto lg:overflow-visible">
                         {TABS.map(tab => {
                             const Icon = tab.icon;
                             const isActive = activeTab === tab.key;
@@ -613,6 +615,7 @@ export default function Settings() {
                                 <button
                                     key={tab.key}
                                     onClick={() => setActiveTab(tab.key)}
+                                    aria-current={isActive ? 'page' : undefined}
                                     className={`group flex items-center gap-3 py-3 pr-4 text-left transition-all duration-200 ease-out flex-shrink-0 ${
                                         isActive
                                             ? 'pl-4 text-editorial-text translate-x-1'
@@ -1057,8 +1060,8 @@ function FuentesTab(props: FuentesTabProps) {
                                             ))}
                                         </select>
                                         <div className="flex items-center gap-1.5 mt-2">
-                                            <label className="text-[9px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
-                                            <input
+                                            <label htmlFor={`section-limit-${sec.id}`} className="text-[9px] uppercase tracking-widest font-sans opacity-60">Límite:</label>
+                                            <input id={`section-limit-${sec.id}`}
                                                 type="number"
                                                 min="1"
                                                 max="100"
@@ -1120,8 +1123,8 @@ function FuentesTab(props: FuentesTabProps) {
                     <h3 className="text-xs font-bold uppercase tracking-widest mb-4 font-sans">Nuevo schedule</h3>
                     <form onSubmit={handleCreateSchedule} className="flex flex-col gap-3 font-sans">
                         <div>
-                            <label className="text-[10px] uppercase tracking-widest opacity-60 block mb-1">Fuente</label>
-                            <select
+                            <label htmlFor="settings-field-2" className="text-[10px] uppercase tracking-widest opacity-60 block mb-1">Fuente</label>
+                            <select id="settings-field-2"
                                 value={newSchedSource}
                                 onChange={e => setNewSchedSource(e.target.value)}
                                 disabled={activeScrapers.length === 0}

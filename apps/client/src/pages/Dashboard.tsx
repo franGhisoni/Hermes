@@ -8,6 +8,7 @@ import { ScraperControl } from '../components/ScraperControl';
 import { NotificationsPanel } from '../components/NotificationsPanel';
 import { EditorialActions } from '../components/EditorialActions';
 import { ManualNoteButton } from '../components/ManualNoteButton';
+import { announce, usePageTitle } from '../lib/a11y';
 
 interface DashboardSection {
     id: string;
@@ -25,6 +26,7 @@ interface FilterCategory {
 
 export default function Dashboard() {
     const { user, logout } = useAuth();
+    usePageTitle('Noticias');
     const isDemo = user?.role === 'DEMO';
     const [articles, setArticles] = useState<Article[]>([]);
     const [configSections, setConfigSections] = useState<DashboardSection[]>([]);
@@ -131,6 +133,11 @@ export default function Dashboard() {
         return () => clearInterval(interval);
     }, [page, filterSource, filterSection, filterStatus, debouncedSearchQuery, sortBy, sortOrder]);
 
+    // Only filter changes toggle loading; the background polling stays silent.
+    useEffect(() => {
+        if (!loading) announce(`${totalArticles} ${totalArticles === 1 ? "artículo" : "artículos"}. Página ${page} de ${totalPages}`);
+    }, [loading]);
+
     const sectionLabelByKey = useMemo(() => {
         const labels: Record<string, string> = {};
         configSections.forEach(section => {
@@ -210,14 +217,14 @@ export default function Dashboard() {
             {/* Main Content */}
             <main className="p-4 sm:p-8 pb-24 max-w-[1600px] mx-auto">
                 <div className="flex flex-wrap gap-2 items-baseline justify-between mb-8">
-                    <h2 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h2>
+                    <h1 className="text-2xl font-bold border-b-2 border-editorial-text pb-2">Noticias Procesadas</h1>
                     <span className="font-sans text-sm text-editorial-text/50">{totalArticles} Artículos Procesados (Página {page} de {totalPages})</span>
                 </div>
                 {/* Toolbar */}
                 <div className="mb-8 grid grid-cols-2 sm:flex sm:flex-wrap gap-4 items-end font-sans text-xs [&_select]:py-2 sm:[&_select]:py-1 [&_input]:py-2 sm:[&_input]:py-1">
                     <div className="col-span-2 flex flex-col gap-1 w-full sm:w-auto sm:min-w-[260px] flex-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Buscar noticias</label>
-                        <input
+                        <label htmlFor="dashboard-filter-1" className="font-bold uppercase tracking-widest text-editorial-text/50">Buscar noticias</label>
+                        <input id="dashboard-filter-1"
                             type="search"
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
@@ -229,15 +236,15 @@ export default function Dashboard() {
                     <div className="w-px h-8 bg-editorial-text/10 self-center mx-2 hidden sm:block"></div>
 
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Medio</label>
-                        <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
+                        <label htmlFor="dashboard-filter-2" className="font-bold uppercase tracking-widest text-editorial-text/50">Medio</label>
+                        <select id="dashboard-filter-2" className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSource} onChange={e => setFilterSource(e.target.value)}>
                             <option value="all">Todos</option>
                             {dbSources.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Categoría</label>
-                        <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSection} onChange={e => setFilterSection(e.target.value)}>
+                        <label htmlFor="dashboard-filter-3" className="font-bold uppercase tracking-widest text-editorial-text/50">Categoría</label>
+                        <select id="dashboard-filter-3" className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterSection} onChange={e => setFilterSection(e.target.value)}>
                             <option value="all">Todas</option>
                             {filterCategories.map(category => (
                                 <option key={category.id} value={`category:${category.id}`}>{category.name}</option>
@@ -248,25 +255,25 @@ export default function Dashboard() {
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Estado</label>
-                        <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                        <label htmlFor="dashboard-filter-4" className="font-bold uppercase tracking-widest text-editorial-text/50">Estado</label>
+                        <select id="dashboard-filter-4" className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
                             <option value="all">Todos</option>
-                            {statuses.map(s => <option key={s} value={s}>{s}</option>)}
+                            {statuses.map(s => <option key={s} value={s}>{STATUS_LABEL[s as Article['status']]}</option>)}
                         </select>
                     </div>
 
                     <div className="w-px h-8 bg-editorial-text/10 self-center mx-2 hidden sm:block"></div>
 
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Ordenar Por</label>
-                        <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={sortBy} onChange={e => setSortBy(e.target.value as 'date' | 'score')}>
+                        <label htmlFor="dashboard-filter-5" className="font-bold uppercase tracking-widest text-editorial-text/50">Ordenar Por</label>
+                        <select id="dashboard-filter-5" className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={sortBy} onChange={e => setSortBy(e.target.value as 'date' | 'score')}>
                             <option value="date">Fecha</option>
                             <option value="score">Score</option>
                         </select>
                     </div>
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Orden</label>
-                        <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={sortOrder} onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')}>
+                        <label htmlFor="dashboard-filter-6" className="font-bold uppercase tracking-widest text-editorial-text/50">Orden</label>
+                        <select id="dashboard-filter-6" className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={sortOrder} onChange={e => setSortOrder(e.target.value as 'desc' | 'asc')}>
                             <option value="desc">Descendente</option>
                             <option value="asc">Ascendente</option>
                         </select>
@@ -275,8 +282,8 @@ export default function Dashboard() {
                     <div className="w-px h-8 bg-editorial-text/10 self-center mx-2 hidden sm:block"></div>
 
                     <div className="flex flex-col gap-1">
-                        <label className="font-bold uppercase tracking-widest text-editorial-text/50">Agrupar Por</label>
-                        <select className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={groupBy} onChange={e => setGroupBy(e.target.value as 'none' | 'source' | 'section')}>
+                        <label htmlFor="dashboard-filter-7" className="font-bold uppercase tracking-widest text-editorial-text/50">Agrupar Por</label>
+                        <select id="dashboard-filter-7" className="border border-editorial-text/20 bg-transparent px-2 py-1 outline-none focus:border-editorial-text cursor-pointer" value={groupBy} onChange={e => setGroupBy(e.target.value as 'none' | 'source' | 'section')}>
                             <option value="none">Sin Agrupar</option>
                             <option value="source">Medio</option>
                             <option value="section">Sección</option>
@@ -294,12 +301,13 @@ export default function Dashboard() {
                     <div className="flex flex-col gap-12">
                         {groupedArticles.map(group => (
                             <div key={normalizeGroupKey(group.label)}>
-                                <h3 className="text-2xl font-bold border-b border-editorial-text/20 pb-2 mb-6 capitalize font-sans">{group.label} <span className="text-sm font-sans font-normal opacity-50 ml-2">({group.articles.length})</span></h3>
+                                <h2 className="text-2xl font-bold border-b border-editorial-text/20 pb-2 mb-6 capitalize font-sans">{group.label} <span className="text-sm font-sans font-normal opacity-50 ml-2">({group.articles.length})</span></h2>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-8 gap-y-12">
                                     {group.articles.map(article => (
                                         <ArticleCard
                                             key={article.id}
                                             article={article}
+                                            headingLevel="h3"
                                             sectionLabel={sectionLabelByKey[normalizeGroupKey(article.section || '')]}
                                         />
                                     ))}
@@ -361,7 +369,14 @@ function pathAlias(path?: string | null) {
     return segment.replace(/[-_]+/g, ' ');
 }
 
-function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel?: string }) {
+const STATUS_LABEL: Record<Article['status'], string> = {
+    PENDING: 'Pendiente',
+    APPROVED: 'Aprobada',
+    REJECTED: 'Rechazada',
+    PUBLISHED: 'Publicada'
+};
+
+function ArticleCard({ article, sectionLabel, headingLevel: Heading = 'h2' }: { article: Article; sectionLabel?: string; headingLevel?: 'h2' | 'h3' }) {
     // Manual notes have no source photo: show the one picked for publication.
     // The list endpoint omits originalUrl, so detect them by source name.
     const cardImage = article.source?.name === 'Carga manual'
@@ -393,15 +408,16 @@ function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel
                 </div>
                 <span className={`px-2 py-0.5 border ${article.status === 'PUBLISHED' ? 'bg-editorial-text text-editorial-bg border-editorial-text' : 'border-editorial-text/20'
                     }`}>
-                    {article.publicationBlocked ? 'NO PUBLICAR' : article.status}
+                    {article.publicationBlocked ? 'NO PUBLICAR' : STATUS_LABEL[article.status]}
                 </span>
             </div>
 
-            <h3 className="text-xl font-bold leading-tight mb-3 group-hover:underline underline-offset-4 decoration-2">
+            {!cardImage && <span className="sr-only">Score: {article.interestScore || '-'}</span>}
+            <Heading className="text-xl font-bold leading-tight mb-3 group-hover:underline underline-offset-4 decoration-2">
                 <Link to={`/newsroom/${article.id}`}>
                     {article.originalTitle}
                 </Link>
-            </h3>
+            </Heading>
 
             <p className="text-sm text-editorial-text/80 leading-relaxed line-clamp-4 font-sans mb-4 flex-1">
                 {article.contentPreview || 'Abrí la nota para ver el contenido completo.'}
@@ -409,7 +425,7 @@ function ArticleCard({ article, sectionLabel }: { article: Article; sectionLabel
 
             <div className="pt-4 border-t border-editorial-text/10 flex justify-between items-center font-sans text-xs">
                 <span className="text-editorial-text/50">{new Date(article.createdAt).toLocaleDateString()}</span>
-                <Link to={`/newsroom/${article.id}`} className="font-bold hover:translate-x-1 transition-transform">
+                <Link to={`/newsroom/${article.id}`} aria-label={`Leer y editar: ${article.originalTitle}`} className="font-bold hover:translate-x-1 transition-transform">
                     Leer y Editar →
                 </Link>
             </div>

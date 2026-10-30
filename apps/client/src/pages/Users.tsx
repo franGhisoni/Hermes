@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { Trash2, KeyRound } from 'lucide-react';
+import { usePageTitle } from '../lib/a11y';
 
 interface UserData {
     id: string;
@@ -13,6 +14,7 @@ interface UserData {
 
 export default function Users() {
     const { user, logout } = useAuth();
+    usePageTitle('Usuarios');
     const [users, setUsers] = useState<UserData[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -83,7 +85,7 @@ export default function Users() {
                     <Link to="/" className="flex items-center transition-opacity hover:opacity-100 opacity-90">
                         <img src="/logo%20hermes.png" alt="Hermes" className="h-8 w-auto object-contain" />
                     </Link>
-                    <span className="text-base sm:text-xl font-black uppercase tracking-widest italic">Panel de Usuarios</span>
+                    <h1 className="text-base sm:text-xl font-black uppercase tracking-widest italic">Panel de Usuarios</h1>
                 </div>
                 <div className="flex gap-2 sm:gap-4">
                     <Link to="/" className="font-sans text-xs font-bold uppercase tracking-widest px-2 sm:px-4 py-2 hover:underline"><span className="sm:hidden">← Volver</span><span className="hidden sm:inline">Volver al Dashboard</span></Link>
@@ -97,8 +99,8 @@ export default function Users() {
                     <h2 className="text-lg sm:text-xl font-bold uppercase tracking-wider sm:tracking-widest mb-6 font-sans">Crear Nuevo Usuario</h2>
                     <form onSubmit={handleCreateUser} className="flex flex-col sm:flex-row gap-4 sm:items-end font-sans">
                         <div className="flex flex-col gap-2 flex-1">
-                            <label className="text-xs font-bold uppercase tracking-widest opacity-60">Usuario</label>
-                            <input
+                            <label htmlFor="new-user-1" className="text-xs font-bold uppercase tracking-widest opacity-60">Usuario</label>
+                            <input id="new-user-1"
                                 type="text"
                                 value={newUsername}
                                 onChange={e => setNewUsername(e.target.value)}
@@ -107,8 +109,8 @@ export default function Users() {
                             />
                         </div>
                         <div className="flex flex-col gap-2 flex-1">
-                            <label className="text-xs font-bold uppercase tracking-widest opacity-60">Contraseña</label>
-                            <input
+                            <label htmlFor="new-user-2" className="text-xs font-bold uppercase tracking-widest opacity-60">Contraseña</label>
+                            <input id="new-user-2"
                                 type="password"
                                 value={newPassword}
                                 onChange={e => setNewPassword(e.target.value)}
@@ -117,8 +119,8 @@ export default function Users() {
                             />
                         </div>
                         <div className="flex flex-col gap-2 sm:w-44">
-                            <label className="text-xs font-bold uppercase tracking-widest opacity-60">Tipo</label>
-                            <select
+                            <label htmlFor="new-user-3" className="text-xs font-bold uppercase tracking-widest opacity-60">Tipo</label>
+                            <select id="new-user-3"
                                 value={newRole}
                                 onChange={e => setNewRole(e.target.value as 'EDITOR' | 'DEMO')}
                                 className="border-b border-editorial-text/30 bg-transparent py-2 focus:outline-none focus:border-editorial-text/80 transition-colors"
@@ -153,11 +155,12 @@ export default function Users() {
                                         <td className="py-4 font-bold">{u.username} {u.id === user?.id && <span className="ml-2 text-[10px] bg-red-100 text-red-700 px-1 py-0.5 rounded uppercase tracking-widest">Tú</span>}</td>
                                         <td className="py-4 text-xs">{u.role}</td>
                                         <td className="py-4 text-xs opacity-60">{new Date(u.createdAt).toLocaleDateString()}</td>
-                                        <td className="py-4 text-right flex justify-end gap-3 sm:opacity-30 group-hover:opacity-100 transition-opacity">
+                                        <td className="py-4"><div className="flex justify-end gap-3 sm:opacity-30 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                                             <button
                                                 onClick={() => handleChangePassword(u.id, u.username)}
                                                 className="p-1 hover:text-blue-500"
-                                                title="Cambiar Password"
+                                                title="Cambiar contraseña"
+                                                aria-label={`Cambiar contraseña de ${u.username}`}
                                             >
                                                 <KeyRound size={16} />
                                             </button>
@@ -165,11 +168,12 @@ export default function Users() {
                                                 onClick={() => handleDeleteUser(u.id)}
                                                 disabled={u.id === user?.id}
                                                 className="p-1 hover:text-red-500 disabled:opacity-20 disabled:hover:text-inherit"
-                                                title="Eliminar Usuario"
+                                                title="Eliminar usuario"
+                                                aria-label={`Eliminar a ${u.username}`}
                                             >
                                                 <Trash2 size={16} />
                                             </button>
-                                        </td>
+                                        </div></td>
                                     </tr>
                                 ))}
                             </tbody>

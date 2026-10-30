@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
+import { usePageTitle } from '../lib/a11y';
 
 export default function Login() {
     const [username, setUsername] = useState('');
@@ -10,6 +11,7 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
+    usePageTitle('Iniciar sesión');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -38,7 +40,7 @@ export default function Login() {
 
                 <form onSubmit={handleSubmit} className="flex flex-col gap-6 font-sans">
                     {error && (
-                        <div className="bg-red-50 text-red-600 border border-red-200 p-3 text-sm text-center font-bold">
+                        <div role="alert" className="bg-red-50 text-red-600 border border-red-200 p-3 text-sm text-center font-bold">
                             {error}
                         </div>
                     )}
@@ -47,6 +49,7 @@ export default function Login() {
                         <label className="text-xs font-bold uppercase tracking-widest opacity-80" htmlFor="username">Usuario</label>
                         <input
                             id="username"
+                            autoComplete="username"
                             type="text"
                             value={username}
                             onChange={e => setUsername(e.target.value)}
@@ -59,6 +62,7 @@ export default function Login() {
                         <label className="text-xs font-bold uppercase tracking-widest opacity-80" htmlFor="password">Contraseña</label>
                         <input
                             id="password"
+                            autoComplete="current-password"
                             type="password"
                             value={password}
                             onChange={e => setPassword(e.target.value)}

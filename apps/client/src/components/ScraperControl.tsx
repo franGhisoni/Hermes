@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { Play, Loader2, ChevronRight, ListPlus } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { announce } from '../lib/a11y';
 
 interface EffectiveSection {
     id: string;
@@ -125,6 +126,10 @@ export function ScraperControl() {
         }
     };
 
+    useEffect(() => {
+        if (message) announce(message);
+    }, [message]);
+
     return (
         <div ref={containerRef} onPointerEnter={updatePlacement} className="relative group flex items-center h-full">
             <button type="button" onClick={() => { updatePlacement(); setOpen(o => !o); }} aria-expanded={open} className="font-sans text-sm font-semibold uppercase tracking-wider hover:underline underline-offset-4 flex items-center gap-1">
@@ -163,10 +168,11 @@ export function ScraperControl() {
                                         disabled={loading}
                                         className="flex-1 text-left disabled:opacity-50"
                                         title="Scrapear todas las secciones"
+                                        aria-label={`Scrapear todas las secciones de ${s.label}`}
                                     >
                                         {s.label}
                                     </button>
-                                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <button type="button" onClick={() => setHoveredSource(s.source)} aria-label={`Ver secciones de ${s.label}`} className="-m-2 p-2"><ChevronRight className={`w-3 h-3 text-editorial-text/50 transition-transform ${hoveredSource === s.source ? 'max-sm:rotate-90' : ''}`} /></button>}
+                                    {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <button type="button" onClick={() => setHoveredSource(s.source)} aria-label={`Ver secciones de ${s.label}`} aria-expanded={hoveredSource === s.source} className="-m-2 p-2"><ChevronRight className={`w-3 h-3 text-editorial-text/50 transition-transform ${hoveredSource === s.source ? 'max-sm:rotate-90' : ''}`} /></button>}
                                 </div>
 
                                 {/* Submenu: opens beside the dropdown, on whichever side has room. */}

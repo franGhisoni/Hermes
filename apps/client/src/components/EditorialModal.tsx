@@ -1,6 +1,7 @@
-import { useEffect, type ReactNode } from 'react';
+import { type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { createPortal } from 'react-dom';
+import { useDialog } from '../lib/a11y';
 
 export function EditorialModal({ title, eyebrow, onClose, children, wide = false }: {
     title: string;
@@ -9,14 +10,10 @@ export function EditorialModal({ title, eyebrow, onClose, children, wide = false
     children: ReactNode;
     wide?: boolean;
 }) {
-    useEffect(() => {
-        const onEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
-        document.addEventListener('keydown', onEscape);
-        return () => document.removeEventListener('keydown', onEscape);
-    }, [onClose]);
+    const dialogRef = useDialog<HTMLElement>(onClose);
 
     return createPortal(<div className="fixed inset-0 z-[100] flex items-center justify-center bg-editorial-text/65 px-4 py-8 backdrop-blur-sm" onMouseDown={event => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
-        <section role="dialog" aria-modal="true" aria-label={title} className={`w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} max-h-full overflow-y-auto border border-editorial-text/20 bg-editorial-bg shadow-[0_28px_90px_rgba(12,12,30,.32)] font-sans text-editorial-text`}>
+        <section ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} className={`w-full ${wide ? 'max-w-3xl' : 'max-w-xl'} max-h-full overflow-y-auto border border-editorial-text/20 bg-editorial-bg shadow-[0_28px_90px_rgba(12,12,30,.32)] font-sans text-editorial-text`}>
             <div className="flex items-start justify-between gap-6 border-b border-editorial-text/15 px-6 py-5 sm:px-8">
                 <div>
                     {eyebrow && <p className="mb-1 text-[10px] font-bold uppercase tracking-[.22em] text-editorial-text/50">{eyebrow}</p>}

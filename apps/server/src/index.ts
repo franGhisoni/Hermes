@@ -1271,6 +1271,7 @@ app.post('/api/articles/:id/search-images', async (req, res) => {
         // Score the fresh candidates so they don't show up unranked in the carousel.
         const currentScores: Record<string, number> = ((article as any).imageScores as Record<string, number>) || {};
         let updatedScores = currentScores;
+        const updatedAlts: Record<string, string> = { ...((article.aiDecisions as any)?.imageAlts || {}) };
         if (newCandidates.length > 0) {
             const imageMinScore = await configService.getImageMinScore();
             const scored = await aiService.selectBestImage(
@@ -1283,19 +1284,57 @@ app.post('/api/articles/:id/search-images', async (req, res) => {
             updatedScores = { ...currentScores };
             newCandidates.forEach((url, i) => {
                 updatedScores[url] = scored.scores[i] ?? 0;
+                if (scored.alts?.[i]) updatedAlts[url] = scored.alts[i];
             });
         }
 
+        const aiDecisions = { ...((article.aiDecisions as any) || {}), imageAlts: updatedAlts };
         await prisma.article.update({
             where: { id: article.id },
-            data: { imageCandidates: updatedCandidates, imageScores: updatedScores }
+            data: { imageCandidates: updatedCandidates, imageScores: updatedScores, aiDecisions }
         });
 
-        res.json({ candidates: updatedCandidates, imageScores: updatedScores });
+        res.json({ candidates: updatedCandidates, imageScores: updatedScores, aiDecisions });
 
     } catch (error: any) {
         console.error(error);
         res.status(500).json({ error: `Search failed: ${error?.message || 'unknown error'}` });
+    }
+});
+
+// POST /api/articles/:id/describe-image
+// Only for images of this note, so the endpoint can't be used to send any URL to vision.
+app.post('/api/articles/:id/describe-image', async (req, res) => {
+    const { imageUrl } = req.body;
+    try {
+        const article = await articleService.getArticleById(req.params.id);
+        if (!article) return res.status(404).json({ error: 'Not found' });
+
+        const known = [...((article as any).imageCandidates || []), article.featureImageUrl, article.originalImageUrl];
+        if (typeof imageUrl !== 'string' || !known.includes(imageUrl)) {
+            return res.status(400).json({ error: 'La imagen no pertenece a esta nota' });
+        }
+
+        // Generated images are served by us, possibly from a URL vision can't reach.
+        const generatedId = imageUrl.match(/^\/api\/images\/([^/?#]+)/)?.[1];
+        let visionUrl = imageUrl;
+        if (generatedId) {
+            const img = await prisma.generatedImage.findUnique({ where: { id: generatedId } });
+            if (!img) return res.status(404).json({ error: 'Imagen no encontrada' });
+            visionUrl = `data:${img.mimeType};base64,${Buffer.from(img.data).toString('base64')}`;
+        }
+
+        const alt = await aiService.describeImage(visionUrl, article.rewrittenTitle || article.originalTitle);
+        if (!alt) return res.status(502).json({ error: 'La IA no devolvió una descripción' });
+
+        const trace = (article.aiDecisions as any) || {};
+        const aiDecisions = { ...trace, imageAlts: { ...(trace.imageAlts || {}), [imageUrl]: alt } };
+        await prisma.article.update({ where: { id: article.id }, data: { aiDecisions } });
+
+        res.json({ alt, aiDecisions });
+    } catch (error: any) {
+        console.error(error);
+        res.status(500).json({ error: `No se pudo describir la imagen: ${error?.message || 'error desconocido'}` });
     }
 });
 

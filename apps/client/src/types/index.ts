@@ -10,11 +10,14 @@ export interface AiDecisionsTrace {
         url: string;
         score: number;
         reason: string;
+        alt?: string;
         // 'searxng-google' / 'searxng-bing' / 'searxng-duckduckgo' / 'searxng-qwant'
         // (or 'dalle' / 'original' for fallbacks). Legacy values 'google' / 'bing'
         // may appear in older articles persisted before the SearXNG migration.
         sourceEngine?: string;
     }>;
+    // Descriptions written outside the first scoring: manual search or on request.
+    imageAlts?: Record<string, string>;
     fallbackUsed?: 'dalle' | 'original' | null;
 }
 

@@ -13,6 +13,7 @@ import { Minuto1Scraper } from '../scrapers/Minuto1Scraper';
 import { LaPoliticaOnlineScraper } from '../scrapers/LaPoliticaOnlineScraper';
 import { ElDestapeScraper } from '../scrapers/ElDestapeScraper';
 import { DiarioLaPampaScraper } from '../scrapers/DiarioLaPampaScraper';
+import { LaArenaScraper } from '../scrapers/LaArenaScraper';
 import {
     ElDiarioSurScraper,
     LaUnionScraper,
@@ -57,6 +58,7 @@ export const SCRAPER_DEFINITIONS = Object.freeze([
     { source: 'LaPoliticaOnline', label: 'La Política Online', scraper: LaPoliticaOnlineScraper },
     { source: 'ElDestape', label: 'El Destape', scraper: ElDestapeScraper },
     { source: 'DiarioLaPampa', label: 'El Diario de La Pampa', scraper: DiarioLaPampaScraper },
+    { source: 'LaArena', label: 'La Arena', scraper: LaArenaScraper },
     { source: 'ElDiarioSur', label: 'El Diario Sur', scraper: ElDiarioSurScraper },
     { source: 'LaUnion', label: 'La Unión', scraper: LaUnionScraper },
     { source: 'DiarioConurbano', label: 'Diario Conurbano', scraper: DiarioConurbanoScraper },

@@ -4,6 +4,7 @@ import { Minuto1Scraper } from '../src/scrapers/Minuto1Scraper';
 import { LaPoliticaOnlineScraper } from '../src/scrapers/LaPoliticaOnlineScraper';
 import { ElDestapeScraper } from '../src/scrapers/ElDestapeScraper';
 import { DiarioLaPampaScraper } from '../src/scrapers/DiarioLaPampaScraper';
+import { LaArenaScraper } from '../src/scrapers/LaArenaScraper';
 import { resolveSectionUrl } from '../src/scrapers/BaseScraper';
 
 const normalize = (scraper: any, href: string) => scraper.normalizeArticleUrl(href);
@@ -45,6 +46,32 @@ test('El Diario de La Pampa reconoce /seccion/id/slug y lee fechas dd-mm-aaaa', 
     assert.equal(normalize(s, '/la-pampa'), null);
     assert.equal(s.parseDate('26-10-2026')?.toISOString(), '2026-10-26T15:00:00.000Z');
     assert.equal(s.parseDate('2026-10-26T10:00:00-03:00')?.toISOString(), '2026-10-26T13:00:00.000Z');
+});
+
+test('La Arena reconoce el timestamp al final y descarta secciones y tags', () => {
+    const s = new LaArenaScraper();
+    assert.ok(normalize(s, '/la-pampa/polemica-por-un-festejo-de-halloween-202610300200'));
+    assert.ok(normalize(s, '/comercial/oportunidad-laboral-en-agro-20261097360'));
+    assert.equal(normalize(s, '/seccion/la-pampa'), null);
+    assert.equal(normalize(s, '/tag/avances'), null);
+    assert.equal(normalize(s, '/la-pampa'), null);
+});
+
+test('La Arena no toma su imagen en blanco como foto de la nota', async t => {
+    const article = `<html><head>
+        <meta itemprop="datePublished" content="${new Date().toISOString()}">
+        <meta property="og:image" content="https://media.cdn.laarena.com.ar/102021/1633634144804.jpg?cw=264&amp;ch=150&amp;extw=jpg">
+        </head><body><h1>Sin foto</h1><div class="articulo__cuerpo"><p>Cuerpo de la nota.</p></div></body></html>`;
+    const listing = '<a href="/la-pampa/sin-foto-202610300280">Sin foto</a>';
+    t.mock.method(globalThis, 'fetch', async (url: string) =>
+        new Response(url.endsWith('-202610300280') ? article : listing, { status: 200 }));
+
+    const scraper: any = new LaArenaScraper();
+    scraper.loadScrapeSettings = async () => {};
+    const articles = await scraper.scrape(1);
+
+    assert.equal(articles.length, 1);
+    assert.equal(articles[0].imageUrl, undefined);
 });
 
 test('scrape arma la nota a partir del listado y la página (fetch simulado)', async t => {

@@ -89,9 +89,10 @@ export abstract class FetchNewsScraper extends BaseScraper {
                             .map(element => this.htmlToText($(element).text()))
                     )].filter(text => !FetchNewsScraper.READ_MORE.test(text));
                     const content = this.cleanParagraphs(rawParagraphs).join('\n\n');
-                    const imageUrl = this.resolveUrl(
+                    const resolvedImage = this.resolveUrl(
                         this.jsonLdImage(jsonLd?.image) || $('meta[property="og:image"]').attr('content')
                     );
+                    const imageUrl = resolvedImage && !this.isPlaceholderImage(resolvedImage) ? resolvedImage : undefined;
 
                     if (!title || !content) {
                         this.recordContentSkip(
@@ -137,6 +138,11 @@ export abstract class FetchNewsScraper extends BaseScraper {
     protected parseDate(raw: string): Date | null {
         const date = new Date(raw);
         return isNaN(date.getTime()) ? null : date;
+    }
+
+    /** For sites that fill the share image with a stock file when a note has no photo. */
+    protected isPlaceholderImage(_url: string): boolean {
+        return false;
     }
 
     private parsePublishedAt(candidates: Array<string | null | undefined>): Date | null {

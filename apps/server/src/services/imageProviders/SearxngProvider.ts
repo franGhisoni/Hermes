@@ -4,6 +4,8 @@ interface SearxngImageResult {
     url?: string;
     img_src?: string;
     thumbnail_src?: string;
+    title?: string;
+    content?: string;
     engine?: string;
     width?: number;
     height?: number;
@@ -18,6 +20,29 @@ interface SearxngSearchVariant {
     label: string;
     language?: string;
     engines?: string;
+}
+
+const QUERY_STOPWORDS = new Set([
+    'para', 'como', 'cuando', 'donde', 'desde', 'entre', 'sobre', 'hasta',
+    'este', 'esta', 'estos', 'estas', 'unos', 'unas', 'pero', 'sino', 'tras'
+]);
+
+function normalizeForMatch(text: string): string {
+    return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+// Bing intermittently answers with images unrelated to the query (anime,
+// worksheets, adult content). Those results don't mention any query term in
+// their title, description or URLs, so they can be dropped before the costly
+// AI scoring pass.
+export function isRelevantImageResult(query: string, item: SearxngImageResult): boolean {
+    const terms = normalizeForMatch(query).split(/[^\p{L}\p{N}]+/u)
+        .filter(term => term.length >= 4 && !QUERY_STOPWORDS.has(term));
+    if (terms.length === 0) return true;
+    const haystack = normalizeForMatch(
+        [item.title, item.content, item.url, item.img_src].filter(Boolean).join(' ')
+    );
+    return terms.some(term => haystack.includes(term));
 }
 
 /**
@@ -51,20 +76,18 @@ export class SearxngProvider implements ImageSearchProvider {
             language: 'es-AR'
         });
 
-        // SearXNG sometimes falls back to Bing-only results when Google Images
-        // is rate-limited or unhappy with the locale. Those Bing-only batches
-        // are the source of the recurring unrelated anime/wallpaper/China
-        // candidates. Before accepting that degraded response, retry a broader
-        // search using only the engines that have produced usable editorial
-        // images for Hermes.
-        if (primary.results.length >= 10 && this.hasPreferredEngine(primary.engineByUrl)) {
+        // Google Images is blocked and Bing is now the main source, so only the
+        // size of the relevant batch decides. A thin batch usually means Bing
+        // answered with unrelated images; a second request goes out through
+        // another rotating proxy IP.
+        if (primary.results.length >= 10) {
             return primary;
         }
 
         const preferredBroad = await this.searchVariant(query, options, {
             label: 'preferred-broad',
             language: 'all',
-            engines: 'google images,duckduckgo images'
+            engines: 'bing images,duckduckgo images'
         });
 
         if (preferredBroad.results.length === 0) {
@@ -130,10 +153,15 @@ export class SearxngProvider implements ImageSearchProvider {
             const seen = new Set<string>();
             const results: string[] = [];
             const engineByUrl: Record<string, string> = {};
+            const irrelevant: string[] = [];
 
             for (const item of items) {
                 const imageUrl = item.img_src || item.url;
                 if (!imageUrl || !imageUrl.startsWith('http')) continue;
+                if (!isRelevantImageResult(query, item)) {
+                    irrelevant.push(item.title || imageUrl);
+                    continue;
+                }
                 if (options.minWidth && item.width && item.width < options.minWidth) continue;
                 if (options.minHeight && item.height && item.height < options.minHeight) continue;
                 if (seen.has(imageUrl)) continue;
@@ -144,6 +172,9 @@ export class SearxngProvider implements ImageSearchProvider {
                 engineByUrl[imageUrl] = `searxng-${engine}`;
             }
 
+            if (irrelevant.length > 0) {
+                console.warn(`[SearxngProvider] "${query}" ${variant.label} dropped ${irrelevant.length}/${items.length} irrelevant results, e.g. ${JSON.stringify(irrelevant.slice(0, 3))}`);
+            }
             console.log(`[SearxngProvider] "${query}" ${variant.label} -> ${results.length} results`);
             return { url: browserUrl, results, engineByUrl };
         } catch (error: any) {
@@ -153,15 +184,6 @@ export class SearxngProvider implements ImageSearchProvider {
         } finally {
             clearTimeout(timer);
         }
-    }
-
-    private hasPreferredEngine(engineByUrl: Record<string, string>): boolean {
-        return Object.values(engineByUrl).some(engine =>
-            engine === 'searxng-google'
-            || engine === 'searxng-duckduckgo'
-            || engine === 'searxng-google images'
-            || engine === 'searxng-duckduckgo images'
-        );
     }
 
     private normalizeEngineName(engine?: string): string {

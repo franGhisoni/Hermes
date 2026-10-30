@@ -22,7 +22,10 @@ test('BlackRock remains in every fallback query for the reported article', async
         content: 'La combinación que detectó BlackRock. La oportunidad para la Argentina.',
         rewrittenTitle: 'BlackRock: potencial para Argentina y recomendaciones clave'
     });
-    assert.deepEqual(queries, ['BlackRock', 'BlackRock América Latina', 'BlackRock Argentina']);
+    assert.equal(queries.length, 3);
+    assert.ok(queries[0].startsWith('BlackRock vuelve a mirar a América Latina'));
+    assert.equal(queries[1], 'BlackRock potencial para Argentina y recomendaciones clave');
+    assert.equal(queries[2], 'BlackRock');
 });
 
 test('preserves people, accented locations and mixed-case entities', async () => {
@@ -44,7 +47,9 @@ test('broken reference retries with text and unrelated model queries are rejecte
     service.configService = {
         getImageQueryGenContentChars: async () => 1500,
         getImageQueryModel: async () => 'mock',
-        getImageQueryMaxTokens: async () => 500
+        getImageQueryMaxTokens: async () => 500,
+        getTextReasoningEffort: async () => 'low',
+        getReasoningTokenHeadroom: async () => 0
     };
     let calls = 0;
     service.openai = { chat: { completions: { create: async (request: any) => {

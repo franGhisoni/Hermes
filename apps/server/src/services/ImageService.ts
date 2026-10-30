@@ -159,7 +159,11 @@ export class ImageService {
         ]);
         if (phrases.length > 0) {
             const subject = titleEntities[0] || phrases[0];
+            // Whole titles go first: a lone capitalized word ("Murió", "Cinco")
+            // or a word pair loses the context that makes the search relevant.
             return this.uniqueStrings([
+                cleanedTitle,
+                cleanedRewrittenTitle,
                 subject,
                 ...phrases.filter(term => term !== subject).map(term => `${subject} ${term}`)
             ]).filter(query => query.length >= minLength).slice(0, maxCount);

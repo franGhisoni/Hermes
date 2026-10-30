@@ -15,7 +15,7 @@ export {
 export { parseHighlights, stripHighlights } from './templates';
 export {
     buildSocialCopyPrompt, parseSocialCopy, fallbackSocialCopy, generateSocialCopy,
-    CARD_PROMPT_SECTION, CARD_PROMPT_MARKER, type CopyBrand, type CopyInput,
+    CARD_PROMPT_SECTION, CARD_PROMPT_MARKER, DEFAULT_COPY_TEMPLATE, type CopyBrand, type CopyInput,
 } from './copy';
 
 export interface PublishNewsInput {

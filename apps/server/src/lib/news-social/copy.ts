@@ -28,14 +28,18 @@ export const CARD_PROMPT_MARKER = '"placa_titulo"';
 export const CARD_PROMPT_SECTION = `5. ${CARD_PROMPT_MARKER}: Titular para la PLACA (imagen) que acompaña el posteo. Máximo 12 palabras, sin punto final, sin emojis, sin hashtags. Tiene que entenderse solo, como un titular de portada. Encerrá entre asteriscos (*así*) de 2 a 5 palabras consecutivas que sean el dato más fuerte, para resaltarlas en color. Ejemplo: "Pareja delineó *el armado de LLA* en la Provincia".
 6. "placa_volanta": Etiqueta corta para arriba del titular de la placa (1 a 3 palabras: tema, lugar o protagonista, ej. "PERONISMO", "ACTO EN LANÚS", "MALA PRAXIS").`;
 
-export function buildSocialCopyPrompt(input: CopyInput, brand: CopyBrand, maxContentChars = 6000): string {
-    const tags = brand.baseHashtags.join(' ');
-    return `Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo ${brand.brandName} / ${brand.region}).
+/**
+ * Prompt de copys con marcadores: {{marca}}, {{region}}, {{hashtags}}, {{titulo}},
+ * {{volanta}} y {{contenido}}. Se puede guardar uno propio y pasarlo a
+ * `buildSocialCopyPrompt`.
+ */
+export const DEFAULT_COPY_TEMPLATE = `Sos un community manager y redactor de redes sociales experto en medios de noticias argentinos (estilo {{marca}} / {{region}}).
 A partir de la siguiente noticia, generá los textos (copys) optimizados para publicar en redes sociales y el texto de la placa.
 
-Título original: ${input.title}
-${input.volanta ? `Volanta: ${input.volanta}\n` : ''}Contenido:
-${cleanText(input.content).slice(0, maxContentChars)}
+Título original: {{titulo}}
+Volanta: {{volanta}}
+Contenido:
+{{contenido}}
 
 REGLAS GENERALES INVIOLABLES:
 - NUNCA termines los textos con puntos suspensivos ("...") ni dejes oraciones cortadas a la mitad. Todos los textos deben quedar cerrados, coherentes y completos.
@@ -49,9 +53,9 @@ Instrucciones:
    - Línea inicial: gancho en MAYÚSCULAS con un emoji sobrio al inicio (🚨, 📌, ⚖️, ⚠️).
    - Cuerpo: 2 o 3 párrafos cortos con lo principal de la noticia.
    - Cierre: "📲 Leé la nota completa ingresando al link de nuestra bio." y "¿Qué opinás? Te leemos en los comentarios 👇"
-   - Bloque final de 5 a 8 hashtags (separado por una línea vacía), incluyendo ${tags}.
+   - Bloque final de 5 a 8 hashtags (separado por una línea vacía), incluyendo {{hashtags}}.
 3. "facebook": Tono informativo, cercano y claro. 2 párrafos concisos, "👉 Leé la nota completa en nuestro sitio web." y una pregunta para abrir el debate. NO pongas el link: se agrega solo.
-4. "hashtags": 5 a 8 hashtags separados por espacios, incluyendo ${tags}.
+4. "hashtags": 5 a 8 hashtags separados por espacios, incluyendo {{hashtags}}.
 ${CARD_PROMPT_SECTION}
 
 Respondé ÚNICAMENTE un JSON estricto con esta estructura:
@@ -59,10 +63,21 @@ Respondé ÚNICAMENTE un JSON estricto con esta estructura:
   "twitter": "...",
   "instagram": "...",
   "facebook": "...",
-  "hashtags": "${tags} ...",
+  "hashtags": "{{hashtags}} ...",
   "placa_titulo": "...",
   "placa_volanta": "..."
 }`;
+
+export function buildSocialCopyPrompt(input: CopyInput, brand: CopyBrand, maxContentChars = 6000, template = DEFAULT_COPY_TEMPLATE): string {
+    const values: Record<string, string> = {
+        marca: brand.brandName,
+        region: brand.region,
+        hashtags: brand.baseHashtags.join(' '),
+        titulo: input.title,
+        volanta: input.volanta || 'sin volanta',
+        contenido: cleanText(input.content).slice(0, maxContentChars),
+    };
+    return template.replace(/\{\{(\w+)\}\}/g, (mark, name: string) => values[name] ?? mark);
 }
 
 function cleanText(text: string): string {
@@ -126,9 +141,10 @@ export async function generateSocialCopy(
     llm: (prompt: string) => Promise<string>,
     input: CopyInput,
     brand: CopyBrand,
+    template?: string,
 ): Promise<SocialCopy> {
     try {
-        const copy = parseSocialCopy(await llm(buildSocialCopyPrompt(input, brand)));
+        const copy = parseSocialCopy(await llm(buildSocialCopyPrompt(input, brand, undefined, template)));
         if (!copy.facebook && !copy.instagram) throw new Error('respuesta vacía');
         return copy;
     } catch (err) {

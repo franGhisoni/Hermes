@@ -7,6 +7,13 @@ import { ConfigService } from '../services/ConfigService';
 import { prisma } from '../lib/prisma';
 const configService = new ConfigService();
 
+// A section saved as "la-pampa" must not glue onto the host ("...com.arla-pampa").
+export function resolveSectionUrl(baseUrl: string, section: string): string {
+    const value = section.trim();
+    if (/^https?:\/\//i.test(value)) return value;
+    return `${baseUrl}${value.startsWith('/') ? '' : '/'}${value}`;
+}
+
 export interface ScrapedArticle {
     title: string;
     content: string;

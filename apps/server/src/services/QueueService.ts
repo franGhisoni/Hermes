@@ -7,6 +7,7 @@ import { NAScraper } from '../scrapers/NAScraper';
 import { AmbitoScraper } from '../scrapers/AmbitoScraper';
 import { CronistaScraper } from '../scrapers/CronistaScraper';
 import { Pagina12Scraper } from '../scrapers/Pagina12Scraper';
+import { resolveSectionUrl } from '../scrapers/BaseScraper';
 import { MDZScraper } from '../scrapers/MDZScraper';
 import { Minuto1Scraper } from '../scrapers/Minuto1Scraper';
 import { LaPoliticaOnlineScraper } from '../scrapers/LaPoliticaOnlineScraper';
@@ -397,8 +398,7 @@ export class QueueService {
                 scraper = new ScraperClass();
                 // If the job url is a path (e.g. /politica), append it to the base URL
                 if (job.data.url) {
-                    const isFullPath = job.data.url.startsWith('http');
-                    scraper.baseUrl = isFullPath ? job.data.url : `${scraper.baseUrl}${job.data.url}`;
+                    scraper.baseUrl = resolveSectionUrl(scraper.baseUrl, job.data.url);
                 }
 
                 console.log(`[Worker] Starting scrape for ${job.data.source} with limit ${limit}...`);

@@ -1353,7 +1353,7 @@ function ScrapeRunsPanel({
                         )}
                     </h3>
                     <p className="font-sans text-[11px] text-editorial-text/60 mt-1">
-                        Registro admin por medio y secciÃ³n: lÃ­mite pedido, notas detectadas y notas nuevas procesadas.
+                        Registro admin por medio y sección: límite pedido, notas detectadas y notas nuevas procesadas.
                     </p>
                 </div>
                 <button
@@ -1373,8 +1373,8 @@ function ScrapeRunsPanel({
                         <tr className="text-left border-b border-editorial-text/10 text-[10px] uppercase tracking-widest text-editorial-text/50">
                             <th className="py-2 pr-3">Inicio</th>
                             <th className="py-2 pr-3">Medio</th>
-                            <th className="py-2 pr-3">SecciÃ³n</th>
-                            <th className="py-2 pr-3 text-right">LÃ­mite</th>
+                            <th className="py-2 pr-3">Sección</th>
+                            <th className="py-2 pr-3 text-right">Límite</th>
                             <th className="py-2 pr-3 text-right">Trajo</th>
                             <th className="py-2 pr-3 text-right">Nuevas</th>
                             <th className="py-2 pr-3">Estado</th>
@@ -1453,7 +1453,7 @@ function ScrapeRunsPanel({
                         {runs.length === 0 && (
                             <tr>
                                 <td colSpan={10} className="py-8 text-center text-editorial-text/50 italic">
-                                    TodavÃ­a no hay ejecuciones registradas.
+                                    Todavía no hay ejecuciones registradas.
                                 </td>
                             </tr>
                         )}

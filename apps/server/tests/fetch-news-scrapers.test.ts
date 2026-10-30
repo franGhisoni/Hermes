@@ -4,8 +4,16 @@ import { Minuto1Scraper } from '../src/scrapers/Minuto1Scraper';
 import { LaPoliticaOnlineScraper } from '../src/scrapers/LaPoliticaOnlineScraper';
 import { ElDestapeScraper } from '../src/scrapers/ElDestapeScraper';
 import { DiarioLaPampaScraper } from '../src/scrapers/DiarioLaPampaScraper';
+import { resolveSectionUrl } from '../src/scrapers/BaseScraper';
 
 const normalize = (scraper: any, href: string) => scraper.normalizeArticleUrl(href);
+
+test('las secciones se resuelven con o sin barra inicial', () => {
+    const base = 'https://www.eldiariodelapampa.com.ar';
+    assert.equal(resolveSectionUrl(base, 'la-pampa'), `${base}/la-pampa`);
+    assert.equal(resolveSectionUrl(base, '/culturales'), `${base}/culturales`);
+    assert.equal(resolveSectionUrl(base, 'https://otro.com/seccion'), 'https://otro.com/seccion');
+});
 
 test('Minuto Uno reconoce notas (-n123) y descarta secciones y temas', () => {
     const s = new Minuto1Scraper();

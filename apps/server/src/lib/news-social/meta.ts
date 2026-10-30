@@ -31,9 +31,9 @@ export class MetaPublisher {
         this.base = `https://graph.facebook.com/${config.graphVersion || DEFAULT_GRAPH_VERSION}`;
     }
 
-    private async call<T>(path: string, init: { method?: string; params?: Record<string, string>; body?: FormData } = {}): Promise<T> {
+    private async call<T>(path: string, init: { method?: string; params?: Record<string, string>; body?: FormData; token?: string } = {}): Promise<T> {
         const url = new URL(`${this.base}/${path}`);
-        const params = { access_token: this.config.pageAccessToken, ...init.params };
+        const params = { access_token: init.token ?? this.config.pageAccessToken, ...init.params };
         let body = init.body;
         if (init.method === 'POST' && !body) {
             body = new FormData();
@@ -101,14 +101,16 @@ export class MetaPublisher {
     async publishInstagramImage(imageUrl: string, caption: string): Promise<{ id: string; permalink?: string }> {
         const igUserId = this.config.igUserId;
         if (!igUserId) throw new MetaApiError('Falta el id de la cuenta de Instagram (igUserId)');
+        const token = this.config.igAccessToken;
 
         const container = await this.call<{ id: string }>(`${igUserId}/media`, {
             method: 'POST',
             params: { image_url: imageUrl, caption },
+            token,
         });
 
         for (let i = 0; i < IG_POLL_ATTEMPTS; i++) {
-            const { status_code } = await this.call<{ status_code?: string }>(container.id, { params: { fields: 'status_code' } });
+            const { status_code } = await this.call<{ status_code?: string }>(container.id, { params: { fields: 'status_code' }, token });
             if (status_code === 'FINISHED') break;
             if (status_code === 'ERROR' || status_code === 'EXPIRED') {
                 throw new MetaApiError(`Instagram rechazó la imagen (${status_code})`);
@@ -120,15 +122,16 @@ export class MetaPublisher {
         const published = await this.call<{ id: string }>(`${igUserId}/media_publish`, {
             method: 'POST',
             params: { creation_id: container.id },
+            token,
         });
-        const permalink = await this.call<{ permalink?: string }>(published.id, { params: { fields: 'permalink' } })
+        const permalink = await this.call<{ permalink?: string }>(published.id, { params: { fields: 'permalink' }, token })
             .then(r => r.permalink)
             .catch(() => undefined);
         return { id: published.id, permalink };
     }
 
     async commentOnInstagram(mediaId: string, message: string): Promise<string> {
-        const res = await this.call<{ id: string }>(`${mediaId}/comments`, { method: 'POST', params: { message } });
+        const res = await this.call<{ id: string }>(`${mediaId}/comments`, { method: 'POST', params: { message }, token: this.config.igAccessToken });
         return res.id;
     }
 }

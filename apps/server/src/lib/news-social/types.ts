@@ -75,6 +75,8 @@ export interface MetaConfig {
     pageAccessToken: string;
     /** Id de la cuenta de Instagram Business vinculada a la página. */
     igUserId?: string;
+    /** Token de la página que tiene vinculado el Instagram, si no es `pageId`. */
+    igAccessToken?: string;
     graphVersion?: string;
 }
 

@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { Trash2, Settings2, Mail, Pencil, X, History, Workflow as WorkflowIcon, Plus, ChevronDown } from 'lucide-react';
+import { Trash2, Settings2, Mail, Pencil, X, History, Workflow as WorkflowIcon, Plus, ChevronDown, Play, Loader2 } from 'lucide-react';
 import { MultiSelect } from '../components/MultiSelect';
 import { CronBuilder } from '../components/CronBuilder';
 import { WorkflowPublicationLimits, type PublicationOverrideDraft } from '../components/WorkflowPublicationLimits';
@@ -51,6 +51,7 @@ interface Workflow {
     targetCategory?: string;
     cron: string;
     isActive: boolean;
+    isRunning?: boolean;
     allowRepublish?: boolean;
     articleWindowHours?: number | null;
     defaultArticleLimit?: number;
@@ -96,6 +97,27 @@ export default function Flows() {
         fetchData();
         fetchRuns();
     }, []);
+
+    // While a flow is running, keep polling so its card and the history pick
+    // up the result as soon as it finishes.
+    const anyRunning = workflows.some(wf => wf.isRunning);
+    useEffect(() => {
+        if (!anyRunning) return;
+        const interval = setInterval(() => {
+            fetchWorkflows();
+            fetchRuns();
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [anyRunning]);
+
+    const fetchWorkflows = async () => {
+        try {
+            const res = await api.get('/api/workflows');
+            setWorkflows(res.data);
+        } catch (error) {
+            console.error('Error fetching workflows', error);
+        }
+    };
 
     const fetchData = async () => {
         try {
@@ -254,6 +276,16 @@ export default function Flows() {
         } catch (error) {
             alert('Error toggling workflow');
         }
+    };
+
+    const handleRunWorkflow = async (wf: Workflow) => {
+        if (!confirm(`¿Ejecutar "${wf.name}" ahora? Va a publicar las notas en sus destinos.`)) return;
+        try {
+            await api.post(`/api/workflows/${wf.id}/run`);
+        } catch (error: any) {
+            alert('Error: ' + (error.response?.data?.error || 'No se pudo ejecutar el flujo'));
+        }
+        fetchWorkflows();
     };
 
     const handleToggleRepublish = async (wf: Workflow) => {
@@ -525,6 +557,7 @@ export default function Flows() {
                                         key={wf.id}
                                         wf={wf}
                                         isEditing={editingId === wf.id}
+                                        onRun={() => handleRunWorkflow(wf)}
                                         onToggleRepublish={() => handleToggleRepublish(wf)}
                                         onTogglePause={() => handleToggleWorkflow(wf)}
                                         onEdit={() => startEditWorkflow(wf)}
@@ -561,13 +594,14 @@ export default function Flows() {
 interface FlowCardProps {
     wf: Workflow;
     isEditing: boolean;
+    onRun: () => void;
     onToggleRepublish: () => void;
     onTogglePause: () => void;
     onEdit: () => void;
     onDelete: () => void;
 }
 
-function FlowCard({ wf, isEditing, onToggleRepublish, onTogglePause, onEdit, onDelete }: FlowCardProps) {
+function FlowCard({ wf, isEditing, onRun, onToggleRepublish, onTogglePause, onEdit, onDelete }: FlowCardProps) {
     const lastRun = wf.runs?.[0];
     const runColor = !lastRun ? 'border-editorial-text/10 text-editorial-text/40'
         : lastRun.status === 'SUCCESS' ? 'border-green-700/20 text-green-800 bg-green-50/40'
@@ -615,6 +649,15 @@ function FlowCard({ wf, isEditing, onToggleRepublish, onTogglePause, onEdit, onD
             </div>
 
             <div className="flex items-center gap-2 pt-2 border-t border-editorial-text/5 flex-wrap">
+                <button
+                    onClick={onRun}
+                    disabled={wf.isRunning}
+                    className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-widest px-2 py-1 bg-editorial-text text-editorial-bg hover:bg-black transition-colors disabled:opacity-60"
+                    title="Publicar ahora, sin esperar el horario"
+                >
+                    {wf.isRunning ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
+                    {wf.isRunning ? 'Ejecutando...' : 'Ejecutar flujo'}
+                </button>
                 <button
                     onClick={onToggleRepublish}
                     className={`text-[10px] font-bold uppercase tracking-widest px-2 py-1 border transition-colors ${wf.allowRepublish ? 'border-purple-300 text-purple-800 bg-purple-50 hover:bg-purple-100' : 'border-editorial-text/20 text-editorial-text/60 hover:bg-editorial-text/5'}`}

@@ -25,6 +25,8 @@ export interface PublishNewsInput {
     /** URL de la nota: se agrega al texto de Facebook y como comentario en Instagram. */
     link?: string;
     theme: CardTheme;
+    /** Tema de la placa de Instagram, si es distinto del de Facebook. */
+    instagramTheme?: CardTheme;
     meta: MetaConfig;
     networks?: SocialNetwork[];
     /** Comentar el link en el posteo de Instagram (ahí los links del texto no se pueden tocar). */
@@ -78,7 +80,9 @@ export async function publishNewsToSocial(input: PublishNewsInput): Promise<Publ
 
     if (networks.includes('instagram')) {
         try {
-            const url = await meta.hostImageOnFacebook(image);
+            // Dentro del try: si falla esta placa, lo de Facebook ya quedó publicado.
+            const igImage = input.instagramTheme ? await renderCard(input.card, input.instagramTheme) : image;
+            const url = await meta.hostImageOnFacebook(igImage);
             const ig = await meta.publishInstagramImage(url, (input.copy.instagram || stripHighlights(input.card.headline)).slice(0, 2200));
             result.instagram = { ok: true, id: ig.id, permalink: ig.permalink };
             if (input.link && input.instagramLinkComment !== false) {

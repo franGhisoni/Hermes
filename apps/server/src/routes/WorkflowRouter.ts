@@ -83,7 +83,10 @@ router.get('/', async (req, res) => {
             },
             orderBy: { createdAt: 'desc' }
         });
-        res.json(workflows);
+        res.json(workflows.map(workflow => ({
+            ...workflow,
+            isRunning: schedulerService.isWorkflowRunning(workflow.id)
+        })));
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch workflows' });
     }
@@ -257,6 +260,25 @@ router.put('/:id', requireAdmin, async (req, res) => {
         res.json(workflow);
     } catch (error) {
         res.status(500).json({ error: 'Failed to update workflow' });
+    }
+});
+
+// POST /api/workflows/:id/run — runs the workflow now, even if it is paused.
+// Answers right away: the outcome lands in the workflow's run history.
+router.post('/:id/run', requireAdmin, async (req, res) => {
+    try {
+        const workflow = await prisma.workflow.findUnique({
+            where: { id: req.params.id },
+            select: { id: true, name: true }
+        });
+        if (!workflow) return res.status(404).json({ error: 'Flujo no encontrado' });
+
+        if (!schedulerService.startWorkflowRun(workflow)) {
+            return res.status(409).json({ error: 'El flujo ya se está ejecutando' });
+        }
+        res.status(202).json({ started: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to run workflow' });
     }
 });
 
